@@ -10,6 +10,7 @@ from fastapi import APIRouter, FastAPI
 
 from edp_api.core.contextvars import RequestIDMiddleware
 from edp_api.core.errors import install_error_handlers
+from edp_api.modules.events.router import router as events_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
 
@@ -26,6 +27,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(platform_router)
     # registry 路由（B.2）：业务面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(registry_router)
+    # events 路由（B.3）：业务面，统一挂 tenant_scoped（RLS 隔离）
+    app.include_router(events_router)
     for router in extra_routers:
         app.include_router(router)
 

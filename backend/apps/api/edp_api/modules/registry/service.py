@@ -11,7 +11,8 @@
 tenant_id 条件与 RLS 双保险；跨租户读取恒表现为"不存在"。
 
 事务边界：本层只 flush 不 commit——请求级提交由 core.db.get_db 统一执行，
-outbox 与对象变更同事务（事务性发件箱）。
+outbox 与对象变更同事务（事务性发件箱；outbox 写入口/查询归 events 模块
+service.append_outbox / outbox_for_aggregate，模块间仅 import service）。
 """
 
 from datetime import datetime
@@ -25,7 +26,8 @@ from edp_api.core.db import bind_tenant
 from edp_api.core.errors import EdpError
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
-from edp_api.modules.registry.models import BusinessObject, Outbox
+from edp_api.modules.events import service as events_service
+from edp_api.modules.registry.models import BusinessObject
 from edp_api.modules.registry.schemas import (
     HistoryEntry,
     ObjectResponse,
@@ -69,25 +71,23 @@ def _conflict(current_revision: int | None) -> EdpError:
 async def _append_outbox(
     sess: AsyncSession, tenant_id: UUID, obj: BusinessObject, principal: Principal
 ) -> None:
-    """同事务写 event.outbox（OBJECT_UPSERT 轨迹；payload 含 revision/actor）。"""
-    sess.add(
-        Outbox(
-            tenant_id=tenant_id,
-            aggregate_type=AGGREGATE_TYPE_OBJECT,
-            aggregate_id=obj.object_id,
-            event_type=EVENT_TYPE_OBJECT_UPSERT,
-            payload={
-                "revision": obj.revision,
-                "source_system": obj.source_system,
-                "source_id": obj.source_id,
-                "object_type": obj.object_type,
-                "actor": principal.id,
-            },
-            created_by=principal.id,
-            updated_by=principal.id,
-        )
+    """同事务写 event.outbox（OBJECT_UPSERT 轨迹；payload 含 revision/actor）。
+    写入口收敛至 events.service.append_outbox。"""
+    await events_service.append_outbox(
+        sess,
+        tenant_id=tenant_id,
+        aggregate_type=AGGREGATE_TYPE_OBJECT,
+        aggregate_id=obj.object_id,
+        event_type=EVENT_TYPE_OBJECT_UPSERT,
+        payload={
+            "revision": obj.revision,
+            "source_system": obj.source_system,
+            "source_id": obj.source_id,
+            "object_type": obj.object_type,
+            "actor": principal.id,
+        },
+        actor=principal.id,
     )
-    await sess.flush()
 
 
 async def upsert_object(
@@ -239,19 +239,12 @@ async def object_history(
 ) -> list[HistoryEntry]:
     """对象 revision 变更轨迹：event.outbox 聚合 OBJECT 记录按 outbox_id 升序。
 
-    W1 数据源为 outbox（唯一携带 actor/revision 的同事务记录）；W2 切换为
-    审计日志聚合（B.2 语义不变）。
+    W1 数据源为 outbox（唯一携带 actor/revision 的同事务记录；查询经
+    events.service.outbox_for_aggregate）；W2 切换为审计日志聚合（B.2 语义不变）。
     """
-    rows = (
-        await sess.execute(
-            select(Outbox)
-            .where(
-                Outbox.aggregate_type == AGGREGATE_TYPE_OBJECT,
-                Outbox.aggregate_id == object_id,
-            )
-            .order_by(Outbox.outbox_id)
-        )
-    ).scalars().all()
+    rows = await events_service.outbox_for_aggregate(
+        sess, AGGREGATE_TYPE_OBJECT, object_id
+    )
     return [
         HistoryEntry(
             revision=entry.payload.get("revision"),
