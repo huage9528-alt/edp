@@ -1,10 +1,13 @@
-.PHONY: backend-lint backend-test backend-migrate-check contract-export frontend-lint frontend-test verify-all
+.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export frontend-lint frontend-test verify-all
 
 backend-lint:
 	cd backend && uv run ruff check . && uv run lint-imports
 
 backend-test:
 	cd backend && uv run pytest
+
+backend-isolation:
+	cd backend && uv run pytest tests/integration/test_tenant_isolation.py -q
 
 backend-migrate-check:
 	cd backend && uv run alembic upgrade head && uv run alembic downgrade base && uv run alembic upgrade head

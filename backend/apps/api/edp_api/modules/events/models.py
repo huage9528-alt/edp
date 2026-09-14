@@ -93,13 +93,14 @@ class Outbox(Base):
 
 
 class IdempotencyKey(Base):
-    """接口层幂等登记（W1 登记项；FORCE RLS；key 全局 PK——见 service 文档）。"""
+    """接口层幂等登记（W1 登记项；FORCE RLS；复合 PK (tenant_id, key)——
+    幂等键按租户命名空间隔离，0007 起生效，见 service 文档）。"""
 
     __tablename__ = "idempotency_keys"
     __table_args__ = {"schema": "platform"}
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     response_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

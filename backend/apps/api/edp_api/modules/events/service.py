@@ -1,8 +1,10 @@
 """events 服务：批量入库（三层幂等）/ outbox 写入口 / 游标查询 / 点查。
 
 幂等三层（设计文档 7.1）：
-1. 接口层——platform.idempotency_keys (key, tenant, endpoint) 命中且未过期
-   → 直接反序列化存档响应并置 deduplicated=True，不重算；
+1. 接口层——platform.idempotency_keys (tenant, key, endpoint) 命中且未过期
+   → 直接反序列化存档响应并置 deduplicated=True，不重算（复合 PK
+   (tenant_id, key)＝迁移 0007：幂等键按租户命名空间隔离，跨租户同
+   Key 字符串互不冲突、互不可见）；
 2. 适配器层——event_id = derive_event_id(tenant_ns, source_system|source_id|
    occurred_at|event_type)（uuidv5.py；B.3 批次事件不携带源记录 source_id，
    派生时以 str(object_id) 充当该槽位：同一对象+类型+时刻的重放恒派生相同
@@ -121,16 +123,19 @@ async def _object_exists(sess: AsyncSession, object_id: UUID) -> bool:
 
 
 async def _load_archived_response(
-    sess: AsyncSession, idem_key: str
+    sess: AsyncSession, tenant_id: UUID, idem_key: str
 ) -> BatchResponse | None:
-    """接口层幂等读档：(key, endpoint) 命中且未过期 → 存档响应 + deduplicated。
+    """接口层幂等读档：(tenant_id, key, endpoint) 复合条件命中且未过期 →
+    存档响应 + deduplicated。
 
     RLS：idempotency_keys FORCE RLS，tenant_scoped 已 bind → 查询天然限本
-    租户（跨租户同 key 不可见）。
+    租户（跨租户同 key 不可见）；显式 tenant_id 条件为复合 PK (tenant_id,
+    key)（迁移 0007）的无 RLS 会话双保险，且对齐 PK 索引前导列。
     """
     row = (
         await sess.execute(
             select(IdempotencyKey.response_json).where(
+                IdempotencyKey.tenant_id == tenant_id,
                 IdempotencyKey.key == idem_key,
                 IdempotencyKey.endpoint == INGEST_ENDPOINT,
                 IdempotencyKey.expires_at > func.now(),
@@ -178,7 +183,7 @@ async def ingest_batch(
     """
     tenant_id = principal.tenant_id
 
-    archived = await _load_archived_response(sess, idem_key)
+    archived = await _load_archived_response(sess, tenant_id, idem_key)
     if archived is not None:
         return archived
 
