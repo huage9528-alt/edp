@@ -3,6 +3,8 @@
 用法（在 backend/ 下）：
     uv run python scripts/export_openapi.py          # 生成 contracts/openapi.json + openapi.sha256
     uv run python scripts/export_openapi.py --check  # 校验快照与当前 app 定义一致，不一致 exit 1
+
+指纹格式：openapi.sha256 = 对 openapi.json 文件字节的 SHA-256 hex（纯 hex 一行）。
 """
 
 import argparse
@@ -10,6 +12,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 CONTRACTS_DIR = BACKEND_ROOT.parent / "contracts"
@@ -33,12 +36,56 @@ def write_snapshot(content: str) -> None:
     FINGERPRINT_PATH.write_text(digest_of(content) + "\n", encoding="utf-8", newline="\n")
 
 
-def check_snapshot(content: str) -> bool:
-    if not OPENAPI_PATH.exists() or not FINGERPRINT_PATH.exists():
-        return False
-    if OPENAPI_PATH.read_text(encoding="utf-8") != content:
-        return False
-    return FINGERPRINT_PATH.read_text(encoding="utf-8").strip() == digest_of(content)
+def first_diff_path(expected: Any, actual: Any, path: str = "$") -> str | None:
+    """深度优先定位 expected/actual 首个差异的 JSON 路径；一致返回 None。"""
+    if type(expected) is not type(actual):
+        return path
+    if isinstance(expected, dict):
+        for key in sorted(set(expected) | set(actual)):
+            if key not in expected or key not in actual:
+                return f"{path}.{key}"
+            sub = first_diff_path(expected[key], actual[key], f"{path}.{key}")
+            if sub is not None:
+                return sub
+        return None
+    if isinstance(expected, list):
+        for idx in range(min(len(expected), len(actual))):
+            sub = first_diff_path(expected[idx], actual[idx], f"{path}[{idx}]")
+            if sub is not None:
+                return sub
+        if len(expected) != len(actual):
+            return f"{path}[{min(len(expected), len(actual))}]"
+        return None
+    if expected != actual:
+        return path
+    return None
+
+
+def check_snapshot(content: str) -> tuple[bool, str]:
+    """返回 (是否一致, 失败原因)；校验文件存在性、json diff 与 sha 指纹。"""
+    if not OPENAPI_PATH.exists():
+        return False, f"快照缺失：{OPENAPI_PATH}"
+    if not FINGERPRINT_PATH.exists():
+        return False, f"指纹缺失：{FINGERPRINT_PATH}"
+
+    on_disk = OPENAPI_PATH.read_text(encoding="utf-8")
+    if on_disk != content:
+        detail = "内容不可解析为 JSON，无法定位差异路径"
+        try:
+            diff = first_diff_path(
+                json.loads(on_disk), json.loads(content)
+            )
+        except json.JSONDecodeError as exc:
+            diff = None
+            detail = f"JSON 解析失败：{exc}"
+        if diff is not None:
+            detail = f"首个差异路径 {diff}（磁盘快照 vs 当前 OpenAPI 定义）"
+        return False, f"contracts/openapi.json 与当前 OpenAPI 定义不一致：{detail}"
+
+    recorded = FINGERPRINT_PATH.read_text(encoding="utf-8").strip()
+    if recorded != digest_of(content):
+        return False, "contracts/openapi.sha256 指纹与 openapi.json 字节不匹配"
+    return True, ""
 
 
 def main() -> int:
@@ -48,12 +95,14 @@ def main() -> int:
 
     content = render_openapi()
     if args.check:
-        if check_snapshot(content):
-            print("contract snapshot OK: contracts/openapi.json 与当前 OpenAPI 定义一致")
+        ok, reason = check_snapshot(content)
+        if ok:
+            print("contract snapshot OK")
             return 0
+        print(f"contract snapshot DRIFT: {reason}", file=sys.stderr)
         print(
-            "contract snapshot DRIFT: contracts/openapi.json 与当前 OpenAPI 定义不一致，"
-            "请运行 uv run python scripts/export_openapi.py 重新导出并提交",
+            "请运行 `uv run python scripts/export_openapi.py` 重新导出并提交"
+            "（契约变更需走 [contract] 流程）",
             file=sys.stderr,
         )
         return 1

@@ -17,7 +17,12 @@ from edp_api.modules.registry.router import router as registry_router
 
 def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     """构建 FastAPI 应用；extra_routers 追加注册（默认空）。"""
-    app = FastAPI(title="EDP API")
+    # 路由前缀已含 /api/v1（契约路径完整自包含），故不设 servers
+    app = FastAPI(
+        title="EDP Data Platform API",
+        version="1.0.0",
+        description="EDP 数据平台开放 API：认证、主数据登记（registry）与事件批量入库（events）。",
+    )
 
     app.add_middleware(RequestIDMiddleware)
     install_error_handlers(app)

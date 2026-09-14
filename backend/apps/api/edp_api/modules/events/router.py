@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
-from edp_api.core.errors import EdpError
+from edp_api.core.errors import EdpError, ErrorCode, error_responses
 from edp_api.core.pagination import Page
 from edp_api.core.security.principal import Principal
 from edp_api.modules.events import service as events_service
@@ -36,13 +36,31 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.post(
-    "/batch", response_model=BatchResponse, response_model_exclude_none=True
+    "/batch",
+    response_model=BatchResponse,
+    response_model_exclude_none=True,
+    summary="批量事件入库（幂等重放）",
+    responses=error_responses(
+        ErrorCode.VALIDATION_ERROR,
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+    ),
 )
 async def batch_ingest(
     payload: BatchRequest,
     principal: Annotated[Principal, Depends(require_write("event"))],
     sess: DbSession,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            description=(
+                "幂等键（必填）：同租户同 Key 重放返回存档响应并置 deduplicated=true；"
+                "缺失返回 400"
+            ),
+        ),
+    ] = None,
 ) -> BatchResponse:
     """批量入库（200）；同 Idempotency-Key 重放返回存档响应 + deduplicated=true；
     缺失 Idempotency-Key → 400 VALIDATION_ERROR。"""
@@ -52,7 +70,17 @@ async def batch_ingest(
     return await events_service.ingest_batch(sess, principal, key, payload.events)
 
 
-@router.get("", response_model=Page[EventResponse])
+@router.get(
+    "",
+    response_model=Page[EventResponse],
+    summary="查询事件列表（过滤 + 游标分页）",
+    responses=error_responses(
+        ErrorCode.VALIDATION_ERROR,
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+    ),
+)
 async def list_events(
     principal: Annotated[Principal, Depends(require_read("event"))],
     sess: DbSession,
@@ -78,7 +106,17 @@ async def list_events(
     )
 
 
-@router.get("/{event_id}", response_model=EventResponse)
+@router.get(
+    "/{event_id}",
+    response_model=EventResponse,
+    summary="查询单个事件",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.NOT_FOUND,
+    ),
+)
 async def get_event(
     event_id: UUID,
     principal: Annotated[Principal, Depends(require_read("event"))],

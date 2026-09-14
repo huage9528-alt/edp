@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.config import get_settings
 from edp_api.core.db import bind_tenant, get_db
-from edp_api.core.errors import EdpError
+from edp_api.core.errors import EdpError, ErrorCode, error_responses
 from edp_api.core.security.auth import get_principal, parse_bearer
 from edp_api.core.security.jwt import (
     create_access_token,
@@ -44,7 +44,12 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="用户登录，签发访问与刷新令牌",
+    responses=error_responses(ErrorCode.UNAUTHENTICATED, ErrorCode.TENANT_SUSPENDED),
+)
 async def login(payload: LoginRequest, sess: DbSession) -> TokenResponse:
     slug = payload.tenant_slug or "default"
     tenant = await tenantmgmt_service.get_tenant_by_slug(sess, slug)
@@ -89,7 +94,14 @@ async def login(payload: LoginRequest, sess: DbSession) -> TokenResponse:
     )
 
 
-@router.post("/refresh", response_model=RefreshResponse)
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    summary="刷新访问令牌",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED, ErrorCode.TENANT_SUSPENDED
+    ),
+)
 async def refresh(payload: RefreshRequest, sess: DbSession) -> RefreshResponse:
     claims = decode_token(payload.refresh_token)
     if claims.get("typ") != "refresh":
@@ -120,7 +132,12 @@ async def refresh(payload: RefreshRequest, sess: DbSession) -> RefreshResponse:
     )
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    summary="获取当前用户信息与权限清单",
+    responses=error_responses(ErrorCode.UNAUTHENTICATED),
+)
 async def me(
     request: Request,
     sess: DbSession,

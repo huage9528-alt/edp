@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from edp_api.core.contextvars import current_request_id
 
@@ -121,6 +122,56 @@ class EdpError(Exception):
     @classmethod
     def internal(cls, message: str = "内部错误", *, extra=None) -> "EdpError":
         return cls(ErrorCode.INTERNAL, message, extra=extra)
+
+
+class ErrorBody(BaseModel):
+    """错误体（附录 B.0）；运行时 extra 字段按需并入。"""
+
+    code: str
+    message: str
+    request_id: str
+
+
+class ErrorEnvelope(BaseModel):
+    """统一错误响应包裹：{"error": {code, message, request_id}}。"""
+
+    error: ErrorBody
+
+
+_RESPONSE_DESCRIPTIONS: dict[ErrorCode, str] = {
+    ErrorCode.VALIDATION_ERROR: "参数缺失或格式错误",
+    ErrorCode.UNAUTHENTICATED: "未认证或凭据无效",
+    ErrorCode.FORBIDDEN: "权限不足（scope/权限不满足）",
+    ErrorCode.TENANT_FORBIDDEN: "跨租户访问被拒绝",
+    ErrorCode.TENANT_SUSPENDED: "租户已暂停或状态异常",
+    ErrorCode.GUARD_POLICY_DENIED: "策略拒绝该操作",
+    ErrorCode.NOT_FOUND: "资源不存在（跨租户统一 404，不泄露存在性）",
+    ErrorCode.METHOD_NOT_ALLOWED: "方法不允许",
+    ErrorCode.CONFLICT: "版本冲突（响应附 current_revision）",
+    ErrorCode.INVALID_TRANSITION: "状态机非法转移",
+    ErrorCode.RATE_LIMITED: "请求超出租户限流",
+    ErrorCode.UPSTREAM_UNAVAILABLE: "源系统不可达",
+    ErrorCode.INTERNAL: "内部错误",
+}
+
+
+def error_responses(*codes: ErrorCode) -> dict[str, Any]:
+    """按 HTTP 状态聚合错误码，生成路由 responses={...} OpenAPI 声明。
+
+    仅影响 OpenAPI 文档，不改变运行时行为（运行时统一走 EdpError handler）。
+    """
+    by_status: dict[int, list[ErrorCode]] = {}
+    for code in codes:
+        by_status.setdefault(HTTP_FOR_CODE[code], []).append(code)
+    return {
+        str(status_code): {
+            "description": "；".join(
+                f"{c.value}：{_RESPONSE_DESCRIPTIONS[c]}" for c in code_list
+            ),
+            "model": ErrorEnvelope,
+        }
+        for status_code, code_list in sorted(by_status.items())
+    }
 
 
 def _error_payload(code: ErrorCode, message: str, extra: dict[str, Any] | None = None) -> dict:

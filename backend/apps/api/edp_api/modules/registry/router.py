@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
-from edp_api.core.errors import EdpError
+from edp_api.core.errors import EdpError, ErrorCode, error_responses
 from edp_api.core.pagination import Page
 from edp_api.core.security.principal import Principal
 from edp_api.modules.registry import service as registry_service
@@ -35,7 +35,19 @@ router = APIRouter(
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-@router.post("", response_model=ObjectCreatedResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ObjectCreatedResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="注册或更新业务对象（upsert）",
+    responses=error_responses(
+        ErrorCode.VALIDATION_ERROR,
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.CONFLICT,
+    ),
+)
 async def upsert_object(
     payload: ObjectUpsertRequest,
     response: Response,
@@ -54,7 +66,14 @@ async def upsert_object(
     )
 
 
-@router.get("", response_model=Page[ObjectResponse])
+@router.get(
+    "",
+    response_model=Page[ObjectResponse],
+    summary="组合键查询业务对象列表",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN, ErrorCode.TENANT_SUSPENDED
+    ),
+)
 async def list_objects(
     principal: Annotated[Principal, Depends(require_read("registry"))],
     sess: DbSession,
@@ -79,7 +98,17 @@ async def list_objects(
     )
 
 
-@router.get("/{object_id}", response_model=ObjectResponse)
+@router.get(
+    "/{object_id}",
+    response_model=ObjectResponse,
+    summary="查询单个业务对象",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.NOT_FOUND,
+    ),
+)
 async def get_object(
     object_id: UUID,
     principal: Annotated[Principal, Depends(require_read("registry"))],
@@ -92,7 +121,17 @@ async def get_object(
     return ObjectResponse.model_validate(obj)
 
 
-@router.get("/{object_id}/history", response_model=HistoryResponse)
+@router.get(
+    "/{object_id}/history",
+    response_model=HistoryResponse,
+    summary="查询业务对象版本轨迹",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.NOT_FOUND,
+    ),
+)
 async def object_history(
     object_id: UUID,
     principal: Annotated[Principal, Depends(require_read("registry"))],
