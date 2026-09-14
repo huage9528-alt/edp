@@ -1,4 +1,4 @@
-"""JWT 签发与校验（HS256）：access（完整 claims）/ refresh（仅 sub）双令牌。
+"""JWT 签发与校验（HS256）：access（完整 claims）/ refresh（sub + tenant_id）双令牌。
 
 claims 结构（附录 B.0）：sub / tenant_id / roles / principal_type / is_platform_admin
 + typ='access'|'refresh' + iat + exp；typ 字段的语义校验由调用方（require_access_claims）执行。
@@ -41,11 +41,18 @@ def create_access_token(
     return _encode(claims)
 
 
-def create_refresh_token(user_id: UUID | str) -> str:
-    """签发 refresh token：仅 sub + typ='refresh'，exp = now + refresh_ttl。"""
+def create_refresh_token(user_id: UUID | str, tenant_id: UUID | str) -> str:
+    """签发 refresh token：sub + tenant_id + typ='refresh'，exp = refresh_ttl。
+
+    tenant_id 用途（B.0 未禁止扩展 claims）：users / tenant_members 受
+    FORCE RLS 约束，refresh 端点须先恢复 app.tenant_id 隔离键才能查到
+    用户行——claims 携带租户使 edp_app 连接无需先查库即可 bind_tenant
+    （T9 遗留死锁修复）。roles 不入 refresh claims：换发时按库重查。
+    """
     now = datetime.now(UTC)
     claims: dict[str, Any] = {
         "sub": str(user_id),
+        "tenant_id": str(tenant_id),
         "typ": "refresh",
         "iat": now,
         "exp": now + timedelta(seconds=get_settings().refresh_ttl_seconds),

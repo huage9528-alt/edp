@@ -132,12 +132,13 @@ def test_access_token_roundtrip_all_claims() -> None:
 
 def test_refresh_token_roundtrip() -> None:
     user_id = uuid4()
-    token = create_refresh_token(user_id)
+    tenant_id = uuid4()
+    token = create_refresh_token(user_id, tenant_id)
     claims = decode_token(token)
     assert claims["sub"] == str(user_id)
+    assert claims["tenant_id"] == str(tenant_id)
     assert claims["typ"] == "refresh"
     assert claims["exp"] - claims["iat"] == get_settings().refresh_ttl_seconds
-    assert "tenant_id" not in claims
 
 
 def test_decode_token_expired_raises_unauthenticated() -> None:
@@ -175,7 +176,7 @@ def test_decode_token_wrong_secret_raises_unauthenticated() -> None:
 
 
 def test_require_access_claims_rejects_refresh_token() -> None:
-    token = create_refresh_token(uuid4())
+    token = create_refresh_token(uuid4(), uuid4())
     with pytest.raises(EdpError) as exc_info:
         require_access_claims(token)
     assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
@@ -451,7 +452,7 @@ class _StubSession:
 
 def _api_key_row(*, tenant_status: str = "ACTIVE") -> dict:
     """platform.lookup_api_key（迁移 0006）的返回行：SQL 已过滤
-    status='ACTIVE' 与已过期，Python 侧仅剩租户状态校验。"""
+    status='ACTIVE' 与已过期；租户状态列保留给 tenant_scoped 消费。"""
     return {
         "key_id": uuid4(),
         "tenant_id": uuid4(),
@@ -480,9 +481,10 @@ async def test_principal_from_api_key_no_row_unauthenticated() -> None:
     assert exc_info.value.http_status == 401
 
 
-async def test_principal_from_api_key_tenant_not_active_unauthenticated() -> None:
+async def test_principal_from_api_key_tenant_status_not_auth_concern() -> None:
+    """T10 语义归位：租户状态（SUSPENDED 等）不再由认证层 401——凭据本身
+    有效即返回 Principal，拦截交给业务路由依赖 tenant_scoped（403）。"""
     row = _api_key_row(tenant_status="SUSPENDED")
-    with pytest.raises(EdpError) as exc_info:
-        await principal_from_api_key(_StubSession(row), "h")
-    assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
-    assert exc_info.value.http_status == 401
+    principal = await principal_from_api_key(_StubSession(row), "h")
+    assert principal.id == "agent-hub"
+    assert principal.kind == "SERVICE"

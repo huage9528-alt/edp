@@ -4,6 +4,10 @@ DB 会话遵循 T7 协议：get_principal 从 request.state.db 取 get_db 提供
 请求级会话（不自行开连接）。API Key 查询走 platform.lookup_api_key
 （迁移 0006 的 SECURITY DEFINER 安全例外）：认证发生在租户绑定之前，
 直接查 api_keys 会被 FORCE RLS 过滤为空（T8 Concern #1）。
+
+本层只做凭据有效性判定（401 语义）；租户状态守卫（SUSPENDED → 403
+TENANT_SUSPENDED 等，3.3 传播链 ②）由业务路由依赖 tenant_scoped
+（modules/tenantmgmt/dependencies.py）执行。
 """
 
 from fastapi import Request
@@ -16,7 +20,7 @@ from edp_api.core.security.jwt import require_access_claims
 from edp_api.core.security.principal import Principal
 
 # SECURITY DEFINER（0006）：以属主身份绕过 api_keys 的 FORCE RLS——认证先于
-# 租户绑定的唯一例外路径；函数内置 status='ACTIVE' 与未过期过滤
+# 租户绑定的唯一例外路径；函数内置 Key 自身 status='ACTIVE' 与未过期过滤
 _API_KEY_SQL = text("SELECT * FROM platform.lookup_api_key(CAST(:kh AS TEXT))")
 
 
@@ -32,12 +36,15 @@ def parse_bearer(header: str | None) -> str:
 
 async def principal_from_api_key(sess: AsyncSession, key_hash: str) -> Principal:
     """经 platform.lookup_api_key 查询：Key 不存在/已吊销/已过期（SQL 过滤后
-    函数返回空）或所属租户非 ACTIVE → 401 UNAUTHENTICATED；通过 → Principal。"""
+    函数返回空）→ 401 UNAUTHENTICATED；通过 → Principal。
+
+    不校验所属租户状态（T10 起语义归位）：非 ACTIVE 租户的业务请求由
+    tenant_scoped 统一拦截（403 TENANT_SUSPENDED / TENANT_FORBIDDEN），
+    认证层不把租户状态与凭据有效性混同。
+    """
     row = (await sess.execute(_API_KEY_SQL, {"kh": key_hash})).mappings().first()
     if row is None:
         raise EdpError.unauthenticated("API Key 无效")
-    if row["tenant_status"] != "ACTIVE":
-        raise EdpError.unauthenticated("API Key 所属租户不可用")
     return Principal.from_api_key(row)
 
 

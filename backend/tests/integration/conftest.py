@@ -19,7 +19,12 @@ from urllib.parse import quote
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from testcontainers.community.postgres import PostgresContainer
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -103,4 +108,16 @@ async def app_session(migrated_db: str, app_database_url: str) -> AsyncIterator[
     finally:
         await session.rollback()
         await session.close()
+        await engine.dispose()
+
+
+@pytest.fixture
+async def app_role_engine(migrated_db: str, app_database_url: str) -> AsyncIterator[AsyncEngine]:
+    """edp_app 角色引擎（NOBYPASSRLS，受 RLS 约束）——T10 起集成测试的
+    应用连接形态（与生产 api 同角色）：monkeypatch 到 core.db.get_engine 后，
+    经 get_db 打开的请求会话全部受 FORCE RLS 约束。"""
+    engine = create_async_engine(app_database_url)
+    try:
+        yield engine
+    finally:
         await engine.dispose()
