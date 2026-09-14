@@ -1,0 +1,59 @@
+name: edp-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: edp_migrator
+      POSTGRES_PASSWORD: edp_dev
+      POSTGRES_DB: edp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./pg-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edp_migrator -d edp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@db:5432/edp
+      EDP_JWT_SECRET: dev-secret
+    command: ["uvicorn", "edp_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: apps/worker/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@db:5432/edp
+      EDP_JWT_SECRET: dev-secret
+
+  # 前端服务定义先行；frontend/ 工作区于 T16 交付，默认不启动：`docker compose --profile full up web`
+  web:
+    profiles: ["full"]
+    build:
+      context: ../frontend
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:
