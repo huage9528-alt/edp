@@ -1,0 +1,115 @@
+"""RBAC：角色-权限矩阵 + 权限/scope 判定 + FastAPI 依赖工厂（FORBIDDEN 语义）。"""
+
+from collections.abc import Callable
+from typing import Annotated
+
+from fastapi import Depends
+
+from edp_api.core.errors import EdpError
+from edp_api.core.security.auth import get_principal
+from edp_api.core.security.principal import Principal
+
+# 与种子迁移 migrations/versions/platform/0005_seed.py 的 ROLE_PERMISSION_CODES 保持同步
+ROLE_PERMISSIONS: dict[str, set[str]] = {
+    "PLATFORM_ADMIN": {
+        "registry:read",
+        "registry:write",
+        "event:read",
+        "event:write",
+        "evidence:read",
+        "evidence:write",
+        "decision:read",
+        "decision:decide",
+        "action:read",
+        "action:execute",
+        "audit:read",
+        "tenant:admin",
+    },
+    "ADMIN": {
+        "registry:read",
+        "registry:write",
+        "event:read",
+        "event:write",
+        "evidence:read",
+        "evidence:write",
+        "decision:read",
+        "decision:decide",
+        "action:read",
+        "action:execute",
+        "audit:read",
+    },
+    "MANAGER": {
+        "registry:read",
+        "event:read",
+        "evidence:read",
+        "decision:read",
+        "action:read",
+        "audit:read",
+        "decision:decide",
+        "action:execute",
+        "registry:write",
+        "event:write",
+        "evidence:write",
+    },
+    "ANALYST": {
+        "registry:read",
+        "event:read",
+        "evidence:read",
+        "decision:read",
+        "action:read",
+        "audit:read",
+    },
+    "SERVICE": {
+        "registry:read",
+        "registry:write",
+        "event:read",
+        "event:write",
+        "evidence:read",
+    },
+}
+
+ALL_PERMISSIONS: frozenset[str] = frozenset().union(*ROLE_PERMISSIONS.values())
+
+
+def permission_codes(principal: Principal) -> set[str]:
+    """展开主体权限：platform_admin 通配全部 12 项；否则取角色→权限并集。"""
+    if principal.is_platform_admin:
+        return set(ALL_PERMISSIONS)
+    codes: set[str] = set()
+    for role in principal.roles:
+        codes |= ROLE_PERMISSIONS.get(role, set())
+    return codes
+
+
+def has_permission(principal: Principal, code: str) -> bool:
+    return code in permission_codes(principal)
+
+
+def has_scope(principal: Principal, scope: str) -> bool:
+    return scope in principal.scopes
+
+
+def require_permission(code: str) -> Callable[[Principal], Principal]:
+    """FastAPI 依赖工厂：无对应权限 → 403 FORBIDDEN；通过则回传 Principal。"""
+
+    def dependency(
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> Principal:
+        if not has_permission(principal, code):
+            raise EdpError.forbidden(f"缺少权限：{code}")
+        return principal
+
+    return dependency
+
+
+def require_scope(scope: str) -> Callable[[Principal], Principal]:
+    """FastAPI 依赖工厂：无对应 scope → 403 FORBIDDEN；通过则回传 Principal。"""
+
+    def dependency(
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> Principal:
+        if not has_scope(principal, scope):
+            raise EdpError.forbidden(f"缺少 scope：{scope}")
+        return principal
+
+    return dependency
