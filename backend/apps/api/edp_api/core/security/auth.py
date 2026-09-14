@@ -1,10 +1,10 @@
 """认证依赖：Authorization Bearer（JWT）或 X-API-Key → Principal。
 
 DB 会话遵循 T7 协议：get_principal 从 request.state.db 取 get_db 提供的
-请求级会话（不自行开连接）；本依赖暂不挂载 main.py（T9/T10 接入）。
+请求级会话（不自行开连接）。API Key 查询走 platform.lookup_api_key
+（迁移 0006 的 SECURITY DEFINER 安全例外）：认证发生在租户绑定之前，
+直接查 api_keys 会被 FORCE RLS 过滤为空（T8 Concern #1）。
 """
-
-from datetime import UTC, datetime
 
 from fastapi import Request
 from sqlalchemy import text
@@ -15,15 +15,9 @@ from edp_api.core.security.apikey import hash_key
 from edp_api.core.security.jwt import require_access_claims
 from edp_api.core.security.principal import Principal
 
-_API_KEY_SQL = text(
-    """
-    SELECT k.key_id, k.tenant_id, k.principal_type, k.principal_id, k.scopes,
-           k.expires_at, k.status AS key_status, t.status AS tenant_status
-    FROM platform.api_keys AS k
-    JOIN platform.tenants AS t ON t.tenant_id = k.tenant_id
-    WHERE k.key_hash = :key_hash
-    """
-)
+# SECURITY DEFINER（0006）：以属主身份绕过 api_keys 的 FORCE RLS——认证先于
+# 租户绑定的唯一例外路径；函数内置 status='ACTIVE' 与未过期过滤
+_API_KEY_SQL = text("SELECT * FROM platform.lookup_api_key(CAST(:kh AS TEXT))")
 
 
 def parse_bearer(header: str | None) -> str:
@@ -37,19 +31,11 @@ def parse_bearer(header: str | None) -> str:
 
 
 async def principal_from_api_key(sess: AsyncSession, key_hash: str) -> Principal:
-    """按 key_hash 查 api_keys join tenants；Key 不存在/非 ACTIVE/已过期/租户非
-    ACTIVE 任一不符 → 401 UNAUTHENTICATED；全部通过 → Principal。"""
-    row = (await sess.execute(_API_KEY_SQL, {"key_hash": key_hash})).mappings().first()
+    """经 platform.lookup_api_key 查询：Key 不存在/已吊销/已过期（SQL 过滤后
+    函数返回空）或所属租户非 ACTIVE → 401 UNAUTHENTICATED；通过 → Principal。"""
+    row = (await sess.execute(_API_KEY_SQL, {"kh": key_hash})).mappings().first()
     if row is None:
         raise EdpError.unauthenticated("API Key 无效")
-    if row["key_status"] != "ACTIVE":
-        raise EdpError.unauthenticated("API Key 已吊销")
-    expires_at = row["expires_at"]
-    if expires_at is not None:
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-        if expires_at <= datetime.now(UTC):
-            raise EdpError.unauthenticated("API Key 已过期")
     if row["tenant_status"] != "ACTIVE":
         raise EdpError.unauthenticated("API Key 所属租户不可用")
     return Principal.from_api_key(row)

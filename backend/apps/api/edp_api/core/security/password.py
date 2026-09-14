@@ -1,7 +1,7 @@
 """Argon2id 密码哈希与校验（argon2-cffi，默认参数即 Argon2id）。"""
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 _hasher = PasswordHasher()
 
@@ -12,8 +12,8 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """校验密码与哈希是否匹配；不匹配（VerifyMismatchError）返回 False。"""
+    """校验密码与哈希是否匹配；不匹配或哈希格式非法（InvalidHash）均返回 False。"""
     try:
         return _hasher.verify(password_hash, password)
-    except VerifyMismatchError:
+    except (VerifyMismatchError, InvalidHashError):
         return False

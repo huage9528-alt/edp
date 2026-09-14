@@ -54,6 +54,10 @@ forbidden_modules = [
     "edp_api.modules.*.models",
     "edp_api.modules.*.router",
 ]
+# 设计意图（2.3.2）约束的是"直接跨模块 import"：模块自身 service 允许用自身
+# ORM 映射，跨模块仅准 service.py。forbidden 默认连带传递链（经对方 service
+# 触达其内部 models）会误判该模式，故仅检查直接 import。
+allow_indirect_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -102,6 +102,10 @@ def test_password_wrong_password_fails() -> None:
     assert verify_password("wrong-password", hashed) is False
 
 
+def test_password_invalid_hash_swallowed_as_false() -> None:
+    assert verify_password("any", "not-a-valid-argon2-hash") is False
+
+
 def test_password_hash_salt_randomized() -> None:
     assert hash_password("same") != hash_password("same")
 
@@ -445,20 +449,15 @@ class _StubSession:
         return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: self._row))
 
 
-def _api_key_row(
-    *,
-    key_status: str = "ACTIVE",
-    tenant_status: str = "ACTIVE",
-    expires_at: datetime | None = None,
-) -> dict:
+def _api_key_row(*, tenant_status: str = "ACTIVE") -> dict:
+    """platform.lookup_api_key（迁移 0006）的返回行：SQL 已过滤
+    status='ACTIVE' 与已过期，Python 侧仅剩租户状态校验。"""
     return {
         "key_id": uuid4(),
         "tenant_id": uuid4(),
         "principal_type": "SERVICE",
         "principal_id": "agent-hub",
         "scopes": ["readonly", "write:event"],
-        "expires_at": expires_at,
-        "key_status": key_status,
         "tenant_status": tenant_status,
     }
 
@@ -467,36 +466,18 @@ async def test_principal_from_api_key_valid_row() -> None:
     row = _api_key_row()
     sess = _StubSession(row)
     principal = await principal_from_api_key(sess, hash_key("raw-key"))
-    assert sess.captured_params == {"key_hash": hash_key("raw-key")}
+    assert sess.captured_params == {"kh": hash_key("raw-key")}
     assert principal.id == "agent-hub"
     assert principal.kind == "SERVICE"
     assert principal.scopes == ["readonly", "write:event"]
 
 
 async def test_principal_from_api_key_no_row_unauthenticated() -> None:
+    """无效/已吊销（REVOKED）/已过期的 Key：lookup_api_key 的 SQL 过滤后均无行。"""
     with pytest.raises(EdpError) as exc_info:
         await principal_from_api_key(_StubSession(None), hash_key("unknown"))
     assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
-
-
-async def test_principal_from_api_key_revoked_unauthenticated() -> None:
-    row = _api_key_row(key_status="REVOKED")
-    with pytest.raises(EdpError) as exc_info:
-        await principal_from_api_key(_StubSession(row), "h")
-    assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
-
-
-async def test_principal_from_api_key_expired_unauthenticated() -> None:
-    row = _api_key_row(expires_at=datetime.now(UTC) - timedelta(seconds=1))
-    with pytest.raises(EdpError) as exc_info:
-        await principal_from_api_key(_StubSession(row), "h")
-    assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
-
-
-async def test_principal_from_api_key_future_expiry_ok() -> None:
-    row = _api_key_row(expires_at=datetime.now(UTC) + timedelta(days=30))
-    principal = await principal_from_api_key(_StubSession(row), "h")
-    assert principal.id == "agent-hub"
+    assert exc_info.value.http_status == 401
 
 
 async def test_principal_from_api_key_tenant_not_active_unauthenticated() -> None:
@@ -504,3 +485,4 @@ async def test_principal_from_api_key_tenant_not_active_unauthenticated() -> Non
     with pytest.raises(EdpError) as exc_info:
         await principal_from_api_key(_StubSession(row), "h")
     assert exc_info.value.code == ErrorCode.UNAUTHENTICATED
+    assert exc_info.value.http_status == 401
