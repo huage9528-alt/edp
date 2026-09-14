@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+storybook-static/
+coverage/
+
+# Env & secrets
+.env
+
+# 注意：uv.lock 与 pnpm-lock.yaml 属于锁定交付物，必须提交（勿加入忽略）
