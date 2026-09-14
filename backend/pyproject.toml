@@ -58,3 +58,6 @@ forbidden_modules = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: 集成测试（testcontainers 起 Docker PG，耗时较长；跳过用 -m 'not integration'）",
+]

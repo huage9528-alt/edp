@@ -1,12 +1,25 @@
-"""请求级上下文：request_id ContextVar 与 X-Request-ID 中间件。"""
+"""请求级上下文：request_id / principal / tenant_id ContextVar 与 X-Request-ID 中间件。"""
 
 import uuid
 from contextvars import ContextVar
+from typing import TYPE_CHECKING
 
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+if TYPE_CHECKING:
+    # T8（core/security/principal.py）交付前的前向引用，避免运行时导入
+    from edp_api.core.security.principal import Principal
+
 current_request_id: ContextVar[str | None] = ContextVar("current_request_id", default=None)
+
+# 认证完成后由 T10 租户上下文依赖写入；Principal 类型在 T8 落地
+current_principal: ContextVar["Principal | None"] = ContextVar(
+    "current_principal", default=None
+)
+current_tenant_id: ContextVar[uuid.UUID | None] = ContextVar(
+    "current_tenant_id", default=None
+)
 
 
 class RequestIDMiddleware:

@@ -29,7 +29,7 @@ RLS_TABLES = (
 )
 
 POLICY = "tenant_isolation"
-TENANT_QUAL = "(tenant_id = current_setting('app.tenant_id', true)::uuid)"
+TENANT_QUAL = "(tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"
 
 
 def _enable_rls(table: str) -> None:

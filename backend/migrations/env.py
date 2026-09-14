@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False：迁移与 pytest 同进程时不得禁用既有 logger
+    # （否则后续测试的 caplog 捕获被破坏）
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://edp_migrator:edp_dev@localhost:15432/edp"
 

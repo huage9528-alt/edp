@@ -46,7 +46,9 @@ RLS_TABLES = (
 )
 
 POLICY = "tenant_isolation"
-TENANT_QUAL = "(tenant_id = current_setting('app.tenant_id', true)::uuid)"
+# NULLIF 防御：事务级 set_config 提交/回滚后复位为空串（''::uuid 会抛错），
+# 空串统一归一为 NULL → 隔离判空（0 行），未绑定请求不致 500
+TENANT_QUAL = "(tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"
 
 
 def _enable_rls(table: str) -> None:
