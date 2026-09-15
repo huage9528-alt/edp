@@ -1,11 +1,14 @@
 import { adapterHandlers } from "./handlers/adapters";
+import { auditHandlers } from "./handlers/audit";
 import { authHandlers } from "./handlers/auth";
+import { ebmsHandlers } from "./handlers/ebms";
 import { eventHandlers } from "./handlers/events";
 import { evidenceHandlers } from "./handlers/evidence";
 import { healthHandlers } from "./handlers/health";
 import { qualityHandlers } from "./handlers/quality";
 import { registryHandlers } from "./handlers/registry";
 
+/** W2+W3 六页 MSW 数据层聚合（spec §3 端点清单：28 个 handler）。 */
 export const handlers = [
   ...authHandlers,
   ...registryHandlers,
@@ -14,4 +17,6 @@ export const handlers = [
   ...qualityHandlers,
   ...healthHandlers,
   ...adapterHandlers,
+  ...ebmsHandlers,
+  ...auditHandlers,
 ];
