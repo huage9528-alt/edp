@@ -1,53 +1,40 @@
-"""registry 认证增强依赖：require_read / require_write（双轨判定）。
+"""registry 认证增强依赖：require_read / require_write（薄委托）。
 
-服务主体（API Key，kind = SERVICE/AI）走 scope 轨道：写 = ``write:{resource}``、
-读 = ``readonly``（B.2 "API Key（write:registry / readonly）"）；人主体（JWT，
-kind = HUMAN）走权限轨道：``{resource}:read|write``（RBAC 矩阵）。均挂在
-tenant_scoped 之后（401/403 租户语义先于资源授权语义）。
+双轨判定语义（B.2）归 core.security.rbac.make_require_access 单点实现：
+服务主体（API Key，kind = SERVICE/AI）走 scope 轨道——写 = ``write:registry``、
+读 = ``readonly``；人主体（JWT，kind = HUMAN）走权限轨道 ``registry:read|write``
+（RBAC 矩阵）。本文件仅将其与 tenant_scoped 组装（401/403 租户语义先于
+资源授权语义）。
 """
 
 from typing import Annotated
 
 from fastapi import Depends
 
-from edp_api.core.errors import EdpError
 from edp_api.core.security.principal import Principal
-from edp_api.core.security.rbac import has_permission
+from edp_api.core.security.rbac import make_require_access
 from edp_api.modules.tenantmgmt.dependencies import tenant_scoped
 
 TenantScoped = Annotated[Principal, Depends(tenant_scoped)]
 
 
 def require_write(resource: str):
-    """依赖工厂：SERVICE/AI 需 scope ``write:{resource}``；HUMAN 需权限
-    ``{resource}:write``；否则 403 FORBIDDEN。"""
+    """依赖工厂：tenant_scoped 后接双轨写判定（语义见 make_require_access）。"""
+
+    check = make_require_access(resource, "write")
 
     def dependency(principal: TenantScoped) -> Principal:
-        if principal.kind == "HUMAN":
-            permission = f"{resource}:write"
-            if not has_permission(principal, permission):
-                raise EdpError.forbidden(f"缺少权限：{permission}")
-            return principal
-        scope = f"write:{resource}"
-        if scope not in principal.scopes:
-            raise EdpError.forbidden(f"缺少 scope：{scope}")
-        return principal
+        return check(principal)
 
     return dependency
 
 
 def require_read(resource: str):
-    """依赖工厂：SERVICE/AI 需 scope ``readonly``；HUMAN 需权限
-    ``{resource}:read``；否则 403 FORBIDDEN。"""
+    """依赖工厂：tenant_scoped 后接双轨读判定（语义见 make_require_access）。"""
+
+    check = make_require_access(resource, "read")
 
     def dependency(principal: TenantScoped) -> Principal:
-        if principal.kind == "HUMAN":
-            permission = f"{resource}:read"
-            if not has_permission(principal, permission):
-                raise EdpError.forbidden(f"缺少权限：{permission}")
-            return principal
-        if "readonly" not in principal.scopes:
-            raise EdpError.forbidden("缺少 scope：readonly")
-        return principal
+        return check(principal)
 
     return dependency

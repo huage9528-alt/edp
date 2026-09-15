@@ -1,14 +1,15 @@
 """platform 模块 ORM 映射：身份与授权域表（表由迁移 0001/0005 建立）。
 
-只映射 W1 需要的表（users / roles / permissions / api_keys）；ORM 不参与迁移。
-users / api_keys 受 FORCE RLS 约束；roles / permissions 为全局模板（无 RLS）。
+只映射 W1 需要的表（users / roles / permissions / api_keys /
+idempotency_keys）；ORM 不参与迁移。users / api_keys / idempotency_keys
+受 FORCE RLS 约束；roles / permissions 为全局模板（无 RLS）。
 """
 
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text, Uuid
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text, Uuid, func
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -93,3 +94,21 @@ class ApiKey(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(Text)
     updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class IdempotencyKey(Base):
+    """接口层幂等登记（W1 登记项；FORCE RLS；复合 PK (tenant_id, key)——
+    幂等键按租户命名空间隔离，0007 起生效；读写入口 =
+    本模块 service.load/store_idempotent_response，events 经 service 调用）。"""
+
+    __tablename__ = "idempotency_keys"
+    __table_args__ = {"schema": "platform"}
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    response_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

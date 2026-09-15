@@ -13,7 +13,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 用户登录，签发访问与刷新令牌 */
+        /**
+         * 用户登录，签发访问与刷新令牌
+         * @description 登录（凭据校验/时序硬化/签发归 service.authenticate_and_login）。
+         */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
@@ -47,7 +50,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 刷新访问令牌 */
+        /**
+         * 刷新访问令牌
+         * @description 刷新（claims 校验与重建归 service.refresh_tokens）。
+         */
         post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
         options?: never;
@@ -173,6 +179,26 @@ export interface paths {
          * @description revision 变更轨迹（W1 源 event.outbox，W2 切审计日志）。
          */
         get: operations["object_history_api_v1_objects__object_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取当前租户信息
+         * @description 当前凭据所属租户的 id/slug/name/plan/status。
+         */
+        get: operations["current_tenant_api_v1_tenants_current_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -530,20 +556,6 @@ export interface components {
             /** Expires In */
             expires_in: number;
         };
-        /** TenantInfo */
-        TenantInfo: {
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Status */
-            status: string;
-            /**
-             * Tenant Id
-             * Format: uuid
-             */
-            tenant_id: string;
-        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -552,7 +564,7 @@ export interface components {
             expires_in: number;
             /** Refresh Token */
             refresh_token: string;
-            tenant: components["schemas"]["TenantInfo"];
+            tenant: components["schemas"]["edp_api__modules__platform__schemas__TenantInfo"];
             user: components["schemas"]["UserInfo"];
         };
         /** UserInfo */
@@ -581,6 +593,39 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** TenantInfo */
+        edp_api__modules__platform__schemas__TenantInfo: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /**
+         * TenantInfo
+         * @description 当前租户信息（GET /api/v1/tenants/current）：id/slug/name/plan/status。
+         */
+        edp_api__modules__tenantmgmt__schemas__TenantInfo: {
+            /** Name */
+            name: string;
+            /** Plan */
+            plan: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
         };
     };
     responses: never;
@@ -1143,6 +1188,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    current_tenant_api_v1_tenants_current_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["edp_api__modules__tenantmgmt__schemas__TenantInfo"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

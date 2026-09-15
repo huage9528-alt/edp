@@ -1,21 +1,18 @@
-"""worker 调度辅助：活跃租户清单（platform.tenants，30s 时间缓存）。
+"""worker 调度辅助：活跃租户清单（30s 时间缓存）。
 
-tenants 为平台控制面表（不启用 RLS），worker 以 edp_app 角色可直查；
-W1 简单实现——每轮直查 + monotonic 时间缓存，到期自动刷新。
+清单查询经 tenantmgmt.service.active_tenant_ids（platform.tenants 为该
+模块表——设计文档 2.3.2 模块间仅 service，worker 不直连表）；tenants 为
+平台控制面表（不启用 RLS），worker 以 edp_app 角色可读。W1 简单实现——
+每轮直查 + monotonic 时间缓存，到期自动刷新。
 """
 
 import time
 from uuid import UUID
 
-from sqlalchemy import text
+from edp_api.modules.tenantmgmt import service as tenantmgmt_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _CACHE_TTL_SECONDS = 30.0
-
-_LIST_SQL = text(
-    "SELECT tenant_id FROM platform.tenants"
-    " WHERE status = 'ACTIVE' ORDER BY tenant_id"
-)
 
 _cached_ids: list[UUID] | None = None
 _cached_at: float = 0.0
@@ -27,7 +24,7 @@ async def active_tenant_ids(sess: AsyncSession) -> list[UUID]:
     now = time.monotonic()
     if _cached_ids is not None and now - _cached_at < _CACHE_TTL_SECONDS:
         return list(_cached_ids)
-    ids = list((await sess.execute(_LIST_SQL)).scalars().all())
+    ids = list(await tenantmgmt_service.active_tenant_ids(sess))
     _cached_ids, _cached_at = ids, now
     return list(ids)
 

@@ -792,35 +792,6 @@
         "title": "RefreshResponse",
         "type": "object"
       },
-      "TenantInfo": {
-        "properties": {
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "slug",
-          "name",
-          "status"
-        ],
-        "title": "TenantInfo",
-        "type": "object"
-      },
       "TokenResponse": {
         "properties": {
           "access_token": {
@@ -836,7 +807,7 @@
             "type": "string"
           },
           "tenant": {
-            "$ref": "#/components/schemas/TenantInfo"
+            "$ref": "#/components/schemas/edp_api__modules__platform__schemas__TenantInfo"
           },
           "user": {
             "$ref": "#/components/schemas/UserInfo"
@@ -923,6 +894,70 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "edp_api__modules__platform__schemas__TenantInfo": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "slug",
+          "name",
+          "status"
+        ],
+        "title": "TenantInfo",
+        "type": "object"
+      },
+      "edp_api__modules__tenantmgmt__schemas__TenantInfo": {
+        "description": "当前租户信息（GET /api/v1/tenants/current）：id/slug/name/plan/status。",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "slug",
+          "name",
+          "plan",
+          "status"
+        ],
+        "title": "TenantInfo",
+        "type": "object"
       }
     }
   },
@@ -935,6 +970,7 @@
   "paths": {
     "/api/v1/auth/login": {
       "post": {
+        "description": "登录（凭据校验/时序硬化/签发归 service.authenticate_and_login）。",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -1027,6 +1063,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
+        "description": "刷新（claims 校验与重建归 service.refresh_tokens）。",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "requestBody": {
           "content": {
@@ -1820,6 +1857,58 @@
         "summary": "查询业务对象版本轨迹",
         "tags": [
           "registry"
+        ]
+      }
+    },
+    "/api/v1/tenants/current": {
+      "get": {
+        "description": "当前凭据所属租户的 id/slug/name/plan/status。",
+        "operationId": "current_tenant_api_v1_tenants_current_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/edp_api__modules__tenantmgmt__schemas__TenantInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          }
+        },
+        "summary": "获取当前租户信息",
+        "tags": [
+          "tenants"
         ]
       }
     },

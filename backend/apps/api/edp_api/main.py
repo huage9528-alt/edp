@@ -13,6 +13,7 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.events.router import router as events_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
+from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
 
 
 def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
@@ -34,6 +35,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(registry_router)
     # events 路由（B.3）：业务面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(events_router)
+    # tenantmgmt 路由：GET /tenants/current（tenant_scoped；租户管理 CRUD W2+）
+    app.include_router(tenantmgmt_router)
     for router in extra_routers:
         app.include_router(router)
 

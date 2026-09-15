@@ -1,13 +1,13 @@
-"""events ORM 映射：event.events + event.outbox + platform.idempotency_keys
-（表由迁移 0001/0003 建立）。
+"""events ORM 映射：event.events + event.outbox（表由迁移 0001/0003 建立）。
 
 ORM 不参与迁移（DDL 单一事实来源 = 设计文档附录 A 迁移链）；沿袭 registry
 约定：ORM 列不声明 ForeignKey（跨表外键以迁移 DDL 为准——引用目标在其他
 模块 metadata 中，跨 metadata 声明会在 flush 排序时解析失败）。
 
 outbox 写入口收敛：本模块 service.append_outbox 是唯一写入口（registry 经
-service 调用，不再持有私有映射副本）。idempotency_keys 为 W1 接口层幂等
-登记表（0001 登记项），归 events 批量写入口使用。
+service 调用，不再持有私有映射副本）；worker 分发经 claim_pending_outbox /
+record_outbox_result（同模块 service）。接口层幂等登记表
+platform.idempotency_keys 归 platform 模块（models + service）。
 """
 
 from datetime import datetime
@@ -91,19 +91,3 @@ class Outbox(Base):
     created_by: Mapped[str | None] = mapped_column(Text)
     updated_by: Mapped[str | None] = mapped_column(Text)
 
-
-class IdempotencyKey(Base):
-    """接口层幂等登记（W1 登记项；FORCE RLS；复合 PK (tenant_id, key)——
-    幂等键按租户命名空间隔离，0007 起生效，见 service 文档）。"""
-
-    __tablename__ = "idempotency_keys"
-    __table_args__ = {"schema": "platform"}
-
-    key: Mapped[str] = mapped_column(Text, primary_key=True)
-    tenant_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
-    response_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

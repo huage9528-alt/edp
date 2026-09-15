@@ -44,3 +44,22 @@ async def member_roles_for_user(
         )
     ).scalar_one_or_none()
     return list(roles or [])
+
+
+async def active_tenant_ids(sess: AsyncSession) -> list[UUID]:
+    """活跃（ACTIVE）租户 id 列表（tenant_id 升序）。
+
+    worker 调度清单数据源（模块间仅 service：worker 经本函数读租户表，
+    不直连 platform.tenants）；控制面表不受 RLS，edp_app 角色可读。
+    """
+    return list(
+        (
+            await sess.execute(
+                select(Tenant.tenant_id)
+                .where(Tenant.status == "ACTIVE")
+                .order_by(Tenant.tenant_id)
+            )
+        )
+        .scalars()
+        .all()
+    )

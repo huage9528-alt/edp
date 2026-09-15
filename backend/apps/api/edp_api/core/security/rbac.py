@@ -1,7 +1,7 @@
 """RBAC：角色-权限矩阵 + 权限/scope 判定 + FastAPI 依赖工厂（FORBIDDEN 语义）。"""
 
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends
 
@@ -110,6 +110,40 @@ def require_scope(scope: str) -> Callable[[Principal], Principal]:
     ) -> Principal:
         if not has_scope(principal, scope):
             raise EdpError.forbidden(f"缺少 scope：{scope}")
+        return principal
+
+    return dependency
+
+
+def make_require_access(
+    resource: str, mode: Literal["read", "write"]
+) -> Callable[[Principal], Principal]:
+    """通用双轨判定依赖工厂（B.2/B.3，registry/events 共用语义的单点实现）：
+
+    - HUMAN（JWT）→ 权限轨道 ``{resource}:{mode}``（RBAC 矩阵）；
+    - SERVICE/AI（API Key）→ scope 轨道：write = ``write:{resource}``，
+      read = ``readonly``。
+
+    不满足 → 403 FORBIDDEN，通过回传 Principal。可直接作 FastAPI 依赖
+    （挂 get_principal），或经各模块 dependencies 与 tenant_scoped 组装
+    （模块内 require_read/require_write 即薄委托——租户语义先于资源授权）。
+    """
+
+    def dependency(
+        principal: Annotated[Principal, Depends(get_principal)],
+    ) -> Principal:
+        if principal.kind == "HUMAN":
+            permission = f"{resource}:{mode}"
+            if not has_permission(principal, permission):
+                raise EdpError.forbidden(f"缺少权限：{permission}")
+            return principal
+        if mode == "write":
+            scope = f"write:{resource}"
+            if scope not in principal.scopes:
+                raise EdpError.forbidden(f"缺少 scope：{scope}")
+            return principal
+        if "readonly" not in principal.scopes:
+            raise EdpError.forbidden("缺少 scope：readonly")
         return principal
 
     return dependency

@@ -1,10 +1,11 @@
-"""events 服务：批量入库（三层幂等）/ outbox 写入口 / 游标查询 / 点查。
+"""events 服务：批量入库（三层幂等）/ outbox 读写入口 / 游标查询 / 点查。
 
 幂等三层（设计文档 7.1）：
 1. 接口层——platform.idempotency_keys (tenant, key, endpoint) 命中且未过期
    → 直接反序列化存档响应并置 deduplicated=True，不重算（复合 PK
    (tenant_id, key)＝迁移 0007：幂等键按租户命名空间隔离，跨租户同
-   Key 字符串互不冲突、互不可见）；
+   Key 字符串互不冲突、互不可见）；存档表归 platform 模块——读写经
+   platform.service.load/store_idempotent_response（模块间仅 service）；
 2. 适配器层——event_id = derive_event_id(tenant_ns, source_system|source_id|
    occurred_at|event_type)（uuidv5.py；B.3 批次事件不携带源记录 source_id，
    派生时以 str(object_id) 充当该槽位：同一对象+类型+时刻的重放恒派生相同
@@ -21,26 +22,29 @@ uq_events_idem (tenant_id, idempotency_key) 逐行唯一语义），且同批次
 accepted+duplicated==len 且 rejected==0 才存档（TTL=设置项 idempotency_ttl）。
 
 RLS：会话由 tenant_scoped 预 bind_tenant（FORCE RLS）——object_id 存在性
-校验、幂等表读写、事件写入全部天然限本租户（跨租户 object_id 与不存在
-同义 → rejected）。
+校验（经 registry.service.object_exists）、幂等表读写（经 platform.service）、
+事件写入全部天然限本租户（跨租户 object_id 与不存在同义 → rejected）。
 
 事务边界：本层只 flush 不 commit（请求级提交归 core.db.get_db）；accepted
 事件同事务写 event.outbox（事务性发件箱；event_type 用原事件类型，状态
-流转归 T13 worker）。
+流转归 T13 worker——认领/记果经本模块 claim_pending_outbox /
+record_outbox_result，worker 不直连表）。
 """
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.config import get_settings
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
-from edp_api.modules.events.models import Event, IdempotencyKey, Outbox
+from edp_api.modules.events.models import Event, Outbox
 from edp_api.modules.events.schemas import (
     BatchResponse,
     EventBatchError,
@@ -48,6 +52,8 @@ from edp_api.modules.events.schemas import (
     EventResponse,
 )
 from edp_api.modules.events.uuidv5 import derive_event_id, normalize_occurred_at
+from edp_api.modules.platform import service as platform_service
+from edp_api.modules.registry import service as registry_service
 
 INGEST_ENDPOINT = "/events/batch"
 AGGREGATE_TYPE_EVENT = "EVENT"
@@ -107,66 +113,101 @@ async def outbox_for_aggregate(
     )
 
 
-# ---- 批量入库 ----
+# ---- outbox 分发读口（worker 专用；模块间仅 service，worker 不直连表） ----
 
 
-async def _object_exists(sess: AsyncSession, object_id: UUID) -> bool:
-    """object_id 存在性（RLS 下跨租户/不存在同义）。text SQL 直查 master 表，
-    避免对 registry 模块的反向依赖（registry.service → events.service 单向）。"""
-    found = (
-        await sess.execute(
-            text("SELECT 1 FROM master.business_objects WHERE object_id = :oid"),
-            {"oid": str(object_id)},
-        )
-    ).scalar()
-    return found is not None
+@dataclass(slots=True)
+class ClaimedOutbox:
+    """claim_pending_outbox 认领行（worker 构造 OutboxMessage 的投影）。"""
+
+    outbox_id: int
+    tenant_id: UUID
+    aggregate_type: str
+    aggregate_id: UUID
+    event_type: str
+    payload: dict
+    retry_count: int
 
 
-async def _load_archived_response(
-    sess: AsyncSession, tenant_id: UUID, idem_key: str
-) -> BatchResponse | None:
-    """接口层幂等读档：(tenant_id, key, endpoint) 复合条件命中且未过期 →
-    存档响应 + deduplicated。
+_CLAIM_SQL = text(
+    "SELECT outbox_id, tenant_id, aggregate_type, aggregate_id, event_type,"
+    " payload, retry_count"
+    " FROM event.outbox"
+    " WHERE tenant_id = :tenant_id AND status = 'PENDING'"
+    " AND available_at <= now()"
+    " ORDER BY outbox_id"
+    " LIMIT :limit"
+    " FOR UPDATE SKIP LOCKED"
+)
 
-    RLS：idempotency_keys FORCE RLS，tenant_scoped 已 bind → 查询天然限本
-    租户（跨租户同 key 不可见）；显式 tenant_id 条件为复合 PK (tenant_id,
-    key)（迁移 0007）的无 RLS 会话双保险，且对齐 PK 索引前导列。
+_PUBLISH_RESULT_SQL = text(
+    "UPDATE event.outbox"
+    " SET status = 'PUBLISHED', published_at = now(), updated_at = now()"
+    " WHERE outbox_id = :outbox_id"
+)
+
+# retry_count+1、退避与 FAILED 升级同语句原子落库；UPDATE 右值表达式均引用
+# 旧行值（retry_count = 认领时的值；now() = 事务开始时刻）
+_RETRY_RESULT_SQL = text(
+    "UPDATE event.outbox"
+    " SET retry_count = retry_count + 1,"
+    " status = CASE WHEN retry_count + 1 >= :max_retries THEN 'FAILED'"
+    "  ELSE status END,"
+    " available_at = now() + make_interval(secs => power(2, retry_count + 1)"
+    " * :base_s),"
+    " updated_at = now()"
+    " WHERE outbox_id = :outbox_id"
+    " RETURNING status"
+)
+
+
+async def claim_pending_outbox(
+    sess: AsyncSession, tenant_id: UUID, batch_size: int
+) -> list[ClaimedOutbox]:
+    """认领待分发 outbox 行：FOR UPDATE SKIP LOCKED——多 worker 副本并发
+    同租户天然不双发（行锁互斥，锁内行被跳过）。
+
+    RLS：event.outbox FORCE RLS——调用方（worker）需已 bind_tenant；显式
+    tenant_id 条件双保险。行锁随调用方事务提交/回滚释放。
     """
-    row = (
+    rows = (
+        await sess.execute(_CLAIM_SQL, {"tenant_id": tenant_id, "limit": batch_size})
+    ).mappings().all()
+    return [ClaimedOutbox(**dict(row)) for row in rows]
+
+
+async def record_outbox_result(
+    sess: AsyncSession,
+    outbox_id: int,
+    outcome: Literal["published", "retry", "failed"],
+    backoff_base_s: float,
+    max_retries: int,
+) -> Literal["published", "retry", "failed"]:
+    """记分发结果（与认领同事务）：
+
+    - published → PUBLISHED + published_at；
+    - retry/failed → retry_count+1、available_at = now() + 2^retry_count *
+      backoff_base_s（指数退避），达 max_retries 自动转 FAILED（停止重投）。
+
+    返回实际 outcome（retry 达阈值升级为 failed，调用方按返回值计数）。
+    """
+    if outcome == "published":
+        await sess.execute(_PUBLISH_RESULT_SQL, {"outbox_id": outbox_id})
+        return "published"
+    status = (
         await sess.execute(
-            select(IdempotencyKey.response_json).where(
-                IdempotencyKey.tenant_id == tenant_id,
-                IdempotencyKey.key == idem_key,
-                IdempotencyKey.endpoint == INGEST_ENDPOINT,
-                IdempotencyKey.expires_at > func.now(),
-            )
+            _RETRY_RESULT_SQL,
+            {
+                "outbox_id": outbox_id,
+                "max_retries": max_retries,
+                "base_s": backoff_base_s,
+            },
         )
-    ).scalar_one_or_none()
-    if row is None:
-        return None
-    data = dict(row)
-    data["deduplicated"] = True
-    return BatchResponse.model_validate(data)
+    ).scalar_one()
+    return "failed" if status == "FAILED" else "retry"
 
 
-async def _archive_response(
-    sess: AsyncSession, tenant_id: UUID, idem_key: str, response: BatchResponse
-) -> None:
-    """存档响应摘要（仅全成功批次；TTL 到期自动失效）。并发同 key 重放以
-    ON CONFLICT DO NOTHING 容忍（先到者胜）。"""
-    ttl = get_settings().idempotency_ttl_seconds
-    stmt = (
-        pg_insert(IdempotencyKey)
-        .values(
-            key=idem_key,
-            tenant_id=tenant_id,
-            endpoint=INGEST_ENDPOINT,
-            response_json=response.model_dump(mode="json", exclude_none=True),
-            expires_at=datetime.now(UTC) + timedelta(seconds=ttl),
-        )
-        .on_conflict_do_nothing()
-    )
-    await sess.execute(stmt)
+# ---- 批量入库 ----
 
 
 async def ingest_batch(
@@ -183,9 +224,13 @@ async def ingest_batch(
     """
     tenant_id = principal.tenant_id
 
-    archived = await _load_archived_response(sess, tenant_id, idem_key)
-    if archived is not None:
-        return archived
+    archived_json = await platform_service.load_idempotent_response(
+        sess, tenant_id, idem_key, INGEST_ENDPOINT
+    )
+    if archived_json is not None:
+        data = dict(archived_json)
+        data["deduplicated"] = True
+        return BatchResponse.model_validate(data)
 
     accepted = duplicated = rejected = 0
     errors: list[EventBatchError] = []
@@ -195,7 +240,7 @@ async def ingest_batch(
         event_id = derive_event_id(
             tenant_id, ev.source_system, str(ev.object_id), ev.occurred_at, ev.event_type
         )
-        if not await _object_exists(sess, ev.object_id):
+        if not await registry_service.object_exists(sess, ev.object_id):
             rejected += 1
             errors.append(
                 EventBatchError(
@@ -256,7 +301,14 @@ async def ingest_batch(
         errors=errors or None,
     )
     if rejected == 0 and accepted + duplicated == len(events):
-        await _archive_response(sess, tenant_id, idem_key, response)
+        await platform_service.store_idempotent_response(
+            sess,
+            tenant_id,
+            idem_key,
+            INGEST_ENDPOINT,
+            response.model_dump(mode="json", exclude_none=True),
+            ttl_s=get_settings().idempotency_ttl_seconds,
+        )
     return response
 
 

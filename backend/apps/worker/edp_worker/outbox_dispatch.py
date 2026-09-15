@@ -3,28 +3,30 @@
 流程（每租户一批，单事务）：
 1. bind_tenant——worker 以 edp_app 角色连接，同样受 FORCE RLS 约束，
    分发前必须绑定 app.tenant_id（事务级）；
-2. ``SELECT ... WHERE status='PENDING' AND available_at<=now()
-   ORDER BY outbox_id LIMIT :n FOR UPDATE SKIP LOCKED``——多 worker 副本
-   并发同租户天然不双发（行锁互斥，锁内行被跳过）；
+2. events.service.claim_pending_outbox（FOR UPDATE SKIP LOCKED SELECT 的
+   service 封装）——多 worker 副本并发同租户天然不双发（行锁互斥，锁内
+   行被跳过）；
 3. 逐条构造 OutboxMessage 分发给全部订阅者：全部成功 → PUBLISHED +
-   published_at；任一订阅者抛异常（nack）→ retry_count+1、
-   available_at=now()+2^retry*base_s（指数退避）；retry_count 达
-   outbox_max_retries → FAILED（停止重投）；单条失败不中断本批后续条目；
-4. 单条 UPDATE 落库、批末一次 commit（任一条的订阅者异常都被本层消化，
-   不回滚同批其他条目的状态流转）。
+   published_at；任一订阅者抛异常（nack）→ events.service.
+   record_outbox_result 记 retry_count+1 与指数退避（2^retry * base_s），
+   retry_count 达 outbox_max_retries → FAILED（停止重投）；单条失败不
+   中断本批后续条目；
+4. 批末一次 commit（任一条的订阅者异常都被本层消化，不回滚同批其他
+   条目的状态流转）。
 
+表访问收敛（设计文档 2.3.2：worker 只经模块 service）：出/入队归
+events.service，活跃租户清单归 tenantmgmt.service（见 scheduler.py）。
 订阅者经参数注入（测试接缝：传入错误订阅者即可驱动重投路径）。
 """
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from edp_api.core.config import get_settings
 from edp_api.core.db import bind_tenant
 from edp_api.core.events import OutboxMessage, Subscriber
-from sqlalchemy import text
+from edp_api.modules.events import service as events_service
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from edp_worker.scheduler import active_tenant_ids
@@ -32,36 +34,6 @@ from edp_worker.scheduler import active_tenant_ids
 logger = logging.getLogger("edp.worker.outbox")
 
 DEFAULT_BATCH_SIZE = 100
-
-_PICK_SQL = text(
-    "SELECT outbox_id, tenant_id, aggregate_type, aggregate_id, event_type,"
-    " payload, retry_count"
-    " FROM event.outbox"
-    " WHERE status = 'PENDING' AND available_at <= now()"
-    " ORDER BY outbox_id"
-    " LIMIT :limit"
-    " FOR UPDATE SKIP LOCKED"
-)
-
-_PUBLISH_SQL = text(
-    "UPDATE event.outbox"
-    " SET status = 'PUBLISHED', published_at = now(), updated_at = now()"
-    " WHERE outbox_id = :outbox_id"
-)
-
-_RETRY_SQL = text(
-    "UPDATE event.outbox"
-    " SET retry_count = :retry_count, available_at = :available_at,"
-    " updated_at = now()"
-    " WHERE outbox_id = :outbox_id"
-)
-
-_FAIL_SQL = text(
-    "UPDATE event.outbox"
-    " SET status = 'FAILED', retry_count = :retry_count,"
-    " available_at = :available_at, updated_at = now()"
-    " WHERE outbox_id = :outbox_id"
-)
 
 
 def _empty_stats() -> dict[str, int]:
@@ -82,44 +54,31 @@ async def dispatch_batch(
 
     async with factory() as sess:
         await bind_tenant(sess, tenant_id)
-        rows = (await sess.execute(_PICK_SQL, {"limit": batch_size})).mappings().all()
+        rows = await events_service.claim_pending_outbox(sess, tenant_id, batch_size)
 
         for row in rows:
             msg = OutboxMessage(
-                outbox_id=row["outbox_id"],
-                tenant_id=row["tenant_id"],
-                aggregate_type=row["aggregate_type"],
-                aggregate_id=row["aggregate_id"],
-                event_type=row["event_type"],
-                payload=dict(row["payload"]),
+                outbox_id=row.outbox_id,
+                tenant_id=row.tenant_id,
+                aggregate_type=row.aggregate_type,
+                aggregate_id=row.aggregate_id,
+                event_type=row.event_type,
+                payload=dict(row.payload),
             )
             try:
                 for subscriber in subscribers:
                     await subscriber.on_event(msg)
             except Exception as exc:  # noqa: BLE001 — nack 即退避，单条隔离
-                retry_count = int(row["retry_count"]) + 1
+                outcome = await events_service.record_outbox_result(
+                    sess,
+                    row.outbox_id,
+                    "retry",
+                    settings.outbox_backoff_base_seconds,
+                    settings.outbox_max_retries,
+                )
+                stats["failed" if outcome == "failed" else "retried"] += 1
+                retry_count = row.retry_count + 1
                 delay = (2**retry_count) * settings.outbox_backoff_base_seconds
-                available_at = datetime.now(UTC) + timedelta(seconds=delay)
-                if retry_count >= settings.outbox_max_retries:
-                    await sess.execute(
-                        _FAIL_SQL,
-                        {
-                            "outbox_id": msg.outbox_id,
-                            "retry_count": retry_count,
-                            "available_at": available_at,
-                        },
-                    )
-                    stats["failed"] += 1
-                else:
-                    await sess.execute(
-                        _RETRY_SQL,
-                        {
-                            "outbox_id": msg.outbox_id,
-                            "retry_count": retry_count,
-                            "available_at": available_at,
-                        },
-                    )
-                    stats["retried"] += 1
                 logger.warning(
                     "outbox nack outbox_id=%s retry=%d delay=%.0fs error=%r",
                     msg.outbox_id,
@@ -129,7 +88,13 @@ async def dispatch_batch(
                 )
                 continue
 
-            await sess.execute(_PUBLISH_SQL, {"outbox_id": msg.outbox_id})
+            await events_service.record_outbox_result(
+                sess,
+                row.outbox_id,
+                "published",
+                settings.outbox_backoff_base_seconds,
+                settings.outbox_max_retries,
+            )
             stats["published"] += 1
 
         await sess.commit()

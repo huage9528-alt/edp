@@ -166,6 +166,12 @@ async def get_object(sess: AsyncSession, object_id: UUID) -> BusinessObject | No
     return await sess.get(BusinessObject, object_id)
 
 
+async def object_exists(sess: AsyncSession, object_id: UUID) -> bool:
+    """object_id 存在性（events 批量入库的对象校验入口——模块间仅 service，
+    events 经本函数读 master.business_objects；RLS 下跨租户/不存在同义）。"""
+    return await sess.get(BusinessObject, object_id) is not None
+
+
 async def query_objects(
     sess: AsyncSession,
     *,
