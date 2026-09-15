@@ -1,6 +1,8 @@
+import { adapterHandlers } from "./handlers/adapters";
 import { authHandlers } from "./handlers/auth";
 import { eventHandlers } from "./handlers/events";
 import { evidenceHandlers } from "./handlers/evidence";
+import { healthHandlers } from "./handlers/health";
 import { qualityHandlers } from "./handlers/quality";
 import { registryHandlers } from "./handlers/registry";
 
@@ -10,4 +12,6 @@ export const handlers = [
   ...eventHandlers,
   ...evidenceHandlers,
   ...qualityHandlers,
+  ...healthHandlers,
+  ...adapterHandlers,
 ];
