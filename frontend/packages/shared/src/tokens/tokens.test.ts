@@ -102,6 +102,29 @@ describe("darkTokens ↔ tokens.css .dark（改 CSS 必须同步此模块）", (
   }
 });
 
+describe("dark 派生覆写 ↔ tokens.css .dark 原型变量（T17 Concern #1 决策落地）", () => {
+  // ThemeProvider 不传 algorithm 后，antd 派生灰阶/主色底由这些原型原值接管
+  const darkAliasMap: Record<string, string> = {
+    colorTextTertiary: "--edp-ink-3",
+    colorTextQuaternary: "--edp-ink-3",
+    colorPrimaryBg: "--edp-primary-50",
+    colorPrimaryBgHover: "--edp-primary-100",
+    controlItemBgHover: "--edp-muted",
+    controlItemBgActive: "--edp-border",
+  };
+
+  for (const [token, cssVar] of Object.entries(darkAliasMap)) {
+    it(`${token} === .dark ${cssVar}`, () => {
+      expect(darkTokens[token as keyof typeof darkTokens]).toBe(darkVars[cssVar]);
+    });
+  }
+
+  it("决策前提锁定：暗色 Primary 恰为原型原值 #7b7cf0（darkAlgorithm 会改写为 #6c6ccf）", () => {
+    expect(darkTokens.colorPrimary).toBe(darkVars["--edp-primary"]);
+    expect(darkTokens.colorPrimary).toBe("#7b7cf0");
+  });
+});
+
 describe("13.4.1 映射表硬编码值（双保险）", () => {
   it("亮色核心色板", () => {
     expect(lightTokens.colorPrimary).toBe("#5b5ce2");

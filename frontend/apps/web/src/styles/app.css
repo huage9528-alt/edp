@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* shared 包组件故事（T20 起经 .storybook/main.ts 收录）使用工具类时需要显式纳入扫描 */
+@source "../../../packages/shared/src";
+
 /* Tailwind v4 令牌映射 —— 原样拷贝自 `原型设计/pages/运营总览.html` 行 112~129 */
 @theme inline {
   --color-background: var(--edp-background);

@@ -56,6 +56,19 @@ export const darkTokens = {
   colorWarning: "#d97706",
   colorError: "#df4f5f",
   colorInfo: "#3b82f6",
+  /**
+   * —— 派生 token 覆写（原型来源）——
+   * 决策（T17 Concern #1 / T18 实跑对比落地）：ThemeProvider 不传 algorithm。
+   * antd darkAlgorithm 会改写显式 colorPrimary（#7b7cf0 → #6c6ccf）；去掉
+   * algorithm 后黑底系派生灰（rgba(0,0,0,x)）与亮色主色底（#f0f3ff）不可用，
+   * 故由下列 tokens.css 原型变量原值接管（tokens.test.ts 锁定一致性）。
+   */
+  colorTextTertiary: "#6b7280", // --edp-ink-3 (.dark)；占位符/禁用等三级文本
+  colorTextQuaternary: "#6b7280", // --edp-ink-3 (.dark)；原型无第四档弱化灰，与三级同值
+  colorPrimaryBg: "#1e1f3a", // --edp-primary-50 (.dark)；选中底/主色淡背景
+  colorPrimaryBgHover: "#2a2b4d", // --edp-primary-100 (.dark)
+  controlItemBgHover: "#1c1e2c", // --edp-muted (.dark)；列表行/菜单 hover
+  controlItemBgActive: "#2a2d3d", // --edp-border (.dark)（与 --edp-input 同值）
 } as const;
 
 export type ThemeTokens = typeof lightTokens;
