@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 为 EDP 控制台 W2+W3 六页交付完整 MSW 数据层（fixtures + 28 个 handler + 测试），数据故事对齐 AEOS §10 十类评估场景。
+**Goal:** 为 EDP 控制台 W2+W3 六页交付完整 MSW 数据层（fixtures + 27 个 handler + 测试），数据故事对齐 AEOS §10 十类评估场景。
 
 **Architecture:** `apps/web/src/mocks/` 下分层：`data/`（纯常量 fixtures，固定 UUID + DEMO_NOW 时间锚）→ `handlers/`（按域拆分，游标分页/筛选/写语义/场景注入）→ `handlers.ts` 聚合。browser worker 与 vitest node server 共用同一组 handler。
 
 **Tech Stack:** MSW 2.6、TypeScript（strict）、Vitest（jsdom）、现有 `@edp/api-sdk` 生成类型。
 
-**Spec:** `docs/superpowers/specs/2026-09-15-edp-msw-mock-data.md`（端点清单、数据故事、一致性约束以此为准）。
+**Spec:** `docs/superpowers/specs/2026-09-15-edp-msw-mock-data-design.md`（端点清单、数据故事、一致性约束以此为准）。
 
 ## Global Constraints
 
@@ -1820,10 +1820,12 @@ import { evidenceHandlers } from "./handlers/evidence";
 import { healthHandlers } from "./handlers/health";
 import { qualityHandlers } from "./handlers/quality";
 import { registryHandlers } from "./handlers/registry";
+import { tenantHandlers } from "./handlers/tenant";
 
-/** W2+W3 六页 MSW 数据层聚合（spec §3 端点清单：28 个 handler）。 */
+/** W2+W3 六页 MSW 数据层聚合（spec §3 端点清单：27 个 handler，含 T13-fix 补充的 tenants/current）。 */
 export const handlers = [
   ...authHandlers,
+  ...tenantHandlers,
   ...registryHandlers,
   ...eventHandlers,
   ...evidenceHandlers,
