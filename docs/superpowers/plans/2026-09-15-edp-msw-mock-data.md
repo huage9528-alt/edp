@@ -651,6 +651,7 @@ import {
   EVID_PRJD_READINESS, EVID_S030_DISCONTINUE, OBJ_CUSTOMER_C030A, OBJ_MATERIAL_X100, OBJ_ORDER_A,
   OBJ_ORDER_B, OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J,
   OBJ_PO_00771, OBJ_PO_00785, OBJ_PRODUCT_PF, OBJ_PROJECT_PRJD, OBJ_SUPPLIER_S021, OBJ_SUPPLIER_S030,
+  OBJ_ORDER_R1, OBJ_ORDER_R2,
   mockUuid,
 } from "./ids";
 
@@ -677,7 +678,7 @@ export const evidence: EvidenceRecord[] = [
   { evidence_id: EVID_ORDER_I_DUAL, source_system: "erp", source_record_id: "C-030#compare", object_id: OBJ_CUSTOMER_C030A, checksum: fakeChecksum(0x18f6), snapshot: { records: ["C-030", "C-030-B"], field: "客户名称", conflict: true }, captured_at: hoursBefore(44), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_I }] },
   { evidence_id: EVID_S030_DISCONTINUE, source_system: "erp", source_record_id: "S-030#notice", object_id: OBJ_SUPPLIER_S030, checksum: fakeChecksum(0x64d9), snapshot: { supplier_code: "S-030", discontinuation: true, effective_date: "2026-11-01" }, captured_at: hoursBefore(12), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_J }] },
   { evidence_id: EVID_ORDER_A_SNAPSHOT, source_system: "erp", source_record_id: "SO-2026-00122#v1", object_id: OBJ_ORDER_A, checksum: fakeChecksum(0x22aa), snapshot: { order_no: "SO-2026-00122", amount: 86000, status: "已确认" }, captured_at: hoursBefore(26), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_A }] },
-  ...[OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J, OBJ_ORDER_B, OBJ_ORDER_A].map(
+  ...[OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J, OBJ_ORDER_B, OBJ_ORDER_A, OBJ_ORDER_R1, OBJ_ORDER_R2].map(
     (objectId, i) =>
       ({
         evidence_id: mockUuid(611 + i),
