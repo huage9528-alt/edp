@@ -5,7 +5,7 @@ const config: StorybookConfig = {
   stories: [
     "../src/stories/**/*.stories.tsx",
     // shared 组件故事（T20 起放 packages/shared/src/components）
-    "../../packages/shared/src/**/*.stories.tsx",
+    "../../../packages/shared/src/**/*.stories.tsx",
   ],
   addons: ["@storybook/addon-essentials", "@storybook/addon-a11y"],
   framework: {
