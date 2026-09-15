@@ -67,12 +67,11 @@ describe("路由守卫与壳层渲染", () => {
     expect(document.querySelector('[data-dom-id="global-search"]')).not.toBeNull();
     expect(document.querySelector('[data-dom-id="notifications-btn"]')).not.toBeNull();
     expect(document.querySelector('[data-dom-id="command-palette"]')).not.toBeNull();
-    // 2026-09-15 修订：闭环/决策/行动/候选记忆菜单移除（归 EBMS/中枢）
+    // MANAGER 不属于 ADMIN+ → 闭环组不可见
     expect(document.querySelector('[data-dom-id="nav-cases"]')).toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-memory"]')).toBeNull();
   });
 
-  it("analyst1（只读角色）：工具/Trace/演练回放挪入运维监控组后全角色可见", async () => {
+  it("analyst1（无 ADMIN）看不到闭环组；ADMIN+ 可见", async () => {
     useSessionStore.getState().setSession(sessionOf("analyst1", ["ANALYST"]));
     renderAt("/admin/overview");
 
@@ -81,11 +80,7 @@ describe("路由守卫与壳层渲染", () => {
     });
     expect(document.querySelector('[data-dom-id="nav-cases"]')).toBeNull();
     expect(document.querySelector('[data-dom-id="nav-decisions"]')).toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-actions"]')).toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-memory"]')).toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-tools"]')).not.toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-traces"]')).not.toBeNull();
-    expect(document.querySelector('[data-dom-id="nav-drills"]')).not.toBeNull();
+    expect(document.querySelector('[data-dom-id="nav-tools"]')).toBeNull();
   });
 
   it("退出登录：清 session 回 /login", async () => {
@@ -93,7 +88,7 @@ describe("路由守卫与壳层渲染", () => {
     renderAt("/admin/overview");
 
     await waitFor(() => {
-      expect(document.querySelector('[data-dom-id="nav-tools"]')).not.toBeNull();
+      expect(document.querySelector('[data-dom-id="nav-cases"]')).not.toBeNull();
     });
     fireEvent.click(document.querySelector('[data-dom-id="user-menu"]')!);
     fireEvent.click(await screen.findByText("退出登录"));

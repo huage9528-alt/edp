@@ -18,8 +18,7 @@ const withTitle = (title: string) => ({
   handle: { title } satisfies RouteHandle,
 });
 
-/** 13.3 路由表：除 /login 外全部落在壳层布局内（W1 一律占位，后续周次逐页替换）。
- * 【2026-09-15 修订】闭环案例/决策/行动/候选记忆路由移除（归 EBMS/Agent 中枢）。 */
+/** 13.3 路由表全量：除 /login 外全部落在壳层布局内（W1 一律占位，后续周次逐页替换）。 */
 export const routes: RouteObject[] = [
   {
     path: "/login",
@@ -48,9 +47,13 @@ export const routes: RouteObject[] = [
       { path: "admin/systems", ...withTitle("系统健康") },
       { path: "tenants", ...withTitle("租户管理") },
       { path: "tenants/:tenant_id", ...withTitle("租户详情") },
-      // 【2026-09-15 修订】闭环案例/决策/行动/候选记忆路由移除（页面归 EBMS/Agent 中枢）
+      { path: "cases", ...withTitle("闭环案例") },
+      { path: "cases/:case_id", ...withTitle("案例详情") },
+      { path: "decisions", ...withTitle("决策") },
+      { path: "actions", ...withTitle("行动") },
       { path: "admin/tools", ...withTitle("Agent 工具") },
       { path: "admin/traces", ...withTitle("Trace 检索") },
+      { path: "admin/memory", ...withTitle("候选记忆") },
       { path: "admin/drills", ...withTitle("演练回放") },
       {
         path: "search",

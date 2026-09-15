@@ -1,13 +1,17 @@
 import { App as AntdApp } from "antd";
 import {
   Activity,
+  Brain,
+  Briefcase,
   Building2,
   ChevronDown,
   History,
   Layers,
   LayoutDashboard,
+  ListChecks,
   Plug,
   Route as RouteIcon,
+  Scale,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -18,7 +22,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { planLabel, roleLabel } from "@edp/shared";
+import { canSeeGroup, planLabel, roleLabel } from "@edp/shared";
 import { useSessionStore } from "../features/auth/session-store";
 import { initials } from "../lib/labels";
 import { TenantSwitchModal } from "./TenantSwitchModal";
@@ -50,15 +54,20 @@ const OPS_MONITOR: NavEntry[] = [
   { to: "/admin/audit", domId: "nav-governance", nav: "governance", label: "审计日志", icon: ScrollText },
   { to: "/admin/adapters", domId: "nav-adapters", nav: "adapters", label: "适配器管理", icon: Plug },
   { to: "/admin/systems", domId: "nav-systems", nav: "systems", label: "系统健康", icon: Activity },
-  // 【2026-09-15 修订】闭环案例/决策/行动/候选记忆移除（归 EBMS/中枢）；
-  // 工具/Trace/演练回放为 EDP 自身功能，挪入运维监控组
-  { to: "/admin/tools", domId: "nav-tools", nav: "tools", label: "Agent 工具", icon: Wrench },
-  { to: "/admin/traces", domId: "nav-traces", nav: "traces", label: "Trace 检索", icon: RouteIcon },
-  { to: "/admin/drills", domId: "nav-drills", nav: "drills", label: "演练回放", icon: History },
 ];
 
 const PLATFORM_CONFIG: NavEntry[] = [
   { to: "/tenants", domId: "nav-tenants", nav: "tenants", label: "租户管理", icon: Building2 },
+];
+
+const CLOSED_LOOP: NavEntry[] = [
+  { to: "/cases", domId: "nav-cases", nav: "cases", label: "闭环案例", icon: Briefcase },
+  { to: "/decisions", domId: "nav-decisions", nav: "decisions", label: "决策", icon: Scale },
+  { to: "/actions", domId: "nav-actions", nav: "actions", label: "行动", icon: ListChecks },
+  { to: "/admin/tools", domId: "nav-tools", nav: "tools", label: "Agent 工具", icon: Wrench },
+  { to: "/admin/traces", domId: "nav-traces", nav: "traces", label: "Trace 检索", icon: RouteIcon },
+  { to: "/admin/memory", domId: "nav-memory", nav: "memory", label: "候选记忆", icon: Brain },
+  { to: "/admin/drills", domId: "nav-drills", nav: "drills", label: "演练回放", icon: History },
 ];
 
 function NavItemLink({ entry }: { entry: NavEntry }) {
@@ -142,6 +151,14 @@ export function Sidebar() {
         {PLATFORM_CONFIG.map((entry) => (
           <NavItemLink key={entry.domId} entry={entry} />
         ))}
+        {canSeeGroup("closed_loop", user?.roles ?? [], Boolean(user?.is_platform_admin)) && (
+          <>
+            <NavGroupTitle title="闭环与 Agent" />
+            {CLOSED_LOOP.map((entry) => (
+              <NavItemLink key={entry.domId} entry={entry} />
+            ))}
+          </>
+        )}
       </nav>
       <div className="p-3.5 border-t border-border">
         <div className="flex items-center gap-2.5">
