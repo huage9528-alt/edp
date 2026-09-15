@@ -533,7 +533,7 @@ export function findObject(id: string): ObjectResponse | undefined {
 
 **Commit**: `feat(w2): mocks fixtures —— 固定 UUID 表与 23 个业务对象（十类场景输入侧）`
 
-## Task 5: data/events.ts（57 条）
+## Task 5: data/events.ts（55 条）
 
 **新建** `apps/web/src/mocks/data/events.ts`：
 
