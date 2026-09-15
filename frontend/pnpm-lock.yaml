@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@edp/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tanstack/react-query':
         specifier: ^5.59.0
         version: 5.102.8(react@18.3.1)
@@ -101,7 +104,11 @@ importers:
 
   packages/api-sdk: {}
 
-  packages/shared: {}
+  packages/shared:
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.5.1)(jiti@2.7.0)(jsdom@25.0.1)(lightningcss@1.32.0)(msw@2.15.0(@types/node@26.5.1)(typescript@5.6.3))
 
 packages:
 
