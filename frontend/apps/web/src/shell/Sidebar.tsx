@@ -22,8 +22,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { canSeeClosedLoop, useSessionStore } from "../features/auth/session-store";
-import { initials, planLabel, roleLabel } from "../lib/labels";
+import { canSeeGroup, planLabel, roleLabel } from "@edp/shared";
+import { useSessionStore } from "../features/auth/session-store";
+import { initials } from "../lib/labels";
 import { TenantSwitchModal } from "./TenantSwitchModal";
 
 interface NavEntry {
@@ -150,7 +151,7 @@ export function Sidebar() {
         {PLATFORM_CONFIG.map((entry) => (
           <NavItemLink key={entry.domId} entry={entry} />
         ))}
-        {canSeeClosedLoop(user) && (
+        {canSeeGroup("closed_loop", user?.roles ?? [], Boolean(user?.is_platform_admin)) && (
           <>
             <NavGroupTitle title="闭环与 Agent" />
             {CLOSED_LOOP.map((entry) => (

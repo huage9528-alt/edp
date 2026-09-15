@@ -10,5 +10,11 @@ export type {
   RequestOptions,
   TokenResponse,
 } from "./client";
-export { backoffDelay, createSingleFlight, parseRetryAfter } from "./interceptors";
+export {
+  backoffDelay,
+  createSingleFlight,
+  createTenantSuspendedHandler,
+  parseRetryAfter,
+} from "./interceptors";
+export type { EdpErrorBody } from "./interceptors";
 export type { components, operations, paths } from "./generated/schema";

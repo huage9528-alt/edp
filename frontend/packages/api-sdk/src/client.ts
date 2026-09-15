@@ -1,5 +1,11 @@
 import type { components } from "./generated/schema";
-import { backoffDelay, createSingleFlight, parseRetryAfter } from "./interceptors";
+import {
+  backoffDelay,
+  createSingleFlight,
+  createTenantSuspendedHandler,
+  parseRetryAfter,
+  type EdpErrorBody,
+} from "./interceptors";
 
 type Schemas = components["schemas"];
 
@@ -98,23 +104,25 @@ const FALLBACK_CODE: Record<number, EdpErrorCode> = {
   503: "UPSTREAM_UNAVAILABLE",
 };
 
-async function toApiError(resp: Response): Promise<EdpApiError> {
-  let code: EdpErrorCode = FALLBACK_CODE[resp.status] ?? "INTERNAL";
-  let message = `请求失败（HTTP ${resp.status}）`;
-  let requestId: string | undefined;
+async function readErrorBody(resp: Response): Promise<unknown> {
   try {
-    const body = (await resp.json()) as {
-      error?: { code?: string; message?: string; request_id?: string };
-    } | null;
-    if (body?.error) {
-      if (body.error.code) code = body.error.code as EdpErrorCode;
-      if (body.error.message) message = body.error.message;
-      requestId = body.error.request_id;
-    }
+    return await resp.json();
   } catch {
-    // 非 JSON 响应体：保留状态码 fallback。
+    return null; // 非 JSON 响应体：保留状态码 fallback。
   }
-  return new EdpApiError({ status: resp.status, code, message, requestId });
+}
+
+function apiErrorFrom(status: number, body: unknown): EdpApiError {
+  let code: EdpErrorCode = FALLBACK_CODE[status] ?? "INTERNAL";
+  let message = `请求失败（HTTP ${status}）`;
+  let requestId: string | undefined;
+  const err = (body as EdpErrorBody | null | undefined)?.error;
+  if (err) {
+    if (err.code) code = err.code as EdpErrorCode;
+    if (err.message) message = err.message;
+    requestId = err.request_id;
+  }
+  return new EdpApiError({ status, code, message, requestId });
 }
 
 async function parseBody<T>(resp: Response): Promise<T> {
@@ -132,6 +140,9 @@ export function createClient(options: EdpClientOptions): EdpClient {
   const sleep: (ms: number) => Promise<void> =
     options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const tenantSuspended = createTenantSuspendedHandler(() =>
+    options.onTenantSuspended?.(),
+  );
 
   /** 直接 POST /auth/refresh（不走拦截器链，避免自触发 401 重放）。 */
   async function postRefresh(): Promise<{ tokens: ClientTokens; expiresIn: number }> {
@@ -157,7 +168,7 @@ export function createClient(options: EdpClientOptions): EdpClient {
         message: "网络错误，请检查网络连接后重试",
       });
     }
-    if (!resp.ok) throw await toApiError(resp);
+    if (!resp.ok) throw apiErrorFrom(resp.status, await readErrorBody(resp));
     const data = (await resp.json()) as {
       access_token?: string;
       refresh_token?: string;
@@ -223,7 +234,7 @@ export function createClient(options: EdpClientOptions): EdpClient {
           options.setTokens?.(null);
           options.onUnauthorized?.();
         }
-        throw await toApiError(resp);
+        throw apiErrorFrom(resp.status, await readErrorBody(resp));
       }
 
       if (resp.status === 429 && attempt < maxRetries) {
@@ -237,9 +248,11 @@ export function createClient(options: EdpClientOptions): EdpClient {
         return parseBody<T>(resp);
       }
 
-      const err = await toApiError(resp);
-      if (err.code === "TENANT_SUSPENDED") options.onTenantSuspended?.();
-      throw err;
+      // TENANT_SUSPENDED 横幅（13.8）：判定逻辑单点在 interceptors（可单测），
+      // client 只把 (status, body) 喂给判定器——命中即回调 onTenantSuspended。
+      const body = await readErrorBody(resp);
+      tenantSuspended(resp.status, body);
+      throw apiErrorFrom(resp.status, body);
     }
   }
 

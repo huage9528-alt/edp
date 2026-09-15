@@ -2,7 +2,11 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "./client";
-import { backoffDelay, createSingleFlight } from "./interceptors";
+import {
+  backoffDelay,
+  createSingleFlight,
+  createTenantSuspendedHandler,
+} from "./interceptors";
 
 const BASE = "http://api.test";
 const server = setupServer();
@@ -48,6 +52,58 @@ describe("createSingleFlight 刷新单飞", () => {
     expect(await fn()).toBe(1);
     expect(await fn()).toBe(2);
     expect(calls).toBe(2);
+  });
+});
+
+describe("createTenantSuspendedHandler 横幅判定（13.8）", () => {
+  it("403 + TENANT_SUSPENDED → 触发一次并返回 true", () => {
+    const onSuspended = vi.fn();
+    const judge = createTenantSuspendedHandler(onSuspended);
+    const hit = judge(403, {
+      error: { code: "TENANT_SUSPENDED", message: "租户已暂停", request_id: "r10" },
+    });
+    expect(hit).toBe(true);
+    expect(onSuspended).toHaveBeenCalledTimes(1);
+  });
+
+  it("其他 403（别的错误码/无 code/非 JSON body）不触发", () => {
+    const onSuspended = vi.fn();
+    const judge = createTenantSuspendedHandler(onSuspended);
+    expect(judge(403, { error: { code: "FORBIDDEN", message: "权限不足" } })).toBe(false);
+    expect(judge(403, { error: { code: "TENANT_FORBIDDEN" } })).toBe(false);
+    expect(judge(403, { error: {} })).toBe(false);
+    expect(judge(403, null)).toBe(false);
+    expect(onSuspended).not.toHaveBeenCalled();
+  });
+
+  it("非 403 的 TENANT_SUSPENDED body 不触发（状态码必须 403）", () => {
+    const onSuspended = vi.fn();
+    const judge = createTenantSuspendedHandler(onSuspended);
+    expect(judge(401, { error: { code: "TENANT_SUSPENDED" } })).toBe(false);
+    expect(judge(200, { error: { code: "TENANT_SUSPENDED" } })).toBe(false);
+    expect(onSuspended).not.toHaveBeenCalled();
+  });
+
+  it("client 接线：业务响应 403+TENANT_SUSPENDED → onTenantSuspended 恰调一次并抛 EdpApiError", async () => {
+    const onTenantSuspended = vi.fn();
+    server.use(
+      http.get(`${BASE}/api/v1/things`, () =>
+        HttpResponse.json(
+          {
+            error: { code: "TENANT_SUSPENDED", message: "租户已暂停", request_id: "r11" },
+          },
+          { status: 403 },
+        ),
+      ),
+    );
+    const client = createClient({
+      baseUrl: BASE,
+      getAccessToken: () => "some-access",
+      onTenantSuspended,
+    });
+    const err = await client.get("/api/v1/things").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 403, code: "TENANT_SUSPENDED" });
+    expect(onTenantSuspended).toHaveBeenCalledTimes(1);
   });
 });
 

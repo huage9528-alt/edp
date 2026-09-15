@@ -92,13 +92,3 @@ export const useSessionStore = create<SessionState>()(
 );
 
 export const useIsLoggedIn = () => useSessionStore((s) => Boolean(s.accessToken));
-
-/** 13.5：闭环与 Agent 组仅 PLATFORM_ADMIN/ADMIN 可见。 */
-export function canSeeClosedLoop(user: SessionUser | null): boolean {
-  if (!user) return false;
-  return (
-    user.is_platform_admin ||
-    user.roles.includes("ADMIN") ||
-    user.roles.includes("PLATFORM_ADMIN")
-  );
-}
