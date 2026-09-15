@@ -54,3 +54,5 @@ Branch: feat/w2-msw-mocks
 | T12 | DONE | cc6de57 | 32 测试绿；评审 Approved |
 | T13 | DONE | 6caa4d7 | 37 测试绿；评审 Approved 但发现 spec §3.1 tenants/current 计划遗漏 | 
 | T13-fix | DONE | 1ff8328 | 补 tenant handler + 3 测试（40 绿）；聚合注释改 27；spec 标题"28"与表格 27 本身不符——记入偏差 |
+| T14 | DONE | 16e5d3b | 50 测试绿；评审 Approved |
+| T15 | DONE | - | lint 绿；178/178 测试（api-sdk 22/shared 92/web 64）；build 绿；node 冒烟 3/3（P1=3、tenants/current、health）；无需收尾 commit |
