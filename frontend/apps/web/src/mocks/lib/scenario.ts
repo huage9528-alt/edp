@@ -1,8 +1,8 @@
-import { HttpResponse } from "msw";
+import { HttpResponse, type DefaultBodyType } from "msw";
 import { errorOf } from "./http";
 
 /** X-Mock-Scenario 注入（spec §5.2）：仅显式携带请求头时生效，驱动 EDP-201 拦截器链联调。 */
-export function scenarioResponse(request: Request): HttpResponse | null {
+export function scenarioResponse(request: Request): HttpResponse<DefaultBodyType> | null {
   const s = request.headers.get("X-Mock-Scenario");
   if (!s) return null;
   if (s === "429") {
