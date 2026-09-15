@@ -24,7 +24,7 @@ uv run python scripts/export_openapi.py --check  # 校验：不符 exit 1 并打
 1. **后端导出 diff 门禁**（`.github/workflows/backend.yml` → `contract-gate` job）：
    重导出 OpenAPI 与磁盘快照逐字节比对（JSON 深度 diff 定位首个差异路径 + sha256 指纹校验），
    不一致 exit 1 —— 防止后端路由/模型变更未同步快照；
-2. **前端 SDK 指纹门禁**（`.github/workflows/frontend.yml` → `sdk-fingerprint-gate` job，T22 交付）：
+2. **前端 SDK 指纹门禁**（`.github/workflows/frontend.yml` → `contract-fingerprint-gate` job，T22 交付）：
    重算 `contracts/openapi.json` 的 sha256 与 `openapi.sha256`、
    `frontend/packages/api-sdk/src/generated/fingerprint.json` 三方比对，
    不一致 exit 1 —— 防止契约变更未重新生成 SDK。

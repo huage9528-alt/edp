@@ -24,6 +24,7 @@ uv run lint-imports  # 模块依赖规则检查
 | `make backend-test` | `cd backend; uv run pytest` |
 | `make backend-migrate-check` | `cd backend; uv run alembic upgrade head; uv run alembic downgrade base; uv run alembic upgrade head` |
 | `make contract-export` | `cd backend; uv run python scripts/export_openapi.py` |
+| `make contract-gate` | `cd frontend; node scripts/check-contract-fingerprint.mjs` |
 | `make frontend-lint` | `cd frontend; pnpm -r lint` |
 | `make frontend-test` | `cd frontend; pnpm -r test` |
 | `make verify-all` | 依次执行上述全部 |
