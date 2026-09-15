@@ -255,21 +255,44 @@ async def _timed_login(client: httpx.AsyncClient, payload: dict) -> float:
     return elapsed_ms
 
 
+def _median(samples: list[float]) -> float:
+    ordered = sorted(samples)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
 async def test_login_timing_user_enumeration_hardened(client: httpx.AsyncClient) -> None:
-    """两路径各执行恰好一次 argon2 校验：时间差应在噪声范围内（<50ms，
-    宽松阈值防调度抖动；各取两次最小值再比较）。"""
+    """两路径各执行恰好一次 argon2 校验：中位数时间差应显著小于单次 argon2
+    校验耗时。阈值动态取 max(30ms, 0.5×t_verify)——若硬化被破坏（缺用户路径
+    少跑一次 argon2），差值 ≈ t_verify 必然超阈；满载噪声由 5 样本中位数吸收。"""
+    from edp_api.core.security.password import hash_password, verify_password
+
     # 预热：首请求含引擎连接建立/JIT 等一次性开销
     warm = await client.post(
         LOGIN, json={"username": "admin", "password": SEED_PASSWORD}
     )
     assert warm.status_code == 200
 
-    missing = min(
-        await _timed_login(client, {"username": "no-such-user", "password": "x"}),
-        await _timed_login(client, {"username": "no-such-user", "password": "x"}),
+    # 实测本机单次 argon2 verify 耗时（与登录路径同一哈希器配置）
+    probe_hash = hash_password("timing-probe")
+    t0 = perf_counter()
+    assert verify_password("timing-probe", probe_hash)
+    t_verify_ms = (perf_counter() - t0) * 1000
+
+    missing_samples = [
+        await _timed_login(client, {"username": "no-such-user", "password": "x"})
+        for _ in range(5)
+    ]
+    wrong_pw_samples = [
+        await _timed_login(client, {"username": "manager1", "password": "x"})
+        for _ in range(5)
+    ]
+    missing = _median(missing_samples)
+    wrong_pw = _median(wrong_pw_samples)
+    threshold = max(30.0, 0.5 * t_verify_ms)
+    assert abs(missing - wrong_pw) < threshold, (
+        f"timing delta {abs(missing - wrong_pw):.1f}ms >= threshold {threshold:.1f}ms "
+        f"(t_verify={t_verify_ms:.1f}ms) — 用户枚举时序硬化疑似失效"
     )
-    wrong_pw = min(
-        await _timed_login(client, {"username": "manager1", "password": "x"}),
-        await _timed_login(client, {"username": "manager1", "password": "x"}),
-    )
-    assert abs(missing - wrong_pw) < 50
