@@ -20,8 +20,6 @@ jobs:
     defaults:
       run:
         working-directory: frontend
-    # TODO(T16): frontend pnpm workspace 就绪后移除此守卫
-    if: hashFiles('frontend/pnpm-lock.yaml') != ''
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

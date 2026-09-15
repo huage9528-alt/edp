@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* Tailwind v4 令牌映射 —— 原样拷贝自 `原型设计/pages/运营总览.html` 行 112~129 */
+@theme inline {
+  --color-background: var(--edp-background);
+  --color-foreground: var(--edp-foreground);
+  --color-card: var(--edp-card);
+  --color-card-foreground: var(--edp-card-foreground);
+  --color-popover: var(--edp-popover);
+  --color-popover-foreground: var(--edp-popover-foreground);
+  --color-primary: var(--edp-primary);
+  --color-primary-foreground: var(--edp-primary-foreground);
+  --color-muted: var(--edp-muted);
+  --color-muted-foreground: var(--edp-muted-foreground);
+  --color-border: var(--edp-border);
+  --color-input: var(--edp-input);
+  --color-ring: var(--edp-ring);
+  --radius-sm: var(--edp-radius-small);
+  --radius-md: var(--edp-radius-medium);
+  --radius-lg: var(--edp-radius-large);
+}
+
+@layer base {
+  body { background: var(--edp-background); color: var(--edp-foreground); }
+  td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+  th { @apply whitespace-nowrap; }
+}
+
+/* critical-layout —— 原样拷贝自 `原型设计/pages/运营总览.html` 行 206~236 */
+.page-shell { display: flex; min-height: 100vh; }
+.sidebar { width: 250px; flex: 0 0 250px; }
+.topbar { height: 66px; }
+.main-stage { flex: 1 1 auto; margin-left: 250px; padding-top: 66px; }
+.page-content { padding: 24px; max-width: 1440px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.bg-state-success { background-color: var(--edp-state-success); }
+.text-state-success { color: var(--edp-state-success); }
+.bg-state-success-bg { background-color: var(--edp-state-success-bg); }
+.bg-state-warning { background-color: var(--edp-state-warning); }
+.text-state-warning { color: var(--edp-state-warning); }
+.bg-state-warning-bg { background-color: var(--edp-state-warning-bg); }
+.bg-state-error { background-color: var(--edp-state-error); }
+.text-state-error { color: var(--edp-state-error); }
+.bg-state-error-bg { background-color: var(--edp-state-error-bg); }
+.bg-state-info { background-color: var(--edp-state-info); }
+.text-state-info { color: var(--edp-state-info); }
+.bg-state-info-bg { background-color: var(--edp-state-info-bg); }
+.bg-primary-light { background-color: var(--edp-primary-50); }
+.bg-primary-50 { background-color: var(--edp-primary-50); }
+@media (max-width: 1200px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .three-col { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+}
