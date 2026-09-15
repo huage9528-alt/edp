@@ -44,12 +44,13 @@ services:
       EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@db:5432/edp
       EDP_JWT_SECRET: dev-secret
 
-  # 前端服务定义先行；frontend/ 工作区于 T16 交付，默认不启动：`docker compose --profile full up web`
+  # 前端：nginx 托管 SPA + /api 反代到 api 服务（VITE_API_BASE 构建期置空 = 同源相对路径）
   web:
-    profiles: ["full"]
     build:
       context: ../frontend
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ""
     depends_on:
       - api
     ports:

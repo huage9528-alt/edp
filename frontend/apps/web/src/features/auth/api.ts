@@ -10,7 +10,8 @@ export function setTenantSuspendedNotifier(notifier: () => void): void {
 
 /** api-sdk 客户端单例（EDP-105）：token 读写接 session store，会话失效交由路由守卫跳登录。 */
 export const apiClient = createClient({
-  baseUrl: import.meta.env.VITE_API_BASE || "http://localhost:8000",
+  // VITE_API_BASE=''（web 容器构建）= 同源相对路径，经 nginx /api 反代；未设置（本地 dev）= 直连本地 api
+  baseUrl: import.meta.env.VITE_API_BASE ?? "http://localhost:8000",
   getAccessToken: () => useSessionStore.getState().accessToken,
   getRefreshToken: () => useSessionStore.getState().refreshToken,
   setTokens: (tokens) => {
