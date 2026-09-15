@@ -1,15 +1,18 @@
 /**
- * 13.8 导航权限矩阵测试（设计文档 13.6.5 导航权限行 + 13.5 闭环组规则）。
+ * 13.8 导航权限矩阵测试（三组矩阵；2026-09-15 修订后无闭环组）。
  */
 import { describe, expect, it } from "vitest";
 import { NAV_GROUP_RULES, canSeeGroup } from "./index";
 
-describe("NAV_GROUP_RULES 四组矩阵", () => {
-  it("数据工作台/运维监控全角色；平台配置仅 PLATFORM_ADMIN；闭环组 ADMIN+", () => {
+describe("NAV_GROUP_RULES 三组矩阵", () => {
+  it("数据工作台/运维监控全角色；平台配置仅 PLATFORM_ADMIN", () => {
     expect(NAV_GROUP_RULES.workbench).toBe("all");
     expect(NAV_GROUP_RULES.ops_monitor).toBe("all");
     expect(NAV_GROUP_RULES.platform_config).toEqual(["PLATFORM_ADMIN"]);
-    expect(NAV_GROUP_RULES.closed_loop).toEqual(["PLATFORM_ADMIN", "ADMIN"]);
+  });
+
+  it("修订后不再存在闭环组（closed_loop 已移除，页面归 EBMS/中枢）", () => {
+    expect("closed_loop" in NAV_GROUP_RULES).toBe(false);
   });
 });
 
@@ -29,14 +32,7 @@ describe("canSeeGroup", () => {
     expect(canSeeGroup("platform_config", [], false)).toBe(false);
   });
 
-  it("闭环与 Agent：PLATFORM_ADMIN/ADMIN 可见，MANAGER/ANALYST 不可见", () => {
-    expect(canSeeGroup("closed_loop", ["ADMIN"], false)).toBe(true);
-    expect(canSeeGroup("closed_loop", ["PLATFORM_ADMIN"], false)).toBe(true);
-    expect(canSeeGroup("closed_loop", ["MANAGER", "ANALYST"], false)).toBe(false);
-    expect(canSeeGroup("closed_loop", ["MANAGER"], true)).toBe(true);
-  });
-
   it("多角色并集命中任一即可见", () => {
-    expect(canSeeGroup("closed_loop", ["ANALYST", "ADMIN"], false)).toBe(true);
+    expect(canSeeGroup("platform_config", ["PLATFORM_ADMIN", "ADMIN"], false)).toBe(true);
   });
 });

@@ -290,10 +290,8 @@ frontend/
 │           │   ├── adapters/     #   适配器管理
 │           │   ├── systems/      #   系统健康
 │           │   ├── tenants/      #   租户管理（列表/详情/成员/配额）
-│           │   ├── cases/        #   闭环案例（M4 关键）
-│           │   ├── decisions/    #   决策
-│           │   ├── actions/      #   行动（9 态状态机）
-│           │   ├── tools/ traces/ memory/ drills/   # Agent 工具/Trace/候选记忆/演练回放
+│           │   ├── tools/ traces/ drills/  # Agent 工具/Trace/演练回放（运维监控组）
+│           │   │                             # 【2026-09-15 修订】cases/decisions/actions 目录移交 EBMS 仓库、memory 页删除（评审归中枢）
 │           │   ├── auth/         #   登录/会话
 │           │   └── search/       #   全局搜索
 │           ├── components/       # 17 条通用模式封装（13.7）
@@ -869,7 +867,7 @@ services:
 | EDP-101~105 | W1 | monorepo 脚手架、Antd Token 主题映射（13.4）、壳层骨架（13.5）、9 个核心组件（13.7）、api-sdk 自动生成 + 契约 SHA256 CI（13.9） | Storybook 视觉对齐原型基线；契约变化 PR 自动失败 |
 | EDP-201~203 | W2 | Query 客户端拦截器（13.9.2）、运营总览页、业务对象页 | KPI 卡 + 链路状态实时展示；chip 过滤 + 游标分页 |
 | EDP-301~304 | W3 | 事件流（含回放向导）、证据库（含重索引向导 + verify）、数据质量（含重校验弹窗）、系统健康页 | 对应设计稿交互全覆盖 |
-| EDP-401~404 | W4 | 审计日志、适配器管理、闭环案例页（M4 关键）、决策/行动页 | 一屏讲完闭环叙事；422 按 allowed_to 重渲染 |
+| EDP-401~404 | W4 | 审计日志、适配器管理、~~闭环案例页（M4 关键）、决策/行动页~~【2026-09-15 修订：EDP-403/404 移交 EBMS 线，本前端仅保留 EDP-401/402】 | 一屏讲完闭环叙事（由 EBMS 承载）；422 按 allowed_to 重渲染（EBMS 侧） |
 | EDP-501~503 | W5 | 租户 6 页 + 切换、演练回放、Agent 工具/Trace/记忆页 | 租户全生命周期可演示 |
 | EDP-601~604 | W6 | 错误页收口、Playwright E2E、Storybook 视觉回归基线、文档归档 | 错误码 13 种全覆盖；CI 强制通过 |
 
@@ -944,17 +942,18 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
   ├─ 数据质量  /admin/quality         （+ 重校验弹窗 + 任务日志抽屉）
   ├─ 审计日志  /admin/audit           （+ 导出/新建策略弹窗）
   ├─ 适配器管理 /admin/adapters        （+ 新增/测试/连接弹窗 + 日志抽屉）
-  └─ 系统健康  /admin/systems         （HA 状态 + 备份 + 告警渠道）
+  ├─ 系统健康  /admin/systems         （HA 状态 + 备份 + 告警渠道）
+  ├─ Agent 工具 /admin/tools          （EDP-011 注册中心 + EDP-015 只读工具 API 视图）
+  ├─ Trace 检索 /admin/traces         （EDP-013 存储方检索）
+  └─ 演练回放  /admin/drills          （W5 三项演练记录）
 平台配置
   └─ 租户管理  /tenants               （列表/详情/成员/配额 + 4 弹窗）
-闭环与 Agent（无高保真稿，按 13.6.5 规范）
-  ├─ 闭环案例  /cases  /cases/:id     （M4 演示关键页）
-  ├─ 决策      /decisions
-  ├─ 行动      /actions
-  ├─ Agent 工具 /admin/tools
-  ├─ Trace    /admin/traces
-  ├─ 候选记忆  /admin/memory
-  └─ 演练回放  /admin/drills          （W5 三项演练记录）
+【2026-09-15 修订】依据《AEOS 一阶段执行计划》复核：原"闭环与 Agent"组移除——
+闭环案例 /cases、决策 /decisions、行动 /actions 为 EBMS 页面（决策案例/Action 管理
+系 Fullstack B 职责，见 AEOS 计划团队分工与第八节 EBMS 页面设计）；候选记忆
+/admin/memory 评审流转归 Agent 中枢（W6），EDP 仅保留存储 API（EDP-014）。
+Agent 工具/Trace 检索/演练回放为 EDP 自身功能，挪入运维监控组（与 13.1
+"EDP 控制台与 EBMS 页面完全不重叠"原则一致）。
 全局：/login、403/404/500 错误页、全局搜索空态
 ```
 
@@ -971,14 +970,14 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 | 9 | 系统健康 | `/admin/systems` | —（MSW 先行） | 侧边栏 |
 | 10 | 租户管理 | `/tenants` | 租户管理 | 侧边栏 |
 | 11 | 租户详情 | `/tenants/:tenant_id` | —（复用租户管理三联卡） | 表格行 |
-| 12 | 闭环案例 | `/cases` | —（13.6.5） | 总览时间线 |
-| 13 | 案例详情 | `/cases/:case_id` | 风险详情-抽屉（升级为整页） | 案例表/风险卡 |
-| 14 | 决策 | `/decisions` | —（13.6.5） | 案例详情 |
-| 15 | 行动 | `/actions` | —（13.6.5） | 决策页 |
-| 16 | Agent 工具 | `/admin/tools` | —（13.6.5） | 侧边栏（运维监控组） |
-| 17 | Trace 检索 | `/admin/traces` | —（13.6.5） | Agent 工具页 |
-| 18 | 候选记忆 | `/admin/memory` | —（13.6.5） | Trace 页 |
-| 19 | 演练回放 | `/admin/drills` | —（只读展示） | 系统健康页 |
+| ~~12~~ | ~~闭环案例~~ | ~~`/cases`~~ | 【2026-09-15 修订】移交 EBMS（EDP 供 B.5/B.9 API） | — |
+| ~~13~~ | ~~案例详情~~ | ~~`/cases/:case_id`~~ | 【2026-09-15 修订】移交 EBMS | — |
+| ~~14~~ | ~~决策~~ | ~~`/decisions`~~ | 【2026-09-15 修订】移交 EBMS | — |
+| ~~15~~ | ~~行动~~ | ~~`/actions`~~ | 【2026-09-15 修订】移交 EBMS | — |
+| 16 | Agent 工具 | `/admin/tools` | —（13.6.5 修订版） | 侧边栏（运维监控组） |
+| 17 | Trace 检索 | `/admin/traces` | —（13.6.5 修订版） | 侧边栏（运维监控组） |
+| ~~18~~ | ~~候选记忆~~ | ~~`/admin/memory`~~ | 【2026-09-15 修订】删除（评审归中枢；EDP 仅留 EDP-014 存储 API） | — |
+| 19 | 演练回放 | `/admin/drills` | —（只读展示） | 侧边栏（运维监控组） |
 | 20 | 错误页 | `/403 /404 /500` | —（复用空态模式） | 全局 |
 | 21 | 全局搜索结果/空态 | `/search?q=` | 搜索无结果-空态 | 顶栏搜索 |
 
@@ -1055,7 +1054,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 |---|---|
 | 侧边栏·Logo 区 | 高 70px，Logo + 产品名 |
 | 侧边栏·租户切换器 | 常驻卡片按钮：租户头像 + 名称 + 套餐·环境副标题 + 下拉箭头；点击弹出租户切换弹窗（13.6.4）；当前租户高亮 + "当前"徽标 |
-| 侧边栏·导航 | 分四组（13.3），项 = 图标 + 文字（12px），激活态 primary 底色圆角块；`闭环与 Agent` 组仅 PLATFORM_ADMIN/ADMIN 可见 |
+| 侧边栏·导航 | 分三组（13.3；【2026-09-15 修订】原第四组"闭环与 Agent"移除，工具/Trace/演练回放并入运维监控），项 = 图标 + 文字（12px），激活态 primary 底色圆角块 |
 | 侧边栏·用户区 | 头像 + 姓名 + 角色名 + 设置按钮（设置含主题切换） |
 | 顶栏·面包屑 | `EDP / {当前页名}`（`data-slot="crumb"`） |
 | 顶栏·全局搜索 | 330px 输入框，placeholder"搜索对象、事件、证据…"；回车跳 `/search?q=`，跨 objects/events/evidence 三索引查询 |
@@ -1159,17 +1158,18 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 - **租户注销为强确认**（13.7 模式 10）：输入租户 slug 解锁确认按钮 + 原因必填 + 双人复核提示 → `POST /tenants/{id}/cancel {confirm:true, reason}`；
 - 生命周期操作：暂停/恢复（`POST /tenants/{id}/suspend|resume`，SUSPENDED 租户徽标即时变 warning）。
 
-#### 13.6.5 闭环与 Agent 页（无高保真稿，按本规范实现，复用 13.7 模式）
+#### 13.6.5 运维监控补充页与【2026-09-15 修订】边界重划
+
+> **修订**：依据《AEOS 一阶段执行计划》复核，本节原规划的 EDP 控制台页面边界重划——
+> 闭环案例/案例详情/决策/行动四页**移交 EBMS**（Fullstack B，AEOS 计划第八节 EBMS 页面：
+> TOP DECISION/决策案例/Action 管理/证据浏览；EDP 保留 B.5/B.9 数据 API 供给，
+> EDP-028 聚合 API 不变）；候选记忆页删除（评审流转 W6 归 Agent 中枢，EDP 仅存
+> EDP-014 存储 API）。以下三页为 EDP 自身功能，归运维监控组：
 
 | 页面 | 规格 | API |
 |---|---|---|
-| 闭环案例 `/cases` | 筛选（状态 OPEN/DECIDED/CANCELLED + 风险等级）+ 表格（案例编号 case_no / 问题 / 风险 pill / 状态 / 创建时间 / 操作） | `GET /decisions/cases` |
-| 案例详情 `/cases/:id`（**M4 关键**） | 一屏闭环叙事：① 问题卡（question + context 影响说明 + 风险 pill + 选项列表）② 证据链横向图（Result→Decision→Evidence→源记录，节点可点开证据详情/verify）③ Steps 时间线（事件→案例→审批记录→Action 状态推进，Human-Only 节点带人形图标）④ 关联风险抽屉（复用风险详情抽屉） | `GET /decisions/cases/{id}`、`GET /evidence?ref_type=CASE`、`GET /actions?case_id=` |
-| 决策 `/decisions` | 待决列表 + 决策表单（选项 radio = case.options + 意见 textarea）；提交为 Human-Only，AI principal 不可见按钮 | `POST /decisions/cases/{id}/records` |
-| 行动 `/actions` | 9 态状态机可视化（状态矩阵/时间线双视图）+ 状态流转操作（allowed_to 驱动按钮渲染，422 后按服务端返回重渲染）+ Human-Only 转移（APPROVED→EXECUTING、COMPLETED→VERIFIED）人形图标标注 | `GET /actions`、`PATCH /actions/{id}/status` |
 | Agent 工具 `/admin/tools` | 已注册能力卡（name/domain/risk_level L 系/permission/endpoint）+ 工具清单（`/tools/*` 只读接口在线试查表单：选工具 + 参数 → JSON 响应 + evidence_hint 展示） | `GET /capabilities`、`GET /tools/*` |
 | Trace `/admin/traces` | 筛选（agent_id/task_id/capability）+ Trace 列表 + 详情（执行 DAG：输入→工具调用链（seq/latency/status）→LLM 输出 + token_usage + evidence_refs 链接） | `GET /traces`、`GET /traces/{id}` |
-| 候选记忆 `/admin/memory` | CANDIDATE 列表 + 评审操作（批准/拒绝 + 意见，Human-Only）+ APPROVED 知识库视图 | `GET /memories`、`PATCH /memories/{id}/review` |
 | 演练回放 `/admin/drills` | W5 三项演练只读记录卡（HA 切换/PITR/租户恢复：时间线 + RTO/RPO 实测值 + 手册链接） | 演练记录数据集（W5 产出） |
 
 ### 13.7 通用组件与交互模式（17 条，`components/` 封装）
@@ -1198,7 +1198,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 
 - **租户上下文**：登录响应的 `tenant` 写入上下文；非平台运营用户租户固定（切换器只读展示）；PLATFORM_ADMIN 经租户切换弹窗调 `POST /tenants/{id}/context`，切换后全站 Query 缓存清空重拉（`queryClient.clear()`），页面数据即时切至目标租户，面包屑旁显示当前租户徽标；
 - **SUSPENDED 呈现**：任何接口返回 `403 TENANT_SUSPENDED` → 顶栏横幅"当前租户已暂停，请联系平台管理员"，写操作全部禁用；
-- **导航权限**：侧边栏分组按角色渲染——`平台配置`（租户管理）仅 PLATFORM_ADMIN；`闭环与 Agent` 组 ADMIN+；`数据工作台/运维监控` 全角色（ANALYST 只读：所有写按钮隐藏，依赖后端 RBAC 兜底）；
+- **导航权限**：侧边栏分组按角色渲染——`平台配置`（租户管理）仅 PLATFORM_ADMIN；`数据工作台/运维监控`（含 Agent 工具/Trace 检索/演练回放）全角色（ANALYST 只读：所有写按钮隐藏，依赖后端 RBAC 兜底）；【2026-09-15 修订】原"闭环与 Agent"组移除（闭环案例/决策/行动归 EBMS、候选记忆归中枢，见 13.6.5 修订注）；
 - **Human-Only 呈现**：决策审批、Action 执行/验证、记忆评审等 Human-Only 操作按钮带"人形"图标 + tooltip"仅人工可执行"；服务 principal（AI）请求被拒的记录在审计页 GUARD_DENIED 高亮。
 
 ### 13.9 前后端契约与状态处理
@@ -1225,7 +1225,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 | MSW | 契约冻结前 + 后端未就绪页面（系统健康/演练回放/W4 前的 cases）用 MSW handler 按 B 组响应示例造数，切换仅改环境变量 |
 | Playwright E2E | ① M4 闭环脚本：登录 → 总览风险卡 → 风险抽屉 → 案例详情证据链 → 审批 → Action 执行 → Verified；② 多租户隔离：A 租户数据在 B 租户上下文不可见（403/空列表断言）；选择器全用 `data-dom-id` |
 | 视觉对齐 | EDP-102（W1）以原型截图为基线建 Storybook 对照；偏差走 PR 评审 |
-| 演示支撑 | M4 演示 7 分钟叙事脚本：① 总览开场（1min KPI+风险）→ ② 风险抽屉下钻（1.5min 时间线+证据）→ ③ 案例详情一屏讲证据链（2min Result→Decision→Evidence→源记录 + verify）→ ④ HITL 审批 + Action 闭环（1.5min）→ ⑤ 回到总览看闭环事件回流（1min）；演示数据由 EDP-016 一键 seed（覆盖 AEOS 计划 §10 十类评估场景）+ 重放 |
+| 演示支撑 | M4 演示 7 分钟叙事脚本：① 总览开场（1min KPI+风险）→ ② 风险抽屉下钻（1.5min 时间线+证据）→ ③ 案例详情一屏讲证据链（2min Result→Decision→Evidence→源记录 + verify）→ ④ HITL 审批 + Action 闭环（1.5min）→ ⑤ 回到总览看闭环事件回流（1min）【2026-09-15 修订：③④页面载体为 EBMS；EDP 控制台承担①②⑤与数据 API】；演示数据由 EDP-016 一键 seed（覆盖 AEOS 计划 §10 十类评估场景）+ 重放 |
 
 ---
 
