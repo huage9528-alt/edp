@@ -182,3 +182,9 @@ frontend/
 - 21 主页面中除登录/壳层/占位外的业务页面实现；
 - Redis、MQ、Patroni HA、备份（W5）；
 - Playwright E2E 与视觉回归基线（W6 EDP-602/603，W1 仅预留 data-dom-id）。
+
+## 9. 偏差登记（评审后批准）
+
+- **ModalForm 位于 apps/web 而非 packages/shared**：实现依赖 antd（Modal/Form 组件与 Web 技术栈耦合，shared 为框架无关的 antd-free 层），plan T20 已载明该取舍，属既定决策非漏项。
+- **种子 API Key scopes 含 write:event / write:registry**：B.2/B.3 写路径（POST /objects、POST /events/batch）仅支持 API Key 认证（JWT 人主体走权限轨），规格 §3.3 所写 "readonly" 为笔误；种子以 `['readonly','write:event','write:registry']` 落地（migrations/platform/0005_seed）。
+- **session-store（zustand persist）超出 §13.2 字面清单**：§13.2 未覆盖"无服务端会话端点时 token/用户/租户的客户端持久化"场景；W1 无 logout/会话查询端点，localStorage 持久化（`edp-session`）是该形态下登录态续存与租户切换展示的必要客户端状态。
