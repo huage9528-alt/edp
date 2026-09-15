@@ -1,6 +1,8 @@
 import { Alert, Button, Input } from "antd";
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { EdpApiError } from "@edp/api-sdk";
+import { apiClient } from "./api";
 import { useSessionStore } from "./session-store";
 
 interface LoginError {
@@ -8,7 +10,7 @@ interface LoginError {
   network: boolean;
 }
 
-/** W1 直接 fetch（T21 api-sdk 就绪后替换）；错误码语义对齐附录 B.0/B.1。 */
+/** EDP-105：经 api-sdk client 登录（拦截器/错误结构见 13.9.2，错误码语义对齐附录 B.0/B.1）。 */
 export function LoginPage() {
   const [tenant, setTenant] = useState("");
   const [username, setUsername] = useState("");
@@ -26,37 +28,24 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const base = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-      const resp = await fetch(`${base}/api/v1/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username,
-          password,
-          tenant_slug: tenant || undefined,
-        }),
-      });
-      if (resp.ok) {
-        setSession(await resp.json());
-        navigate(redirect, { replace: true });
-        return;
-      }
-      const body = (await resp.json().catch(() => null)) as {
-        error?: { code?: string; message?: string };
-      } | null;
-      const code = body?.error?.code;
-      if (resp.status === 403 && code === "TENANT_SUSPENDED") {
-        setError({ message: "租户已暂停，请联系平台管理员", network: false });
-      } else if (resp.status === 401) {
-        setError({ message: "用户名或密码错误", network: false });
+      const resp = await apiClient.login(username, password, tenant || undefined);
+      setSession(resp);
+      navigate(redirect, { replace: true });
+      return;
+    } catch (err) {
+      if (err instanceof EdpApiError) {
+        if (err.code === "NETWORK_ERROR") {
+          setError({ message: "无法连接服务", network: true });
+        } else if (err.status === 403 && err.code === "TENANT_SUSPENDED") {
+          setError({ message: "租户已暂停，请联系平台管理员", network: false });
+        } else if (err.status === 401) {
+          setError({ message: "用户名或密码错误", network: false });
+        } else {
+          setError({ message: err.message || "登录失败，请稍后重试", network: false });
+        }
       } else {
-        setError({
-          message: body?.error?.message || "登录失败，请稍后重试",
-          network: false,
-        });
+        setError({ message: "登录失败，请稍后重试", network: false });
       }
-    } catch {
-      setError({ message: "无法连接服务", network: true });
     } finally {
       setSubmitting(false);
     }

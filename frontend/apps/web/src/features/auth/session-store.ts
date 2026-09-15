@@ -45,6 +45,7 @@ interface SessionState {
   tenant: SessionTenant | null;
   setSession: (resp: AuthTokenResponse) => void;
   setTenant: (tenant: SessionTenant) => void;
+  updateTokens: (tokens: { accessToken: string; refreshToken: string }) => void;
   clearSession: () => void;
 }
 
@@ -73,6 +74,8 @@ export const useSessionStore = create<SessionState>()(
           },
         }),
       setTenant: (tenant) => set({ tenant }),
+      updateTokens: (tokens) =>
+        set({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken }),
       clearSession: () =>
         set({ accessToken: null, refreshToken: null, user: null, tenant: null }),
     }),
