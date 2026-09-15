@@ -21,6 +21,7 @@
   --radius-sm: var(--edp-radius-small);
   --radius-md: var(--edp-radius-medium);
   --radius-lg: var(--edp-radius-large);
+  --shadow-2: var(--edp-shadow-2);
 }
 
 @layer base {
@@ -35,6 +36,8 @@
 .topbar { height: 66px; }
 .main-stage { flex: 1 1 auto; margin-left: 250px; padding-top: 66px; }
 .page-content { padding: 24px; max-width: 1440px; }
+/* 侧边栏导航激活态 —— 拷贝自原型各页公共样式（.nav-item.active） */
+.nav-item.active { background: var(--edp-primary-50); color: var(--edp-primary); }
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
