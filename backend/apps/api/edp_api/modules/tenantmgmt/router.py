@@ -2,8 +2,8 @@
 
 tenant_scoped（认证 → 租户状态 → bind_tenant）后按 principal.tenant_id
 回读控制面租户行（tenants 不受 RLS）；租户行缺失统一 404（不泄露存在性）。
-W2+ 租户管理 CRUD（POST /tenants 等）挂 platform.dependencies.
-require_platform_admin 在此扩展。
+W2 租户生命周期 CRUD（POST /tenants 等，require_platform_admin）见
+platform_router.py。
 """
 
 from typing import Annotated

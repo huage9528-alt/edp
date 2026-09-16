@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from edp_api.core.contextvars import current_principal
 from edp_api.core.errors import EdpError
 from edp_api.core.security.auth import get_principal
 from edp_api.core.security.principal import Principal
@@ -18,7 +19,12 @@ from edp_api.core.security.principal import Principal
 async def require_platform_admin(
     principal: Annotated[Principal, Depends(get_principal)],
 ) -> Principal:
-    """非平台管理员 → 403 FORBIDDEN；通过回传 Principal。"""
+    """非平台管理员 → 403 FORBIDDEN；通过回传 Principal。
+
+    通过后写 current_principal contextvar（与 tenant_scoped 同法）——
+    平台级写操作（租户生命周期等）的审计切面据此归因 actor。
+    """
     if not principal.is_platform_admin:
         raise EdpError.forbidden("需要平台管理员权限")
+    current_principal.set(principal)
     return principal

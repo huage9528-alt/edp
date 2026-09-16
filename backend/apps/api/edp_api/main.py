@@ -23,6 +23,7 @@ from edp_api.modules.events.router import router as events_router
 from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
+from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,10 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(events_router)
     # tenantmgmt 路由：GET /tenants/current（tenant_scoped；租户管理 CRUD W2+）
     app.include_router(tenantmgmt_router)
+    # tenantmgmt 平台级路由（EDP-024）：租户生命周期（开通/清单/详情/暂停/
+    # 恢复/注销）——require_platform_admin 守卫，平台级无租户绑定（不挂
+    # tenant_scoped）；后于 /current 注册，避免 /{tenant_id} 先匹配吞并
+    app.include_router(tenant_platform_router)
     # audit 路由（B.6）：查询面，统一挂 tenant_scoped（租户收敛见 service）
     app.include_router(audit_router)
     # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
