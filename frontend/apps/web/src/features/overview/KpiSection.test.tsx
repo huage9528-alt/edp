@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { KpiSection } from "./KpiSection";
-import { fmt, fmtCompact } from "../../lib/labels";
+import { fmt, fmtCompact, relTime } from "../../lib/labels";
 import { adapters } from "../../mocks/data/adapters";
 import { health } from "../../mocks/data/health";
 
@@ -41,6 +41,7 @@ describe("KpiSection 8 KPI 网格", () => {
     expect(screen.getByText("待人工复核")).toBeInTheDocument();
     expect(screen.getByText("过去 24 小时")).toBeInTheDocument();
     expect(screen.getByText("近 7 天")).toBeInTheDocument();
+    expect(screen.getByText("+今日")).toBeInTheDocument();
   });
 
   it("DLQ=6>0 → 该卡图标块 warning 底色，其余卡不受影响", () => {
@@ -76,5 +77,17 @@ describe("数值格式化工具（lib/labels）", () => {
     expect(fmtCompact(15230)).toBe("15.2K");
     expect(fmtCompact(1000)).toBe("1,000");
     expect(fmtCompact(999)).toBe("999");
+  });
+
+  it("relTime：刚刚 / N 分钟前 / N 小时前 / N 天前；>30 天与未来时间回退 MM-DD HH:mm", () => {
+    const now = Date.now();
+    expect(relTime(new Date(now - 30_000).toISOString())).toBe("刚刚");
+    expect(relTime(new Date(now - 18 * 60_000).toISOString())).toBe("18 分钟前");
+    expect(relTime(new Date(now - 5 * 3_600_000).toISOString())).toBe("5 小时前");
+    expect(relTime(new Date(now - 2 * 86_400_000).toISOString())).toBe("2 天前");
+    expect(relTime(new Date(now - 30 * 86_400_000).toISOString())).toBe("30 天前");
+    expect(relTime(new Date(now - 31 * 86_400_000).toISOString())).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(relTime(new Date(now + 3_600_000).toISOString())).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(relTime("not-a-date")).toBe("not-a-date");
   });
 });

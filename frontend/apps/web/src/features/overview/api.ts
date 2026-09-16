@@ -3,6 +3,7 @@ import type {
   AdapterSummary,
   AuditLogItem,
   EventResponse,
+  EvidenceRecord,
   ExceptionItem,
   HealthResponse,
   ObjectResponse,
@@ -28,4 +29,9 @@ export const overviewApi = {
   recentEvents: () => apiClient.get<Page<EventResponse>>(`${BASE}/events?limit=5`),
   recentAudit: () => apiClient.get<Page<AuditLogItem>>(`${BASE}/audit-logs?limit=4`),
   objectsTotal: () => apiClient.get<ObjectsPage>(`${BASE}/objects?limit=1`),
+  objectDetail: (objectId: string) => apiClient.get<ObjectResponse>(`${BASE}/objects/${objectId}`),
+  objectEvents: (objectId: string) =>
+    apiClient.get<Page<EventResponse>>(`${BASE}/events?object_id=${encodeURIComponent(objectId)}&limit=4`),
+  objectEvidence: (objectId: string) =>
+    apiClient.get<Page<EvidenceRecord>>(`${BASE}/evidence?object_id=${encodeURIComponent(objectId)}&limit=5`),
 };

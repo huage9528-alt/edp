@@ -70,7 +70,7 @@ export function KpiSection({ health, objectsTotal, adapters }: {
       <KpiCard
         label="策略命中"
         value={ops ? fmt(ops.policy_hits_today) : "—"}
-        hint={ops ? "今日" : undefined}
+        hint={ops ? "+今日" : undefined}
         icon={icon(Shield)}
       />
     </section>

@@ -20,3 +20,24 @@ export function fmt(n: number): string {
 export function fmtCompact(n: number): string {
   return n > 1000 ? `${(n / 1000).toFixed(1)}K` : fmt(n);
 }
+
+/** 短日期时间 `MM-DD HH:mm`（原型时间线/证据行样式），本地时区。 */
+export function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 相对时间（T5 风险列表/抽屉）："N 分钟/小时/天前"；超过 30 天或未来时间（演示锚点偏移）回退 fmtDateTime。 */
+export function relTime(iso: string): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return iso;
+  const diff = Date.now() - ts;
+  if (diff <= 0) return fmtDateTime(iso);
+  if (diff < 60_000) return "刚刚";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const days = Math.floor(diff / 86_400_000);
+  if (days <= 30) return `${days} 天前`;
+  return fmtDateTime(iso);
+}
