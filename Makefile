@@ -1,4 +1,4 @@
-.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all
+.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile
 
 backend-lint:
 	cd backend && uv run ruff check . && uv run lint-imports
@@ -25,3 +25,12 @@ frontend-test:
 	cd frontend && pnpm -r test
 
 verify-all: backend-lint backend-test frontend-lint frontend-test backend-migrate-check contract-export contract-gate
+
+pipeline-full:
+	cd backend && uv run python -m edp_api.modules.ingest.cli full
+
+pipeline-incr:
+	cd backend && uv run python -m edp_api.modules.ingest.cli incremental
+
+reconcile:
+	cd backend && uv run python -m edp_api.modules.ingest.cli reconcile

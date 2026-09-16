@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from edp_api.core.config import get_settings
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
+from edp_api.modules.audit import service as audit_service
 from edp_api.modules.events.models import Event, Outbox
 from edp_api.modules.events.schemas import (
     BatchResponse,
@@ -276,6 +277,22 @@ async def ingest_batch(
             continue
 
         accepted += 1
+        # pg_insert 不经 ORM 状态（切面不可见）——显式补审计（模块间仅 service）；
+        # detail 在 flush 前以请求值构造完毕
+        await audit_service.record_explicit(
+            sess,
+            action="EVENT_CREATE",
+            resource_type="events",
+            resource_id=str(event_id),
+            detail={
+                "event_type": ev.event_type,
+                "object_id": str(ev.object_id),
+                "source_system": ev.source_system,
+                "occurred_at": normalize_occurred_at(ev.occurred_at).isoformat(),
+                "idempotency_key": f"{idem_key}:{index}",
+            },
+            principal=principal,
+        )
         await append_outbox(
             sess,
             tenant_id=tenant_id,

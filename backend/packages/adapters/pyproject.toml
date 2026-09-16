@@ -1,14 +1,9 @@
 [project]
 name = "edp-adapters"
 version = "0.1.0"
-description = "EDP 上游适配器包（W1 仅骨架，实现见 W2 EDP-010）"
+description = "EDP 上游适配器包（纯端口包，不依赖 edp_api；实现见 W2 EDP-010）"
 requires-python = ">=3.12"
-dependencies = [
-    "edp-api",
-]
-
-[tool.uv.sources]
-edp-api = { workspace = true }
+dependencies = []
 
 [build-system]
 requires = ["hatchling"]

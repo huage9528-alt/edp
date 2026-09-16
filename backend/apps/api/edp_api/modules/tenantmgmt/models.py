@@ -1,14 +1,18 @@
 """tenantmgmt ORM 映射：platform schema 租户域表（表由迁移 0001/0005 建立）。
 
-只映射 W1 需要的表（tenants / tenant_members / tenant_quotas）；ORM 不参与
-迁移——DDL 单一事实来源是设计文档附录 A 的迁移链。
+W1 映射 tenants / tenant_members / tenant_quotas；W2（EDP-024）追加 users
+行映射（UserRow）——租户开通需落初始管理员，沿袭 ingest 模块按需映射
+platform.systems 的先例（platform.models.User 属另一 registry，互不干扰；
+同 metadata 内 TenantMember 的 "platform.users" 外键由此可解析，flush 排序
+tenants → users → tenant_members 成立）。ORM 不参与迁移——DDL 单一事实
+来源是设计文档附录 A 的迁移链。
 """
 
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -84,5 +88,35 @@ class TenantQuota(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class UserRow(Base):
+    """用户行（platform.users；FORCE RLS——开通流程在租户行落库并 bind_tenant
+    新租户后写入，见 service.create_tenant）。仅映射开通路径所需列集，
+    列定义与 platform.models.User / 迁移 0001 保持一致。"""
+
+    __tablename__ = "users"
+    __table_args__ = {"schema": "platform"}
+
+    user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    username: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    org_id: Mapped[UUID | None] = mapped_column(Uuid)
+    principal_type: Mapped[str] = mapped_column(Text, nullable=False, default="HUMAN")
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     created_by: Mapped[str | None] = mapped_column(Text)
     updated_by: Mapped[str | None] = mapped_column(Text)

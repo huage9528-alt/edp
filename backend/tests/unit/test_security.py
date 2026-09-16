@@ -40,7 +40,8 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::jwt.warnings.InsecureKeyLengthWarning"
 )
 
-ALL_12 = {
+# 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码
+ALL_CODES = {
     "registry:read",
     "registry:write",
     "event:read",
@@ -52,10 +53,12 @@ ALL_12 = {
     "action:read",
     "action:execute",
     "audit:read",
+    "adapters:read",
+    "adapters:write",
     "tenant:admin",
 }
 
-READS = {code for code in ALL_12 if code.endswith(":read")}
+READS = {code for code in ALL_CODES if code.endswith(":read")}
 
 
 def _principal(
@@ -197,18 +200,19 @@ def test_hash_key_distinct_inputs() -> None:
     assert hash_key("key-a") != hash_key("key-b")
 
 
-# ---- rbac 矩阵（与 T5 种子逐条一致） ----
+# ---- rbac 矩阵（与 0005 种子 + 0008 adapters 码逐条一致） ----
 
 
 def test_role_permissions_matrix_matches_seed() -> None:
-    assert ROLE_PERMISSIONS["PLATFORM_ADMIN"] == ALL_12
-    assert ROLE_PERMISSIONS["ADMIN"] == ALL_12 - {"tenant:admin"}
+    assert ROLE_PERMISSIONS["PLATFORM_ADMIN"] == ALL_CODES
+    assert ROLE_PERMISSIONS["ADMIN"] == ALL_CODES - {"tenant:admin"}
     assert ROLE_PERMISSIONS["MANAGER"] == READS | {
         "decision:decide",
         "action:execute",
         "registry:write",
         "event:write",
         "evidence:write",
+        "adapters:write",
     }
     assert ROLE_PERMISSIONS["ANALYST"] == READS
     assert ROLE_PERMISSIONS["SERVICE"] == {
@@ -227,27 +231,27 @@ def test_role_permissions_matrix_matches_seed() -> None:
     }
 
 
-def test_all_permissions_covers_twelve_codes() -> None:
-    assert ALL_PERMISSIONS == ALL_12
-    assert len(ALL_PERMISSIONS) == 12
+def test_all_permissions_covers_fourteen_codes() -> None:
+    assert ALL_PERMISSIONS == ALL_CODES
+    assert len(ALL_PERMISSIONS) == 14
 
 
-def test_permission_codes_platform_admin_wildcard_all_twelve() -> None:
+def test_permission_codes_platform_admin_wildcard_all_codes() -> None:
     principal = _principal(is_platform_admin=True)
-    assert permission_codes(principal) == ALL_12
+    assert permission_codes(principal) == ALL_CODES
     assert has_permission(principal, "tenant:admin")
     assert has_permission(principal, "evidence:write")
 
 
 def test_permission_codes_platform_admin_wildcard_over_roles() -> None:
     principal = _principal(roles=["ANALYST"], is_platform_admin=True)
-    assert permission_codes(principal) == ALL_12
+    assert permission_codes(principal) == ALL_CODES
 
 
 def test_permission_codes_admin_exactly_lacks_tenant_admin() -> None:
     principal = _principal(roles=["ADMIN"])
     codes = permission_codes(principal)
-    assert codes == ALL_12 - {"tenant:admin"}
+    assert codes == ALL_CODES - {"tenant:admin"}
     assert not has_permission(principal, "tenant:admin")
     assert has_permission(principal, "audit:read")
 
@@ -256,7 +260,9 @@ def test_permission_codes_analyst_read_and_audit_read_only() -> None:
     principal = _principal(roles=["ANALYST"])
     assert permission_codes(principal) == READS
     assert has_permission(principal, "audit:read")
-    for code in ALL_12 - READS:
+    assert has_permission(principal, "adapters:read")
+    assert not has_permission(principal, "adapters:write")
+    for code in ALL_CODES - READS:
         assert not has_permission(principal, code)
 
 

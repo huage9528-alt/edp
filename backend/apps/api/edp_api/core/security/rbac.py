@@ -9,7 +9,9 @@ from edp_api.core.errors import EdpError
 from edp_api.core.security.auth import get_principal
 from edp_api.core.security.principal import Principal
 
-# 与种子迁移 migrations/versions/platform/0005_seed.py 的 ROLE_PERMISSION_CODES 保持同步
+# 与种子迁移保持同步（0005 基线 + 0008 新增 adapters 两码，角色集逐条一致）：
+# adapters:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST；
+# adapters:write → PLATFORM_ADMIN/ADMIN/MANAGER
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -23,6 +25,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "adapters:read",
+        "adapters:write",
         "tenant:admin",
     },
     "ADMIN": {
@@ -37,6 +41,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "adapters:read",
+        "adapters:write",
     },
     "MANAGER": {
         "registry:read",
@@ -45,11 +51,13 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "adapters:read",
         "decision:decide",
         "action:execute",
         "registry:write",
         "event:write",
         "evidence:write",
+        "adapters:write",
     },
     "ANALYST": {
         "registry:read",
@@ -58,6 +66,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "adapters:read",
     },
     "SERVICE": {
         "registry:read",
@@ -72,7 +81,7 @@ ALL_PERMISSIONS: frozenset[str] = frozenset().union(*ROLE_PERMISSIONS.values())
 
 
 def permission_codes(principal: Principal) -> set[str]:
-    """展开主体权限：platform_admin 通配全部 12 项；否则取角色→权限并集。"""
+    """展开主体权限：platform_admin 通配全部权限码；否则取角色→权限并集。"""
     if principal.is_platform_admin:
         return set(ALL_PERMISSIONS)
     codes: set[str] = set()
