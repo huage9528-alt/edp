@@ -70,6 +70,7 @@ from edp_api.modules.ingest.models import System
 from edp_api.modules.projections import service as projections_service
 from edp_api.modules.registry import service as registry_service
 from edp_api.modules.registry.schemas import ObjectUpsertRequest
+from edp_api.modules.tenantmgmt import service as tenantmgmt_service
 
 logger = logging.getLogger(__name__)
 
@@ -295,16 +296,21 @@ async def run_sync(
 
     事务边界归调用方（CLI 逐条独立提交 / API 批提交）；水位不回退——
     full 重放时 fetched 可能整体早于既有水位，取 max(既有水位, fetched)。
+
+    拉取前经 tenantmgmt 解析演示时间锚（T6）并传入 fetch_*：需要相对时间
+    的演示适配器（erp-demo/plm-demo）以锚 + 固定偏移生成 occurred_at；
+    未设置锚 → None 由适配器回退 DEMO_ANCHOR；ErpMock 忽略该参数。
     """
     token = current_principal.set(service_principal(tenant_id))
     try:
         system = await _find_system(sess, tenant_id, adapter.name)
         watermark = system.last_watermark if system is not None else None
+        anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
         if mode == "full":
-            records = adapter.fetch_full([])
+            records = adapter.fetch_full([], anchor=anchor)
         elif mode == "incremental":
             since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since)
+            records = adapter.fetch_incremental(since, anchor=anchor)
         else:
             raise ValueError(f"未知同步模式：{mode}")
 
@@ -350,6 +356,7 @@ async def run_sync_per_record(
     仅回滚该条（failed+1 记日志继续，不连坐批次）；水位读取与推进各占
     独立短事务（推进时重取 systems 行——跨会话不重用 detached 实例）。
     水位语义与 run_sync 一致：不回退，取 max(既有水位, fetched 最大时刻)。
+    时间锚与水位同段短事务解析（T6），拉取时透传 fetch_*。
     """
     token = current_principal.set(service_principal(tenant_id))
     try:
@@ -357,12 +364,13 @@ async def run_sync_per_record(
         async with factory() as sess:
             await bind_tenant(sess, tenant_id)
             watermark = await get_watermark(sess, tenant_id, adapter.name)
+            anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
 
         if mode == "full":
-            records = adapter.fetch_full([])
+            records = adapter.fetch_full([], anchor=anchor)
         elif mode == "incremental":
             since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since)
+            records = adapter.fetch_incremental(since, anchor=anchor)
         else:
             raise ValueError(f"未知同步模式：{mode}")
 

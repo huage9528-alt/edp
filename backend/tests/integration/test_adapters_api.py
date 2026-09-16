@@ -299,7 +299,7 @@ async def test_analyst_readonly_post_403_get_200(
     assert body["last_sync"] is None  # 本测试未触发过同步（清场后任务表为空）
 
 
-# ---- 6. 清单：analyst1 GET /admin/adapters → 200 + erp 行契约 ----
+# ---- 6. 清单：analyst1 GET /admin/adapters → 200 + 三适配器行契约（T6） ----
 
 
 async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
@@ -307,7 +307,7 @@ async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
     resp = await client.get(ADAPTERS, headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()["items"]
-    assert [item["adapter"] for item in items] == ["erp"]
+    assert [item["adapter"] for item in items] == ["erp", "erp-demo", "plm-demo"]
     erp = items[0]
     assert set(erp) == {"adapter", "mode", "status", "health", "last_sync_at"}
     assert erp["mode"] == "mock"

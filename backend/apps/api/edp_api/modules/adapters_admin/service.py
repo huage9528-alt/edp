@@ -25,7 +25,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from edp_adapters import AdapterRegistry, ErpMockAdapter
+from edp_adapters import (
+    AdapterRegistry,
+    DemoErpAdapter,
+    DemoPlmAdapter,
+    ErpMockAdapter,
+)
 
 from edp_api.core import db as core_db
 from edp_api.modules.adapters_admin.schemas import (
@@ -53,9 +58,12 @@ JobStatus = str  # "RUNNING" | "SUCCEEDED" | "FAILED"
 _STATUS_TEXT: dict[str, str] = {"RUNNING": "运行中", "SUCCEEDED": "空闲", "FAILED": "异常"}
 _HEALTH_TEXT: dict[bool, str] = {True: "OK", False: "DEGRADED"}
 
-# 进程内注册表：B.12 仅 ErpMock；真实适配器接入时在此登记
+# 进程内注册表：erp（W2 基线）+ erp-demo/plm-demo（W3 演示数据集，T6）；
+# 清单显示三行（list 按名称升序：erp / erp-demo / plm-demo）
 _registry = AdapterRegistry()
 _registry.register(ErpMockAdapter())
+_registry.register(DemoErpAdapter())
+_registry.register(DemoPlmAdapter())
 
 # key = adapter name（每适配器仅保留最近一次任务）
 _jobs: dict[str, SyncJob] = {}
