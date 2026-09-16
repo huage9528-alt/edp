@@ -10,3 +10,13 @@ export function initials(name: string): string {
   if (latin.length >= 1) return latin.padEnd(2, "");
   return trimmed.slice(0, 2);
 }
+
+/** 千分位（T4 总览 KPI 网格数值格式；集中放 labels.ts 供总览/后续页复用）。 */
+export function fmt(n: number): string {
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+/** 紧凑格式：>1000 显示 `52.6K`（原型证据存储/审计日志卡样式），否则千分位。 */
+export function fmtCompact(n: number): string {
+  return n > 1000 ? `${(n / 1000).toFixed(1)}K` : fmt(n);
+}
