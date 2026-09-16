@@ -1,5 +1,5 @@
-import { message, Skeleton } from "antd";
-import { LayoutGrid, Search, Table as TableIcon } from "lucide-react";
+import { Skeleton } from "antd";
+import { LayoutGrid, Plus, Search, Table as TableIcon } from "lucide-react";
 import { useState } from "react";
 import {
   CursorPagination,
@@ -22,6 +22,8 @@ import {
 } from "./derive";
 import { useDqIndex, useObjects, useRiskIndex } from "./hooks";
 import { ObjectCard } from "./ObjectCard";
+import { CreateObjectModal } from "./CreateObjectModal";
+import { DetailDrawer } from "./DetailDrawer";
 
 const TABLE_COLUMNS = ["对象", "类型", "名称", "域", "来源", "状态", "Rev", "更新时间", "操作"];
 
@@ -36,6 +38,8 @@ export function RegistryPage() {
   const [domain, setDomain] = useState("");
   const [status, setStatus] = useState("");
   const [view, setView] = useState<"cards" | "table">("cards");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [detailObj, setDetailObj] = useState<ObjectResponse | null>(null);
   // 游标导航栈：栈顶为当前页 cursor（首页 null）；onNext push / onPrev pop。
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const pageIndex = cursorStack.length - 1;
@@ -96,6 +100,21 @@ export function RegistryPage() {
 
   return (
     <div className="space-y-4" data-dom-id="objects-page">
+      {/* 页头（原型`业务对象.html`行 331~346）：注册对象入口（T8 接新建弹窗） */}
+      <section className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <h1 className="text-xl font-semibold text-foreground">业务对象</h1>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-dom-id="obj-register"
+            onClick={() => setCreateOpen(true)}
+            className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" />
+            注册对象
+          </button>
+        </div>
+      </section>
       <section className="bg-card border border-border rounded-xl p-3">
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
           <div className="relative flex-1">
@@ -137,7 +156,10 @@ export function RegistryPage() {
               data-dom-id="objects-status"
               aria-label="状态筛选"
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                resetCursor();
+              }}
               className="h-9 px-3 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="">全部状态</option>
@@ -204,8 +226,7 @@ export function RegistryPage() {
         <EmptyState
           title="未找到业务对象"
           description="当前搜索条件没有匹配结果，请调整筛选条件或新建对象。"
-          /* T8 接新建弹窗 */
-          primaryAction={{ label: "新建对象", onClick: () => message.info("T8 接入后可用") }}
+          primaryAction={{ label: "新建对象", onClick: () => setCreateOpen(true) }}
           secondaryAction={{ label: "清空筛选", onClick: clearFilters }}
         />
       ) : (
@@ -224,6 +245,7 @@ export function RegistryPage() {
                   obj={o}
                   riskLevel={riskMap?.get(o.object_id)}
                   hasDq={dqSet?.has(o.object_id)}
+                  onOpenDetail={() => setDetailObj(o)}
                 />
               ))}
             </div>
@@ -263,11 +285,10 @@ export function RegistryPage() {
                         <td className="px-4 py-3">{o.revision}</td>
                         <td className="px-4 py-3">{relTime(o.updated_at)}</td>
                         <td className="px-4 py-3">
-                          {/* T8 接详情抽屉 */}
                           <button
                             type="button"
                             data-dom-id="object-row-detail"
-                            onClick={() => message.info("T8 接入后可用")}
+                            onClick={() => setDetailObj(o)}
                             className="text-primary hover:underline"
                           >
                             查看详情
@@ -293,6 +314,11 @@ export function RegistryPage() {
             }}
           />
         </section>
+      )}
+
+      <CreateObjectModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      {detailObj != null && (
+        <DetailDrawer obj={detailObj} status={statusOf(detailObj)} onClose={() => setDetailObj(null)} />
       )}
     </div>
   );

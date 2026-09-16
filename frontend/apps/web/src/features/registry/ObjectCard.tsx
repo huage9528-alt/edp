@@ -1,4 +1,3 @@
-import { message } from "antd";
 import { ArrowRight } from "lucide-react";
 import { MonoId, StatusPill, type StatusPillTone } from "@edp/shared";
 import { relTime } from "../../lib/labels";
@@ -27,10 +26,12 @@ export function ObjectCard({
   obj,
   riskLevel,
   hasDq,
+  onOpenDetail,
 }: {
   obj: ObjectResponse;
   riskLevel?: string | null;
   hasDq?: boolean;
+  onOpenDetail: () => void;
 }) {
   const status = deriveStatus({
     riskLevel,
@@ -82,11 +83,10 @@ export function ObjectCard({
         <div className="text-[10px] text-muted-foreground">
           Rev {obj.revision} · {relTime(obj.updated_at)}
         </div>
-        {/* T8 接详情抽屉 */}
         <button
           type="button"
           data-dom-id="object-card-detail"
-          onClick={() => message.info("T8 接入后可用")}
+          onClick={onOpenDetail}
           className="text-xs text-primary hover:underline flex items-center gap-1"
         >
           查看详情 <ArrowRight className="w-3 h-3" aria-hidden="true" />

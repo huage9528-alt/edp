@@ -1,4 +1,5 @@
 import type { StatusPillTone } from "@edp/shared";
+import { DEMO_NOW } from "../../mocks/lib/demo-time";
 
 /** 业务对象页派生规则（设计 13.6.2）：纯函数，无 IO。 */
 
@@ -63,9 +64,18 @@ export function riskScore(riskLevel?: string | null): number {
   }
 }
 
-/** updated_at 距当前小时数（演示锚点在未来时为负，不触发 Delayed）。 */
-export function lagHours(updatedAtIso: string, nowMs: number = Date.now()): number {
+/**
+ * updated_at 距当前小时数（演示锚点在未来时为负，不触发 Delayed）。
+ * MSW 演示模式（VITE_USE_MSW=1）下 fixtures 时间以 mocks 的 DEMO_NOW 锚定，
+ * 真实时钟越过锚点 48h 后会把全部对象误判 Delayed（演示时间炸弹，T7 评审
+ * Minor a）——该模式以锚点为基准；真实模式用系统时钟。
+ */
+export function lagHours(updatedAtIso: string, nowMs: number = currentNowMs()): number {
   return (nowMs - new Date(updatedAtIso).getTime()) / 3_600_000;
+}
+
+function currentNowMs(): number {
+  return import.meta.env.VITE_USE_MSW === "1" ? DEMO_NOW.getTime() : Date.now();
 }
 
 /** 域下拉选项（原型`业务对象.html`行 357~363 逐字）：value 为 owner_domain 实际值。 */

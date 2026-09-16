@@ -67,6 +67,9 @@ describe("RegistryPage 列表主体（MSW 模式渲染路由）", () => {
 
     await waitFor(() => expect(cards().length).toBe(20));
     expect(paginationText()).toBe("显示 1–20 条，共 23 条");
+    // 订单 I（钉住 dq 索引链路）；限定卡片区，排除状态下拉的 option 文本
+    const grid = document.querySelector('[data-dom-id="objects-grid"]') as HTMLElement;
+    expect(within(grid).getAllByText("DQ Exception")).toHaveLength(1);
     expect(document.querySelector('[data-dom-id="pagination-page"]')?.textContent).toBe("1");
 
     fireEvent.click(document.querySelector('[data-dom-id="pagination-next"]')!);

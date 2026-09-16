@@ -16,6 +16,42 @@ export interface ObjectListParams {
 
 export type ObjectsPage = Page<ObjectResponse>;
 
+/** POST /objects 请求体（ObjectUpsertRequest，B.2）。 */
+export interface ObjectCreateBody {
+  object_type: string;
+  owner_domain: string;
+  source_system: string;
+  source_id: string;
+  attributes: {
+    name: string;
+    owner?: string;
+    description?: string;
+    sources: string[];
+    [key: string]: unknown;
+  };
+}
+
+/** POST /objects 响应（ObjectCreatedResponse，201/200 共用）。 */
+export interface ObjectCreatedResult {
+  object_id: string;
+  revision: number;
+  status: string;
+  created_at: string;
+}
+
+/** GET /objects/{id}/history 单条 revision 轨迹。 */
+export interface ObjectRevision {
+  revision: number;
+  action: string;
+  actor_id: string;
+  occurred_at: string;
+}
+
+export interface ObjectHistoryResponse {
+  object_id: string;
+  revisions: ObjectRevision[];
+}
+
 /**
  * 派生状态索引源事件类型。计划写 ORDER_RISK/DATA_QUALITY，但那是 B.3 的
  * result_type；MSW /events 仅支持 event_type 精确匹配，fixtures 的能力结果
@@ -53,4 +89,10 @@ export const objectsApi = {
     apiClient.get<Page<EventResponse>>(
       `${BASE}/events?event_type=${encodeURIComponent(DQ_EVENT_TYPE)}&limit=100`,
     ),
+  /** POST /objects（B.2 upsert；新建弹窗走 201 分支）。 */
+  create: (body: ObjectCreateBody): Promise<ObjectCreatedResult> =>
+    apiClient.post(`${BASE}/objects`, body),
+  /** GET /objects/{id}/history：revision 轨迹（mock 按 revision 数生成）。 */
+  history: (objectId: string): Promise<ObjectHistoryResponse> =>
+    apiClient.get(`${BASE}/objects/${objectId}/history`),
 };

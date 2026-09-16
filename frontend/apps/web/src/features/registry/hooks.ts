@@ -56,3 +56,13 @@ export function useDqIndex() {
       ),
   });
 }
+
+/** 详情抽屉修订历史：抽屉打开且 objectId 就绪时才发请求（无轮询）。 */
+export function useObjectHistory(objectId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["registry", "object-history", objectId],
+    queryFn: () => objectsApi.history(objectId!),
+    enabled: enabled && objectId != null,
+    retry: 1,
+  });
+}
