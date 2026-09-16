@@ -113,6 +113,31 @@ async def _clean_adapter_rows(db_session: AsyncSession) -> None:
     await db_session.execute(
         text("DELETE FROM event.events WHERE event_type LIKE '%\\_SNAPSHOT'")
     )
+    # 领域投影行（T4）：子表先删（FK 指向 business_objects，不先清父行删不掉）
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.order_lines WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.orders WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.customers WHERE customer_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.materials WHERE material_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
     await db_session.execute(
         text(f"DELETE FROM master.business_objects WHERE {_BO_SCOPE}")
     )

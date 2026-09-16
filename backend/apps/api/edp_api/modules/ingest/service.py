@@ -1,10 +1,11 @@
 """ingest 管道服务（EDP-010）：源记录三元组单事务落库 + 水位 + 对账。
 
 process_record 是单条记录的唯一处理实现（T15 CLI 与 T16 sync API 共用，
-run_sync 内部亦循环调用它）：对象 upsert → SNAPSHOT 事件 → 证据 → outbox，
-四写在同一事务内（本层只 flush 不 commit，事务边界归调用方：run_sync 挂
-调用方单会话整批提交；run_sync_per_record 每记录 engine.begin() 独立提交
-——CLI 与 T16 触发式任务的事务入口，单条失败只回滚该条不连坐批次）。
+run_sync 内部亦循环调用它）：对象 upsert → 领域投影（T4，savepoint 隔离，
+投影失败不连坐）→ SNAPSHOT 事件 → 证据 → outbox，全部写在同一事务内
+（本层只 flush 不 commit，事务边界归调用方：run_sync 挂调用方单会话整批
+提交；run_sync_per_record 每记录 engine.begin() 独立提交——CLI 与 T16
+触发式任务的事务入口，单条失败只回滚该条不连坐批次）。
 
 幂等（UUIDv5 适配器层 + ON CONFLICT 数据层双保险）：
 - event_id = derive_event_id(tenant, source_system, source_id, occurred_at,
@@ -26,7 +27,8 @@ FORCE RLS——调用方会话需已 bind_tenant（CLI/API 各自绑定；显式
 - EVIDENCE_CREATE：ORM INSERT 由切面自动捕获；
 - SYSTEMS_CREATE / SYSTEMS_UPDATE：水位写回（_advance_watermark ORM 路径，
   切面捕获），每次 run_sync 至多一行；
-- outbox 两行（OBJECT_UPSERT + SNAPSHOT）被切面排除（派生行）；
+- outbox 两行（OBJECT_UPSERT + SNAPSHOT）与领域投影行（13 张快照表）
+  被切面排除（派生行，业务写已逐行有审计）；
 - 切面（before_flush）仅由宿主进程安装（create_app / CLI），本模块不
   自装——未装切面的宿主只有显式补点的 EVENT_CREATE / OBJECT_UPDATE 行；
 - run_sync 进入时 set current_principal（服务主体），使无请求上下文的
@@ -65,6 +67,7 @@ from edp_api.modules.events.uuidv5 import derive_event_id, normalize_occurred_at
 from edp_api.modules.evidence import service as evidence_service
 from edp_api.modules.evidence.schemas import EvidenceCreateRequest
 from edp_api.modules.ingest.models import System
+from edp_api.modules.projections import service as projections_service
 from edp_api.modules.registry import service as registry_service
 from edp_api.modules.registry.schemas import ObjectUpsertRequest
 
@@ -163,7 +166,9 @@ async def process_record(
     """单条源记录 → 三元组（对象/事件/证据）+ outbox；返回 registered。
 
     duplicated（事件已存在 / ON CONFLICT 命中）返回 False 且不触碰 revision；
-    CLI（逐条独立事务）与 run_sync 共用本实现。
+    领域投影（T4）在对象 upsert 后、事件写入前调用（savepoint 隔离：投影
+    失败仅回滚投影写入记 warning，不阻断三元组/outbox）；CLI（逐条独立
+    事务）与 run_sync 共用本实现。
     """
     principal = service_principal(tenant_id)
     event_type = SNAPSHOT_EVENT_TYPE(record.object_type)
@@ -171,7 +176,8 @@ async def process_record(
         tenant_id, record.source_system, record.source_id, record.occurred_at, event_type
     )
 
-    # 幂等第一道：事件已存在 → 整条跳过（不动 revision、不写证据）
+    # 幂等第一道：事件已存在 → 整条跳过（不动 revision、不写证据、不投影
+    # ——投影已随首次注册的事务完成，重放重做无意义）
     if await events_service.get_event(sess, event_id) is not None:
         return False
 
@@ -189,6 +195,22 @@ async def process_record(
             attributes=attributes,
         ),
     )
+
+    # 领域投影（spec §2.1：对象 upsert 后、事件写入前，同事务）——savepoint
+    # 包裹：投影失败（如 NOT NULL FK 自然键未命中）只回滚投影写入并记
+    # warning，不把 session 置入 PendingRollback、不连坐三元组/outbox
+    try:
+        async with sess.begin_nested():
+            await projections_service.project_record(
+                sess, tenant_id, record, obj.object_id
+            )
+    except Exception:
+        logger.warning(
+            "领域投影失败：%s/%s",
+            record.source_system,
+            record.source_id,
+            exc_info=True,
+        )
 
     occurred_at = normalize_occurred_at(record.occurred_at)
     result = await sess.execute(

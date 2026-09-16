@@ -41,10 +41,29 @@ from edp_api.modules.audit.models import AuditLog
 
 logger = logging.getLogger(__name__)
 
-# 排除：审计自身（防自引用）、接口层幂等登记（请求噪音）与 outbox 发件箱
-# （派生行冗余——业务写已逐行有审计）；fullname 为 schema.表名 形态
+# 排除：审计自身（防自引用）、接口层幂等登记（请求噪音）、outbox 发件箱与
+# 领域投影表（派生快照行，同 outbox 理由——业务写已逐行有审计）；
+# fullname 为 schema.表名 形态
 EXCLUDED_TABLES = frozenset(
-    {"platform.audit_logs", "platform.idempotency_keys", "event.outbox"}
+    {
+        "platform.audit_logs",
+        "platform.idempotency_keys",
+        "event.outbox",
+        # 领域投影（T4）：SourceRecord → 快照表的派生行
+        "master.customers",
+        "master.materials",
+        "master.products",
+        "master.suppliers",
+        "master.boms",
+        "master.bom_items",
+        "sales.orders",
+        "sales.order_lines",
+        "delivery.inventory",
+        "delivery.purchase_orders",
+        "delivery.supplier_lead_times",
+        "rd.projects",
+        "rd.milestones",
+    }
 )
 
 # 表名 → action 前缀（缺省取表名大写）：business_objects 行写即
