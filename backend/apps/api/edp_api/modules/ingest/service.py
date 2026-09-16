@@ -2,8 +2,9 @@
 
 process_record 是单条记录的唯一处理实现（T15 CLI 与 T16 sync API 共用，
 run_sync 内部亦循环调用它）：对象 upsert → SNAPSHOT 事件 → 证据 → outbox，
-四写在同一事务内（本层只 flush 不 commit，批级/逐条提交策略归调用方——
-CLI 逐记录独立事务，API 单事务批提交）。
+四写在同一事务内（本层只 flush 不 commit，事务边界归调用方：run_sync 挂
+调用方单会话整批提交；run_sync_per_record 每记录 engine.begin() 独立提交
+——CLI 与 T16 触发式任务的事务入口，单条失败只回滚该条不连坐批次）。
 
 幂等（UUIDv5 适配器层 + ON CONFLICT 数据层双保险）：
 - event_id = derive_event_id(tenant, source_system, source_id, occurred_at,
@@ -53,9 +54,10 @@ from uuid import UUID, uuid4
 
 from edp_adapters.base import SourceAdapter, SourceRecord
 from sqlalchemy import TextClause, func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from edp_api.core.contextvars import current_principal
+from edp_api.core.db import bind_tenant
 from edp_api.core.security.principal import Principal
 from edp_api.modules.audit import service as audit_service
 from edp_api.modules.events import service as events_service
@@ -307,6 +309,69 @@ async def run_sync(
 
         if records and latest is not None:
             await _advance_watermark(sess, tenant_id, adapter, latest, system)
+        return stats
+    finally:
+        current_principal.reset(token)
+
+
+async def run_sync_per_record(
+    engine: AsyncEngine,
+    tenant_id: UUID,
+    adapter: SourceAdapter,
+    mode: Literal["full", "incremental"],
+) -> SyncStats:
+    """逐记录独立事务同步（CLI / T16 触发式任务的事务策略）。
+
+    与 run_sync 共用 process_record 单实现与同一统计口径（fetched/
+    registered/duplicated/failed）；区别在事务边界：每条记录一个独立
+    engine.begin() 事务（bind_tenant → process_record → 提交），单条失败
+    仅回滚该条（failed+1 记日志继续，不连坐批次）；水位读取与推进各占
+    独立短事务（推进时重取 systems 行——跨会话不重用 detached 实例）。
+    水位语义与 run_sync 一致：不回退，取 max(既有水位, fetched 最大时刻)。
+    """
+    token = current_principal.set(service_principal(tenant_id))
+    try:
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as sess:
+            await bind_tenant(sess, tenant_id)
+            watermark = await get_watermark(sess, tenant_id, adapter.name)
+
+        if mode == "full":
+            records = adapter.fetch_full([])
+        elif mode == "incremental":
+            since = watermark if watermark is not None else _EPOCH
+            records = adapter.fetch_incremental(since)
+        else:
+            raise ValueError(f"未知同步模式：{mode}")
+
+        stats = SyncStats(fetched=len(records))
+        latest = watermark
+        for record in records:
+            try:
+                async with factory.begin() as sess:
+                    await bind_tenant(sess, tenant_id)
+                    registered = await process_record(sess, tenant_id, record)
+            except Exception:
+                stats.failed += 1
+                logger.warning(
+                    "管道单条处理失败：%s/%s",
+                    record.source_system,
+                    record.source_id,
+                    exc_info=True,
+                )
+                continue
+            if registered:
+                stats.registered += 1
+            else:
+                stats.duplicated += 1
+            if latest is None or record.occurred_at > latest:
+                latest = record.occurred_at
+
+        if records and latest is not None:
+            async with factory.begin() as sess:
+                await bind_tenant(sess, tenant_id)
+                system = await _find_system(sess, tenant_id, adapter.name)
+                await _advance_watermark(sess, tenant_id, adapter, latest, system)
         return stats
     finally:
         current_principal.reset(token)
