@@ -56,3 +56,26 @@ Branch: feat/w2-msw-mocks
 | T13-fix | DONE | 1ff8328 | 补 tenant handler + 3 测试（40 绿）；聚合注释改 27；spec 标题"28"与表格 27 本身不符——记入偏差 |
 | T14 | DONE | 16e5d3b | 50 测试绿；评审 Approved |
 | T15 | DONE | - | lint 绿；178/178 测试（api-sdk 22/shared 92/web 64）；build 绿；node 冒烟 3/3（P1=3、tenants/current、health）；无需收尾 commit |
+
+---
+
+# SDD Progress Ledger — EDP W2（总览/对象页 + 数据链路）
+
+Plan: docs/superpowers/plans/2026-09-16-edp-w2.md
+Spec: docs/superpowers/specs/2026-09-16-edp-w2-design.md
+Branch: feat/w2
+
+## 第一波（前端 T1~T9）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | 6ca0580 | 14 键错误码映射（13.9.2 + NETWORK_ERROR）；shared 96 绿；评审 Approved |
+| T2 | DONE | 6b847c5 | 常驻横幅 + Query/MutationCache 全局 toast（banner/login/page403 跳过）；66 绿；评审 Approved |
+| T3 | DONE | 11d13b3 | 七 hooks（30s 轮询）+ PanelCard 四态；类型对 handler 实测形状修正（adapters 用 Page 包裹）；73 绿；评审 Approved（降级集成测试递延 T4） |
+| T4 | DONE | a204f8e | Hero 三指标（fixtures 实值 96.8%/0.81s/99.5%）+ 8 KPI；双向降级测试闭环 T3 遗留；87 绿；评审 Approved（Minor：断点/“+今日”/注释 → T5 收） |
+| T5 | DONE | e375ccf | 风险卡×3 + 420px 抽屉（对象卡/时间线 4 节点/证据 2 行——fixtures 实算）；T4 两 Minor 闭环；90 绿；评审 Approved |
+| T6 | DONE | a0b41a4 | 事件时间线 + 三栏（SVG 柱图/环形/审计动态 GUARD_DENIED 高亮）；panel-audit -error 降级断言闭环；97 绿；评审 Approved（原型三栏无标题——以规格为准留痕） |
+| T7 | DONE | 4e1e9f2 | 双视图/域筛选/派生分布（Blocking1/AtRisk3/DQ1/Watch4/Healthy14）/游标分页/空态；event_type 修正（ORDER_RISK 是 result_type，改三类 capability.result.* 合并）；109 绿；评审 Approved |
+| T7-fix | DONE | fd0cfe4 | router 退出登录用例 timeout 放宽（宿主满载 flake，基线复现） |
+| T8 | DONE | 3d4d13d | 新建弹窗（三行内文案逐字/409 行内/双弹防护）+ 详情抽屉（订单 B history 7 节点）；T7 三 Minor 闭环（DEMO_NOW 锚/resetCursor/DQ pill 断言）；115 绿；评审 Approved（Minor d：vitest 侧 VITE_USE_MSW 未注入——无断言风险，留观） |
+| T9 | DONE | - | pnpm -r test 115+shared96+api-sdk 全绿；lint 0 error（1 既有 warning）；build 绿；dev-server 人工冒烟未做（无头环境）——M2 演示彩排时补 |
