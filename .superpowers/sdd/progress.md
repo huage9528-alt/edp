@@ -29,3 +29,30 @@ Branch: feat/w1
 | T21 | DONE | efe2d10 | 指纹匹配 c0730e43；.gitattributes eol=lf（防 CRLF 门禁误炸）；非 ASCII 路径 temp 复制 workaround |
 | T22 | DONE | 4218312 | 三演练 exit code 正确；job 名 contract-fingerprint-gate |
 | T23 | DONE | d60ddd3 | compose 全链走通（登录/对象/事件幂等/worker published/web SPA）；后端 159+前端 112 测试 |
+
+---
+
+# SDD Progress Ledger — W2/W3 MSW 模拟数据
+
+Plan: docs/superpowers/plans/2026-09-15-edp-msw-mock-data.md
+Spec: docs/superpowers/specs/2026-09-15-edp-msw-mock-data-design.md
+Branch: feat/w2-msw-mocks
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | - | 基线 pnpm -r test 全绿（api-sdk/shared/web 14+） |
+| T2 | DONE | b748840 | 9 测试绿；评审 Approved（Minor：lib/http.ts 为计划对 spec 目录树的合理补充） |
+| T3 | DONE | 297290c | 评审 Approved；额外 bd9ebaf：实装 msw 2.15 需 HttpResponse<DefaultBodyType>（计划假设 2.6）——后续 handler task 沿用该写法 |
+| T4 | DONE | 612f4f1 | 23 对象逐字对齐计划；评审 Approved |
+| T5 | DONE | 6e54134 | 实际 55 条（计划标题笔误 57 已修订）；风险分布 P0=1/P1=3/P2=4/P3=2；场景1 A 编码为 P3（计划对 spec "risk null" 的细化）；评审 Approved |
+| T6 | DONE | 230df5b | 计划 routine 数组缺 R1/R2（18≠20）已由实现者补齐并回写计划；评审 Approved |
+| T7 | DONE | 95fe47a | 4 文件逐字对齐；evidence_count 动态引用防漂移；评审 Approved |
+| T8 | DONE | 687ada0 | msw2.15 适配 unauthorized(): HttpResponse<DefaultBodyType>；全量 30/30 绿；评审 Approved |
+| T9 | DONE | fe86959 | 20 测试绿；评审 Approved（Minor 备忘：逐项 duplicated 计数恒 0 为计划声明的 mock 简化） |
+| T10 | DONE | e8bd610 | 24 测试绿；评审 Approved（Minor 备忘：verify 无缓存恒 true、reindex 字段 sync_id 与 spec 表格简写差异——均与计划一致） |
+| T11 | DONE | 978e317 | 28 测试绿；评审 Approved（Minor：tasks/:taskId 注释缺 EDP-030 标注，源头在计划模板） |
+| T12 | DONE | cc6de57 | 32 测试绿；评审 Approved |
+| T13 | DONE | 6caa4d7 | 37 测试绿；评审 Approved 但发现 spec §3.1 tenants/current 计划遗漏 | 
+| T13-fix | DONE | 1ff8328 | 补 tenant handler + 3 测试（40 绿）；聚合注释改 27；spec 标题"28"与表格 27 本身不符——记入偏差 |
+| T14 | DONE | 16e5d3b | 50 测试绿；评审 Approved |
+| T15 | DONE | - | lint 绿；178/178 测试（api-sdk 22/shared 92/web 64）；build 绿；node 冒烟 3/3（P1=3、tenants/current、health）；无需收尾 commit |

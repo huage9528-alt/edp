@@ -19,7 +19,7 @@ W1 已合并（M1 契约冻结），冻结契约仅含 auth/objects/events/tenan
 2. 覆盖范围 = W2+W3 六页全量（含未冻结契约接口，按附录 B 示例造）；
 3. 方案 A：fixtures（`data/`）+ handlers（按域拆分）分层，确定性固定数据，不用 faker。
 
-## 3. 端点清单（28 个 handler）
+## 3. 端点清单（27 个 handler）
 
 ### 3.1 已冻结契约（形状对齐 `@edp/api-sdk` 生成类型）
 

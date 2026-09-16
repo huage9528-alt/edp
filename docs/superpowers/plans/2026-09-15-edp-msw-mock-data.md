@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 为 EDP 控制台 W2+W3 六页交付完整 MSW 数据层（fixtures + 28 个 handler + 测试），数据故事对齐 AEOS §10 十类评估场景。
+**Goal:** 为 EDP 控制台 W2+W3 六页交付完整 MSW 数据层（fixtures + 27 个 handler + 测试），数据故事对齐 AEOS §10 十类评估场景。
 
 **Architecture:** `apps/web/src/mocks/` 下分层：`data/`（纯常量 fixtures，固定 UUID + DEMO_NOW 时间锚）→ `handlers/`（按域拆分，游标分页/筛选/写语义/场景注入）→ `handlers.ts` 聚合。browser worker 与 vitest node server 共用同一组 handler。
 
 **Tech Stack:** MSW 2.6、TypeScript（strict）、Vitest（jsdom）、现有 `@edp/api-sdk` 生成类型。
 
-**Spec:** `docs/superpowers/specs/2026-09-15-edp-msw-mock-data.md`（端点清单、数据故事、一致性约束以此为准）。
+**Spec:** `docs/superpowers/specs/2026-09-15-edp-msw-mock-data-design.md`（端点清单、数据故事、一致性约束以此为准）。
 
 ## Global Constraints
 
@@ -533,7 +533,7 @@ export function findObject(id: string): ObjectResponse | undefined {
 
 **Commit**: `feat(w2): mocks fixtures —— 固定 UUID 表与 23 个业务对象（十类场景输入侧）`
 
-## Task 5: data/events.ts（57 条）
+## Task 5: data/events.ts（55 条）
 
 **新建** `apps/web/src/mocks/data/events.ts`：
 
@@ -651,6 +651,7 @@ import {
   EVID_PRJD_READINESS, EVID_S030_DISCONTINUE, OBJ_CUSTOMER_C030A, OBJ_MATERIAL_X100, OBJ_ORDER_A,
   OBJ_ORDER_B, OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J,
   OBJ_PO_00771, OBJ_PO_00785, OBJ_PRODUCT_PF, OBJ_PROJECT_PRJD, OBJ_SUPPLIER_S021, OBJ_SUPPLIER_S030,
+  OBJ_ORDER_R1, OBJ_ORDER_R2,
   mockUuid,
 } from "./ids";
 
@@ -677,7 +678,7 @@ export const evidence: EvidenceRecord[] = [
   { evidence_id: EVID_ORDER_I_DUAL, source_system: "erp", source_record_id: "C-030#compare", object_id: OBJ_CUSTOMER_C030A, checksum: fakeChecksum(0x18f6), snapshot: { records: ["C-030", "C-030-B"], field: "客户名称", conflict: true }, captured_at: hoursBefore(44), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_I }] },
   { evidence_id: EVID_S030_DISCONTINUE, source_system: "erp", source_record_id: "S-030#notice", object_id: OBJ_SUPPLIER_S030, checksum: fakeChecksum(0x64d9), snapshot: { supplier_code: "S-030", discontinuation: true, effective_date: "2026-11-01" }, captured_at: hoursBefore(12), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_J }] },
   { evidence_id: EVID_ORDER_A_SNAPSHOT, source_system: "erp", source_record_id: "SO-2026-00122#v1", object_id: OBJ_ORDER_A, checksum: fakeChecksum(0x22aa), snapshot: { order_no: "SO-2026-00122", amount: 86000, status: "已确认" }, captured_at: hoursBefore(26), links: [{ ref_type: "OBJECT", ref_id: OBJ_ORDER_A }] },
-  ...[OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J, OBJ_ORDER_B, OBJ_ORDER_A].map(
+  ...[OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H, OBJ_ORDER_I, OBJ_ORDER_J, OBJ_ORDER_B, OBJ_ORDER_A, OBJ_ORDER_R1, OBJ_ORDER_R2].map(
     (objectId, i) =>
       ({
         evidence_id: mockUuid(611 + i),
@@ -1819,10 +1820,12 @@ import { evidenceHandlers } from "./handlers/evidence";
 import { healthHandlers } from "./handlers/health";
 import { qualityHandlers } from "./handlers/quality";
 import { registryHandlers } from "./handlers/registry";
+import { tenantHandlers } from "./handlers/tenant";
 
-/** W2+W3 六页 MSW 数据层聚合（spec §3 端点清单：28 个 handler）。 */
+/** W2+W3 六页 MSW 数据层聚合（spec §3 端点清单：27 个 handler，含 T13-fix 补充的 tenants/current）。 */
 export const handlers = [
   ...authHandlers,
+  ...tenantHandlers,
   ...registryHandlers,
   ...eventHandlers,
   ...evidenceHandlers,
