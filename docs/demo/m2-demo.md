@@ -33,7 +33,7 @@ pnpm --filter web dev
 - 23 个 fixture 对象卡片；分页文案「显示 1–20 条，共 23 条」
 - 搜索 `SO-2026-00123` → 仅 1 卡；状态筛选「At Risk」→ 3 卡；域筛选联动
 - 卡片↔表格视图切换；派生状态 pill（Blocking/At Risk/DQ Exception/Watch/Healthy）
-- 「新建对象」弹窗：空提交三条行内错误逐字；`CUST-DEMO-999` 提交 409 → 编码行内「对象编码已存在，请更换」
+- 「新建对象」弹窗：空提交三条行内错误逐字；合法值提交 201「对象已创建」+ 列表刷新见新卡（**409 冲突分支由单测覆盖**——MSW 与真实后端对重码均为 upsert 200，现场演示走成功路径）
 - 卡片「详情」→ 右抽屉基本信息 + revision 时间线（订单 B 7 节点）
 
 ## ③ 切换真实后端
@@ -187,3 +187,5 @@ erp            ORDER        48      43       48      48        True
 2. **mode:"replay"**：后端 `SyncTriggerRequest.mode` Literal 仅 `full|incremental`，replay → 422；事件回放向导属 W3 EDP-301，届时扩展 Literal。
 3. **GET /objects 无 total**：真实后端分页响应只有 `items/next_cursor`（B.0 契约），`total` 为 MSW mock 扩展——对象页总数文案在真实模式显示「—」。
 4. **cancel 缺 confirm = 400**：`VALIDATION_ERROR` 经 B.0 权威映射返回 400（OpenAPI 声明 422 为 FastAPI 默认），非 422。
+5. **MSW-only 端点**：`GET /audit-logs/{audit_id}`（审计详情）与 `POST /admin/evidence/reindex`（重索引）后端未实现——分别待 W3/W5 页面化时落地。
+6. **列表 envelope 差异泛化**：`total` 为全部列表端点（audit/evidence/adapters）的 MSW mock 扩展；`GET /admin/adapters` 后端响应连 `next_cursor` 也无——各页面真实模式化时按 B.0 统一。

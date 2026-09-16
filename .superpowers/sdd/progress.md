@@ -92,4 +92,6 @@ Branch: feat/w2
 | T15 | DONE | 478a71a | 管道 CLI full/incremental/reconcile（逐记录独立事务，与 API 共用 process_record）+ make 三目标；reconcile 偏差 exit 1 |
 | T16 | DONE | 217ce49 | B.12 sync API：POST /{name}/sync 202 异步（进程内 job 注册表）/status 轮询/清单；AdapterSyncResponse 三字段对齐 MSW |
 | T17 | DONE | f444ec1 | EDP-024 租户生命周期：开通原子（tenants+admin+quota 单事务+临时口令）/suspend→403 TENANT_SUSPENDED 恢复墙/resume 复通/cancel 强确认 400 VALIDATION_ERROR+30d 保留窗 |
-| T18 | DONE | 本次 | 契约重导出（sha 886ea568，13 新路径）+ api-sdk regen；前端 115 测试/lint 零 schema 破坏；docs/demo/m2-demo.md 七段+四条已知契约缺口；verify-all 全绿 |
+| T18 | DONE | b15d6f7 | 契约重导出（sha 886ea568，12 新路径）+ api-sdk regen；前端 115 测试/lint 零 schema 破坏；docs/demo/m2-demo.md 七段+六条已知契约缺口；verify-all 全绿（后端 215/前端 115） |
+
+终审（整分支）：Approved——M2 七条出口条件全部有可执行证据；条件项（演示脚本 409 步骤改走成功路径 + 缺口清单补 3 条 + 本行计数更正）已随收口 commit 修复；W3 待办 13 项见对话归档。
