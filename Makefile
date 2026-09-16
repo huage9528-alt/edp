@@ -1,4 +1,4 @@
-.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile
+.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile seed-demo
 
 backend-lint:
 	cd backend && uv run ruff check . && uv run lint-imports
@@ -34,3 +34,6 @@ pipeline-incr:
 
 reconcile:
 	cd backend && uv run python -m edp_api.modules.ingest.cli reconcile
+
+seed-demo:
+	cd backend && uv run python -m edp_api.modules.demo.cli seed $(if $(RESET),--reset,)
