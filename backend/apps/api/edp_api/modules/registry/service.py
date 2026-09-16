@@ -26,6 +26,7 @@ from edp_api.core.db import bind_tenant
 from edp_api.core.errors import EdpError
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
+from edp_api.modules.audit import service as audit_service
 from edp_api.modules.events import service as events_service
 from edp_api.modules.registry.models import BusinessObject
 from edp_api.modules.registry.schemas import (
@@ -138,6 +139,7 @@ async def upsert_object(
         raise _conflict(current.revision)
     # 未携带 expected_revision 时用读到的版本兜底：并发丢更新可探测
     expected = expected_req if expected_req is not None else current.revision
+    previous_revision = current.revision
 
     result = await sess.execute(
         update(BusinessObject)
@@ -157,6 +159,22 @@ async def upsert_object(
         fresh = await _find_by_composite(sess, tenant_id, req)
         raise _conflict(fresh.revision if fresh else None)
     await sess.refresh(current)
+    # SQL UPDATE 不经 ORM 状态（切面不可见）——显式补审计（模块间仅 service）：
+    # before 取 update 前内存值（previous_revision），after 取 refresh 后行值
+    await audit_service.record_explicit(
+        sess,
+        action="OBJECT_UPDATE",
+        resource_type="business_objects",
+        resource_id=str(current.object_id),
+        detail={
+            "before": {"revision": previous_revision},
+            "after": {"revision": current.revision},
+            "changed": ["revision"],
+            "source_system": current.source_system,
+            "source_id": current.source_id,
+        },
+        principal=principal,
+    )
     await _append_outbox(sess, tenant_id, current, principal)
     return current, False
 
