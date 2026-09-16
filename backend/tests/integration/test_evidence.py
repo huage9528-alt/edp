@@ -425,13 +425,14 @@ async def test_cross_tenant_evidence_not_found(
         ),
         {"e": b_evidence, "t": tenant_b, "o": b_object},
     )
+    b_ref = uuid4()
     await db_session.execute(
         text(
             "INSERT INTO evidence.links"
             " (link_id, tenant_id, evidence_id, ref_type, ref_id)"
             " VALUES (:l, :t, :e, 'CASE', :r)"
         ),
-        {"l": b_link, "t": tenant_b, "e": b_evidence, "r": uuid4()},
+        {"l": b_link, "t": tenant_b, "e": b_evidence, "r": b_ref},
     )
     await db_session.commit()
 
@@ -452,7 +453,7 @@ async def test_cross_tenant_evidence_not_found(
 
     by_ref = await client.get(
         EVIDENCE,
-        params={"ref_type": "CASE", "ref_id": str(b_link)},
+        params={"ref_type": "CASE", "ref_id": str(b_ref)},  # 真实插入的 ref_id
         headers=headers,
     )
     assert by_ref.status_code == 200, by_ref.text
