@@ -7,6 +7,7 @@ import {
   SearchPlaceholderPage,
 } from "../features/placeholder/PlaceholderPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
+import { RegistryPage } from "../features/registry/RegistryPage";
 import { AppLayout } from "../shell/AppLayout";
 import { RedirectIfAuthed, RequireAuth } from "./guards";
 
@@ -43,7 +44,11 @@ export const routes: RouteObject[] = [
         element: <OverviewPage />,
         handle: { title: "运营总览" } satisfies RouteHandle,
       },
-      { path: "admin/registry", ...withTitle("业务对象") },
+      {
+        path: "admin/registry",
+        element: <RegistryPage />,
+        handle: { title: "业务对象" } satisfies RouteHandle,
+      },
       { path: "admin/events", ...withTitle("事件流") },
       { path: "admin/evidence", ...withTitle("证据库") },
       { path: "admin/quality", ...withTitle("数据质量") },
