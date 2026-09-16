@@ -294,7 +294,7 @@ async def test_no_readonly_scope_api_key_forbidden_403(
     assert ok.status_code == 200, ok.text
 
 
-# ---- 5. record_explicit 直调：add + flush 后行存在（actor 缺省 SERVICE/system） ----
+# ---- 5. record_explicit 直调：add 后同事务可见（actor 缺省 SERVICE/system） ----
 
 
 async def test_record_explicit_direct_flush(db_session: AsyncSession) -> None:
@@ -306,6 +306,9 @@ async def test_record_explicit_direct_flush(db_session: AsyncSession) -> None:
         detail={"note": "直调"},
         risk="P2",
     )
+    # record_explicit 只 add 不 flush（T11 评审：同事务原子落，提交归调用方）
+    # ——需要回填 audit_id 的调用方自行 flush
+    await db_session.flush()
     assert isinstance(entry.audit_id, int)  # flush 后序列主键已回填
     row = (
         await db_session.execute(

@@ -34,7 +34,9 @@ async def record_explicit(
     risk: str | None = None,
     principal: Principal | None = None,
 ) -> AuditLog:
-    """显式审计补点：构造审计行并入本次事务（add + flush 即落 INSERT）。
+    """显式审计补点：构造审计行并入本次事务（仅 add，不 flush——同事务
+    原子落库，提交归请求级 get_db / 调用方事务；需要回填 audit_id 的调用
+    方自行 flush/refresh）。
 
     detail 在调用处构造（对象状态随后可能变化，须在 flush 前取值）；risk
     非空时并入 detail（verify 告警等风险语义，T12 用）。
@@ -49,7 +51,6 @@ async def record_explicit(
         principal=principal,
     )
     sess.add(entry)
-    await sess.flush()
     return entry
 
 

@@ -19,6 +19,7 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
 from edp_api.modules.events.router import router as events_router
+from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
@@ -65,6 +66,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(tenantmgmt_router)
     # audit 路由（B.6）：查询面，统一挂 tenant_scoped（租户收敛见 service）
     app.include_router(audit_router)
+    # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
+    app.include_router(evidence_router)
     for router in extra_routers:
         app.include_router(router)
 

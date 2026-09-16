@@ -4,12 +4,15 @@
 - 覆盖 INSERT/UPDATE/DELETE（ORM new/dirty/deleted）；纯 SQL update()/pg_insert()
   不经 ORM 状态——由 service 层 record_explicit 显式补点（registry 乐观锁
   UPDATE 与 events 批量 pg_insert 两处，改动收敛在各自 service）；
-- AuditLog 自身与 platform.idempotency_keys 排除（防自引用/接口幂等噪音）；
+- AuditLog 自身、platform.idempotency_keys 与 event.outbox 排除（防自引用/
+  接口幂等噪音/outbox 发件箱派生行——业务写已逐行有审计，outbox 行纯冗余）；
 - detail：INSERT 只记 after（全列快照）、UPDATE 只记变更字段（history
   deleted=旧值/added=新值，附 changed 清单）、DELETE 只记 before（全列快照）；
-  值序列化——JSON 标量与 dict/list 直取、UUID/datetime/date/Decimal→str、
-  其余 repr；字符串截断 512；列名匹配 password|secret|token|hash（不区分
-  大小写）脱敏为 "***"；
+  值序列化——JSON 标量直取、UUID/datetime/date/Decimal→str、其余 repr；
+  字符串截断 512；dict/list 递归脱敏（键匹配 password|secret|token|hash
+  不区分大小写 → "***"）后整体序列化预算 4096 字符封顶，超限置换为
+  {"_truncated": true, "size": n, "preview": 前 256 字符}；列名匹配
+  password|secret|token|hash（不区分大小写）脱敏为 "***"；
 - actor/tenant/request_id 取请求上下文（tenant_scoped 写入的 contextvar）：
   actor = current_principal（kind/id），缺省 SERVICE/system；tenant 优先取
   行上 tenant_id 列，否则 current_tenant_id；request_id 转 UUID（非法置 NULL）；
@@ -18,6 +21,7 @@
   事件内新增对象随后一并纳入），且事件不因新增对象再次触发（无递归）。
 """
 
+import json
 import logging
 import re
 from datetime import date, datetime
@@ -37,15 +41,24 @@ from edp_api.modules.audit.models import AuditLog
 
 logger = logging.getLogger(__name__)
 
-# 排除：审计自身（防自引用）与接口层幂等登记（请求噪音）
-EXCLUDED_TABLES = frozenset({"platform.audit_logs", "platform.idempotency_keys"})
+# 排除：审计自身（防自引用）、接口层幂等登记（请求噪音）与 outbox 发件箱
+# （派生行冗余——业务写已逐行有审计）；fullname 为 schema.表名 形态
+EXCLUDED_TABLES = frozenset(
+    {"platform.audit_logs", "platform.idempotency_keys", "event.outbox"}
+)
 
 # 表名 → action 前缀（缺省取表名大写）：business_objects 行写即
 # OBJECT_CREATE/OBJECT_UPDATE/OBJECT_DELETE，与 B.6 动作命名对齐
-ACTION_PREFIXES = {"business_objects": "OBJECT", "events": "EVENT"}
+ACTION_PREFIXES = {
+    "business_objects": "OBJECT",
+    "events": "EVENT",
+    "records": "EVIDENCE",
+}
 
 _SENSITIVE_COLUMN = re.compile(r"password|secret|token|hash", re.IGNORECASE)
 _MAX_TEXT = 512
+_MAX_CONTAINER_TEXT = 4096
+_PREVIEW_TEXT = 256
 
 _installed = False
 
@@ -139,17 +152,45 @@ def _history_new(history) -> object:
 
 
 def _serialize_value(value: object) -> object:
-    """JSONB 可序列化化：JSON 标量/dict/list 直取，UUID/datetime/Decimal→str，
-    其余 repr；字符串统一截断 512。"""
+    """JSONB 可序列化化：JSON 标量直取，UUID/datetime/Decimal→str，其余
+    repr；字符串统一截断 512；dict/list 递归脱敏后整体序列化预算 4096 字符
+    封顶（超限置换为截断标记，preview 为前 256 字符）。"""
     if isinstance(value, str):
         return value[:_MAX_TEXT]
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, (dict, list)):
-        return value
+        masked = _mask_sensitive_keys(value)
+        text = json.dumps(masked, ensure_ascii=False, default=str)
+        if len(text) > _MAX_CONTAINER_TEXT:
+            return {
+                "_truncated": True,
+                "size": len(text),
+                "preview": text[:_PREVIEW_TEXT],
+            }
+        return masked
     if isinstance(value, (UUID, datetime, date, Decimal)):
         return str(value)
     return repr(value)[:_MAX_TEXT]
+
+
+def _mask_sensitive_keys(value: object) -> object:
+    """dict/list 容器递归脱敏：键匹配 password|secret|token|hash → "***"；
+    容器内字符串沿用 512 截断；其余标量原样返回。"""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "***"
+                if _SENSITIVE_COLUMN.search(str(key))
+                else _mask_sensitive_keys(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask_sensitive_keys(item) for item in value]
+    if isinstance(value, str):
+        return value[:_MAX_TEXT]
+    return value
 
 
 def _mask(column: str, value: object) -> object:
