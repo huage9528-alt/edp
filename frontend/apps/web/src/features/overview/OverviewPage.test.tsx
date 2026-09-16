@@ -138,3 +138,100 @@ describe("OverviewPage 面板级独立降级（T3 评审遗留闭环）", () => 
     expect(within(kpis).getAllByText("—")).toHaveLength(7);
   });
 });
+
+describe("OverviewPage T6 三栏图表与审计动态（MSW fixtures）", () => {
+  it("三栏标题与数据健康子指标（SLA 99.2% / 完整性 98.7% / 对象覆盖率 96.8% / 孤儿事件 0）", async () => {
+    renderOverview();
+
+    const bottom = (await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="overview-bottom"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }))!;
+    for (const title of ["数据健康", "证据链健康", "审计动态"]) {
+      expect(within(bottom).getByText(title)).toBeInTheDocument();
+    }
+    expect(await within(bottom).findByText("99.2%")).toBeInTheDocument();
+    expect(within(bottom).getByText("98.7%")).toBeInTheDocument();
+    expect(within(bottom).getByText("96.8%")).toBeInTheDocument();
+    expect(within(bottom).getByText("0")).toBeInTheDocument();
+  });
+
+  it("MiniBarChart 24 根柱、第 15 根（idx=14）warning 高亮；峰值 aria 标注 742", async () => {
+    renderOverview();
+
+    const chart = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="overview-bar-chart"]');
+      expect(el).not.toBeNull();
+      return el as SVGSVGElement;
+    });
+    const rects = chart.querySelectorAll("rect");
+    expect(rects).toHaveLength(24);
+    expect(rects[14].getAttribute("class")).toContain("fill-state-warning");
+    expect(rects[13].getAttribute("class")).toContain("fill-primary-50");
+    expect(chart.getAttribute("aria-label")).toContain("742");
+  });
+
+  it("证据链健康：环形 100%/完整 + 证据总量 20 + 依赖关系完整", async () => {
+    renderOverview();
+
+    const evidence = (await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="panel-evidence-health"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }))!;
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="overview-donut"]')).not.toBeNull();
+    });
+    // 环形中心数值 + 有效率行均渲染 100%（fixtures evidence_valid_rate）
+    const pctTexts = await within(evidence).findAllByText("100%");
+    expect(pctTexts).toHaveLength(2);
+    expect(within(evidence).getByText("完整")).toBeInTheDocument();
+    expect(within(evidence).getByText("20")).toBeInTheDocument();
+    expect(within(evidence).getByText("依赖关系完整")).toBeInTheDocument();
+  });
+
+  it("审计动态 4 条：近 4 条含 2 条 GUARD_DENIED（error 高亮），其余 muted pill", async () => {
+    renderOverview();
+
+    const audit = (await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="panel-audit"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }))!;
+    await waitFor(() => {
+      expect(audit.querySelectorAll('[data-dom-id="overview-audit-row"]')).toHaveLength(4);
+    });
+    const deniedPills = await within(audit).findAllByText("GUARD_DENIED");
+    expect(deniedPills).toHaveLength(2);
+    for (const pill of deniedPills) {
+      expect(pill.className).toContain("bg-state-error-bg");
+    }
+    const mutedPill = within(audit).getByText("ADAPTER_SYNC_FAILED");
+    expect(mutedPill.className).toContain("bg-muted");
+  });
+});
+
+describe("OverviewPage T6 follow-up：三栏 PanelCard 降级断言", () => {
+  it("audit 500 → panel-audit-error 出现，panel-data-health 正常渲染（单点故障隔离）", async () => {
+    server.use(
+      http.get("*/api/v1/audit-logs", () =>
+        HttpResponse.json({ error: { code: "INTERNAL", message: "mock audit 500" } }, { status: 500 }),
+      ),
+    );
+    renderOverview();
+
+    await waitFor(
+      () => {
+        expect(document.querySelector('[data-dom-id="panel-audit-error"]')).not.toBeNull();
+      },
+      { timeout: 4000 },
+    );
+    expect(document.querySelector('[data-dom-id="panel-data-health-error"]')).toBeNull();
+    expect(document.querySelector('[data-dom-id="panel-evidence-health-error"]')).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-dom-id="overview-bar-chart"] rect')).toHaveLength(24);
+    });
+    expect(document.querySelector('[data-dom-id="panel-audit-empty"]')).toBeNull();
+  });
+});

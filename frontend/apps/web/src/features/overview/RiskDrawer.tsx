@@ -168,6 +168,7 @@ export function RiskDrawer({ item, open, onClose }: {
             <Plus className="w-4 h-4" aria-hidden="true" />
             创建任务
           </button>
+          {/* 本地乐观置灰延后：无真实状态变更端点，W3 收口（T5 评审 Minor） */}
           <button
             type="button"
             data-dom-id="risk-drawer-mark"

@@ -3,10 +3,12 @@ import { HeroCard } from "./HeroCard";
 import { KpiSection } from "./KpiSection";
 import { RiskList } from "./RiskList";
 import { RiskDrawer } from "./RiskDrawer";
+import { EventsTimeline } from "./EventsTimeline";
+import { BottomThree } from "./BottomThree";
 import { useAdapters, useCoverage, useDeepHealth, useObjectsTotal, useTopExceptions } from "./hooks";
 import type { ExceptionItem } from "../../mocks/types";
 
-/** 运营总览页：Hero 状态卡 + 8 KPI 网格（T4）+ 风险列表/抽屉（T5）；三栏区 T6 填充。 */
+/** 运营总览页：Hero 状态卡 + 8 KPI 网格（T4）+ 风险列表/抽屉（T5）+ 事件时间线/三栏图表（T6）。 */
 export function OverviewPage() {
   const [riskOpen, setRiskOpen] = useState(false);
   const [riskItem, setRiskItem] = useState<ExceptionItem | null>(null);
@@ -39,10 +41,9 @@ export function OverviewPage() {
           error={topExceptions.error}
           onOpen={openRisk}
         />
-        {/* T6 事件时间线填充右列 */}
+        <EventsTimeline />
       </div>
-      {/* TODO(T6 follow-up)：三栏区接入 PanelCard 后补页面级 -error 降级断言（PanelCard.test.tsx 已单卡覆盖） */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4" data-dom-id="overview-bottom" /> {/* T6 三栏 */}
+      <BottomThree />
       <RiskDrawer item={selectedRisk} open={riskOpen} onClose={() => setRiskOpen(false)} />
     </div>
   );

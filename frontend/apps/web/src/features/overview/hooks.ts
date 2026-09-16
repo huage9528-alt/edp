@@ -26,6 +26,15 @@ export const useAdapters = () =>
     retry: 1,
   });
 
+/** 三栏「数据健康」子指标（SLA/完整性/孤儿事件）取全量质量报告（coverage 端点无 kpi/orphans）。 */
+export const useQualityReport = () =>
+  useQuery({
+    queryKey: ["overview", "quality"],
+    queryFn: overviewApi.qualityReport,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+
 export const useTopExceptions = () =>
   useQuery({
     queryKey: ["overview", "exceptions"],

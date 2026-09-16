@@ -23,6 +23,7 @@ export interface ObjectsPage {
 /** 总览取数：类型按 MSW handler 实际响应形状（未冻结契约暂从 mocks/types 引用，T18 迁 api-sdk）。 */
 export const overviewApi = {
   coverage: () => apiClient.get<QualityReport["coverage"]>(`${BASE}/admin/quality/coverage`),
+  qualityReport: () => apiClient.get<QualityReport>(`${BASE}/admin/quality/reports`),
   health: () => apiClient.get<HealthResponse>(`${BASE}/health?deep=true`),
   adapters: () => apiClient.get<Page<AdapterSummary>>(`${BASE}/admin/adapters`),
   topExceptions: () => apiClient.get<Page<ExceptionItem>>(`${BASE}/ebms/exceptions?severity=P1&limit=3`),
