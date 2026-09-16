@@ -55,6 +55,9 @@
 .bg-state-info-bg { background-color: var(--edp-state-info-bg); }
 .bg-primary-light { background-color: var(--edp-primary-50); }
 .bg-primary-50 { background-color: var(--edp-primary-50); }
+/* SVG 柱图 fill 变体（T6 MiniBarChart；Tailwind v4 未映射 state/primary-50 色令牌） */
+.fill-primary-50 { fill: var(--edp-primary-50); }
+.fill-state-warning { fill: var(--edp-state-warning); }
 @media (max-width: 1200px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .three-col { grid-template-columns: 1fr; }

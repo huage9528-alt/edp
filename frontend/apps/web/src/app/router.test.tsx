@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useSessionStore, type AuthTokenResponse } from "../features/auth/session-store";
@@ -30,11 +31,15 @@ function sessionOf(
 }
 
 function renderAt(path: string) {
+  // T4 起 /admin/overview 消费 TanStack Query（Hero/KPI），路由测试需包 QueryClientProvider
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   render(
-    <ThemeProvider>
-      <RouterProvider router={router} />
-    </ThemeProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </QueryClientProvider>,
   );
   return router;
 }
@@ -83,6 +88,7 @@ describe("路由守卫与壳层渲染", () => {
     expect(document.querySelector('[data-dom-id="nav-tools"]')).toBeNull();
   });
 
+  // 慢宿主满载下该用例（antd Modal 确认 + 路由跳转）曾稳定超 5s 默认超时（单跑 2.5s+），放宽不改断言
   it("退出登录：清 session 回 /login", async () => {
     useSessionStore.getState().setSession(sessionOf("admin", ["ADMIN"], true));
     renderAt("/admin/overview");
@@ -97,5 +103,5 @@ describe("路由守卫与壳层渲染", () => {
       expect(document.querySelector('[data-dom-id="login-username"]')).not.toBeNull();
     });
     expect(useSessionStore.getState().accessToken).toBeNull();
-  });
+  }, 20_000);
 });
