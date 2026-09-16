@@ -88,6 +88,7 @@ describe("路由守卫与壳层渲染", () => {
     expect(document.querySelector('[data-dom-id="nav-tools"]')).toBeNull();
   });
 
+  // 慢宿主满载下该用例（antd Modal 确认 + 路由跳转）曾稳定超 5s 默认超时（单跑 2.5s+），放宽不改断言
   it("退出登录：清 session 回 /login", async () => {
     useSessionStore.getState().setSession(sessionOf("admin", ["ADMIN"], true));
     renderAt("/admin/overview");
@@ -102,5 +103,5 @@ describe("路由守卫与壳层渲染", () => {
       expect(document.querySelector('[data-dom-id="login-username"]')).not.toBeNull();
     });
     expect(useSessionStore.getState().accessToken).toBeNull();
-  });
+  }, 20_000);
 });
