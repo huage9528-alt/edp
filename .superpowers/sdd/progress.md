@@ -79,3 +79,17 @@ Branch: feat/w2
 | T7-fix | DONE | fd0cfe4 | router 退出登录用例 timeout 放宽（宿主满载 flake，基线复现） |
 | T8 | DONE | 3d4d13d | 新建弹窗（三行内文案逐字/409 行内/双弹防护）+ 详情抽屉（订单 B history 7 节点）；T7 三 Minor 闭环（DEMO_NOW 锚/resetCursor/DQ pill 断言）；115 绿；评审 Approved（Minor d：vitest 侧 VITE_USE_MSW 未注入——无断言风险，留观） |
 | T9 | DONE | - | pnpm -r test 115+shared96+api-sdk 全绿；lint 0 error（1 既有 warning）；build 绿；dev-server 人工冒烟未做（无头环境）——M2 演示彩排时补 |
+
+## 第二波（后端 T10~T18）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T10 | DONE | bf2aa81 | 0008 迁移：审计当月起 3 月分区 + ensure_audit_partitions() 幂等 + REVOKE UPDATE/DELETE + systems.last_watermark + adapters/audit 权限码 |
+| T11 | DONE | 6389b7b | 审计切面 before_flush 全 ORM 写捕获（脱敏/截断/自引用排除）+ registry/events SQL-update 分支显式补点 + GET /audit-logs（audit_id int 对齐 MSW） |
+| T12 | DONE | 62dc611 | 证据 API：canonical_json 单实现（键排序+紧凑）/compute_checksum/verify 篡改→valid=false+EVIDENCE_VERIFY_FAILED P1 告警/links 逆向追溯/跨租户 404 |
+| T13 | DONE | bd2d232 | edp_adapters：SourceAdapter 端口/AdapterRegistry/ErpMock 确定性数据集（BASE 60 + DELTA 8，random.Random(42)，时间窗冻结） |
+| T14 | DONE | 52e3ec0+3fc5755 | ingest 管道：三元组单事务/UUIDv5 幂等（重放 full duplicated=60）/水位推进/reconcile 三计数齐等；3fc5755 修正 import-linter 方向（api→adapters） |
+| T15 | DONE | 478a71a | 管道 CLI full/incremental/reconcile（逐记录独立事务，与 API 共用 process_record）+ make 三目标；reconcile 偏差 exit 1 |
+| T16 | DONE | 217ce49 | B.12 sync API：POST /{name}/sync 202 异步（进程内 job 注册表）/status 轮询/清单；AdapterSyncResponse 三字段对齐 MSW |
+| T17 | DONE | f444ec1 | EDP-024 租户生命周期：开通原子（tenants+admin+quota 单事务+临时口令）/suspend→403 TENANT_SUSPENDED 恢复墙/resume 复通/cancel 强确认 400 VALIDATION_ERROR+30d 保留窗 |
+| T18 | DONE | 本次 | 契约重导出（sha 886ea568，13 新路径）+ api-sdk regen；前端 115 测试/lint 零 schema 破坏；docs/demo/m2-demo.md 七段+四条已知契约缺口；verify-all 全绿 |
