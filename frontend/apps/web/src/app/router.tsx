@@ -6,6 +6,7 @@ import {
   PlaceholderPage,
   SearchPlaceholderPage,
 } from "../features/placeholder/PlaceholderPage";
+import { OverviewPage } from "../features/overview/OverviewPage";
 import { AppLayout } from "../shell/AppLayout";
 import { RedirectIfAuthed, RequireAuth } from "./guards";
 
@@ -37,7 +38,11 @@ export const routes: RouteObject[] = [
       </RequireAuth>
     ),
     children: [
-      { path: "admin/overview", ...withTitle("运营总览") },
+      {
+        path: "admin/overview",
+        element: <OverviewPage />,
+        handle: { title: "运营总览" } satisfies RouteHandle,
+      },
       { path: "admin/registry", ...withTitle("业务对象") },
       { path: "admin/events", ...withTitle("事件流") },
       { path: "admin/evidence", ...withTitle("证据库") },
