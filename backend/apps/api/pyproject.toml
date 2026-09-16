@@ -13,7 +13,11 @@ dependencies = [
     "pydantic-settings",
     "pyjwt>=2.8",
     "argon2-cffi",
+    "edp-adapters",
 ]
+
+[tool.uv.sources]
+edp-adapters = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -427,12 +427,6 @@ wheels = [
 name = "edp-adapters"
 version = "0.1.0"
 source = { editable = "packages/adapters" }
-dependencies = [
-    { name = "edp-api" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "edp-api", editable = "apps/api" }]
 
 [[package]]
 name = "edp-api"
@@ -442,6 +436,7 @@ dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
+    { name = "edp-adapters" },
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -455,6 +450,7 @@ requires-dist = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "asyncpg" },
+    { name = "edp-adapters", editable = "packages/adapters" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings" },

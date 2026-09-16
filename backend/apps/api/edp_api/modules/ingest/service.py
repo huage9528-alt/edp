@@ -16,16 +16,21 @@ RLS：platform.systems / master.business_objects / event.* / evidence.* 均
 FORCE RLS——调用方会话需已 bind_tenant（CLI/API 各自绑定；显式 tenant_id
 条件双保险）。
 
-审计（T11 覆盖情况，管道每条 registered 记录落四行）：
+审计（T11 覆盖情况，管道每条 registered 记录落三行，另每次 sync 落
+一行 SYSTEMS_*）：
 - OBJECT_CREATE / OBJECT_UPDATE：upsert 路径（ORM INSERT 由切面自动捕获；
-  SQL UPDATE 由 registry 显式补点）；
+  SQL UPDATE 由 registry 显式补点）——每记录恰一行（新建 CREATE/更新 UPDATE）；
 - EVENT_CREATE：本模块纯 SQL INSERT 不经 ORM 状态——显式 record_explicit
   （detail.via="pipeline" 区分管道来源，与 events 批量入库路径同构）；
 - EVIDENCE_CREATE：ORM INSERT 由切面自动捕获；
+- SYSTEMS_CREATE / SYSTEMS_UPDATE：水位写回（_advance_watermark ORM 路径，
+  切面捕获），每次 run_sync 至多一行；
 - outbox 两行（OBJECT_UPSERT + SNAPSHOT）被切面排除（派生行）；
+- 切面（before_flush）仅由宿主进程安装（create_app / CLI），本模块不
+  自装——未装切面的宿主只有显式补点的 EVENT_CREATE / OBJECT_UPDATE 行；
 - run_sync 进入时 set current_principal（服务主体），使无请求上下文的
-  CLI/后台任务中切面派生行（EVIDENCE_CREATE / SYSTEMS_*）actor 也收敛为
-  SERVICE/adapter:erp。
+  CLI/后台任务中切面派生行（OBJECT_CREATE / EVIDENCE_CREATE / SYSTEMS_*）
+  actor 也收敛为 SERVICE/adapter:erp。
 
 已知边界（单写者语义，可接受）：upsert_object 在并发首插 IntegrityError
 时会 rollback 整个事务（既有行为）——管道为单写者无并发竞争；run_sync 对

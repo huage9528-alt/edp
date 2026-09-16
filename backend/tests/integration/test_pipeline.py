@@ -1,5 +1,5 @@
 """T14 ingest 管道集成测试（EDP-010）：三元组单事务 / UUIDv5 幂等 / 水位 /
-对账 / RLS。
+对账 / RLS / 审计覆盖。
 
 直调 service 层（管道 HTTP 入口归 T16、CLI 归 T15，此处验证落库语义）；
 会话形态：app_role_engine（edp_app 角色，受 RLS）+ bind_tenant(default
@@ -17,6 +17,7 @@ import pytest
 from edp_adapters import ErpMockAdapter
 from edp_adapters.erp_mock import UPDATED_ORDER_IDS, WINDOW_END
 from edp_api.core.db import bind_tenant
+from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.ingest import service as ingest_service
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -424,3 +425,50 @@ async def test_rls_isolates_pipeline_data(
         assert events == 0
     finally:
         await session.close()
+
+
+# ---- 7. 审计覆盖：装切面后每 registered 记录 3 行（OBJECT/EVENT/EVIDENCE）
+# ----    + 每次 sync 1 行 SYSTEMS_*；outbox 派生行被排除 ----
+#
+# 切面仅由宿主安装（create_app / CLI），直调 service 层的测试须自行
+# install_audit_aspect（幂等，Session 类级全局监听）。全量运行时切面已随
+# test_audit 的 create_app 装配（此处 no-op）；单文件运行时自此全局生效——
+# 本用例置于文件末尾，前序用例保持"未装切面"形态不受影响（EVENT_CREATE
+# 为管道显式补点，装否皆在；OBJECT/EVIDENCE/SYSTEMS 行依赖切面）。
+
+
+async def _audit_count(
+    db_session: AsyncSession, tenant_id: UUID, action: str
+) -> int:
+    return (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM platform.audit_logs"
+                " WHERE tenant_id = :t AND actor_id = 'adapter:erp' AND action = :a"
+            ),
+            {"t": tenant_id, "a": action},
+        )
+    ).scalar_one()
+
+
+async def test_audit_aspect_covers_pipeline(
+    app_role_engine: AsyncEngine, db_session: AsyncSession, default_tenant_id: UUID
+) -> None:
+    install_audit_aspect()
+    stats = await _sync(app_role_engine, default_tenant_id, "full")
+    assert stats.registered == 60
+
+    # 每条 registered 记录恰三行：OBJECT_CREATE（切面）+ EVENT_CREATE（显式）
+    # + EVIDENCE_CREATE（切面），actor 均收敛为 SERVICE/adapter:erp
+    assert await _audit_count(db_session, default_tenant_id, "OBJECT_CREATE") == 60
+    assert await _audit_count(db_session, default_tenant_id, "EVENT_CREATE") == 60
+    assert await _audit_count(db_session, default_tenant_id, "EVIDENCE_CREATE") == 60
+    # 每次 sync 至多一行 SYSTEMS_*（首次同步为水位登记 CREATE）
+    assert await _audit_count(db_session, default_tenant_id, "SYSTEMS_CREATE") == 1
+    # outbox 为派生行，切面排除
+    assert await _scalar(
+        db_session,
+        "SELECT count(*) FROM platform.audit_logs"
+        " WHERE tenant_id = :t AND resource_type = 'outbox'",
+        default_tenant_id,
+    ) == 0
