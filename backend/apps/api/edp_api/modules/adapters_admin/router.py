@@ -51,10 +51,13 @@ async def trigger_sync(
     payload: SyncTriggerRequest,
     principal: Annotated[Principal, Depends(require_write("adapters"))],
 ) -> AdapterSyncResponse:
-    """202 登记后台任务（run_sync_per_record 逐记录独立事务）；未注册 404。"""
+    """202 登记后台任务（run_sync_per_record 逐记录独立事务）；未注册 404。
+
+    mode=replay 全量重放（UUIDv5 幂等 → duplicated）；since 仅 replay 消费。
+    """
     try:
         job = adapters_service.trigger_sync(
-            principal.tenant_id, adapter_name, payload.mode
+            principal.tenant_id, adapter_name, payload.mode, payload.since
         )
     except LookupError:
         raise EdpError.not_found("适配器不存在") from None

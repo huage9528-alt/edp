@@ -84,6 +84,9 @@ _SNAPSHOT_SUFFIX_LEN = len("_SNAPSHOT")
 # fetch_incremental 的"自纪元起"哨兵：返回源全集（对账数据源）
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
+# 同步模式（T13）：replay = fetch_full 全量重放 + 可选 occurred_at ≥ since 过滤
+SyncMode = Literal["full", "incremental", "replay"]
+
 
 def SNAPSHOT_EVENT_TYPE(object_type: str) -> str:  # noqa: N802 —— 计划冻结命名
     """管道 SNAPSHOT 事件类型：{object_type}_SNAPSHOT（对账按后缀反解类型）。"""
@@ -299,13 +302,46 @@ async def process_record(
     return True
 
 
+def _fetch_records(
+    adapter: SourceAdapter,
+    mode: SyncMode,
+    watermark: datetime | None,
+    anchor: datetime | None,
+    since: datetime | None,
+) -> list[SourceRecord]:
+    """按模式拉取源记录（T13：replay = 全量重放 + 可选 occurred_at ≥ since）。
+
+    - full：fetch_full([]) 全集；
+    - incremental：自水位（未登记 → 纪元哨兵）；
+    - replay：fetch_full([]) 后按 since 过滤（since 经 normalize_occurred_at
+      归一——naive 按 UTC 解释，前端 datetime-local 无时区值可直传）；
+      其余语义同 full：UUIDv5 幂等 → 重放计 duplicated、不推 revision。
+    未知模式抛 ValueError。
+    """
+    if mode == "full":
+        return adapter.fetch_full([], anchor=anchor)
+    if mode == "incremental":
+        return adapter.fetch_incremental(
+            watermark if watermark is not None else _EPOCH, anchor=anchor
+        )
+    if mode == "replay":
+        records = adapter.fetch_full([], anchor=anchor)
+        if since is None:
+            return records
+        cutoff = normalize_occurred_at(since)
+        return [record for record in records if record.occurred_at >= cutoff]
+    raise ValueError(f"未知同步模式：{mode}")
+
+
 async def run_sync(
     sess: AsyncSession,
     tenant_id: UUID,
     adapter: SourceAdapter,
-    mode: Literal["full", "incremental"],
+    mode: SyncMode,
+    since: datetime | None = None,
 ) -> SyncStats:
-    """同步入口：读水位 → 拉取（full=fetch_full([]) / incremental=自水位）→
+    """同步入口：读水位 → 拉取（full=fetch_full([]) / incremental=自水位 /
+    replay=全量重放 + since 过滤，见 _fetch_records）→
     逐条 process_record（单条失败 failed+1 记日志 continue）→ 水位推进
     max(fetched occurred_at) 写回 systems 行（未登记则 INSERT：
     type=ERP / adapter_mode=mock）。
@@ -322,13 +358,7 @@ async def run_sync(
         system = await _find_system(sess, tenant_id, adapter.name)
         watermark = system.last_watermark if system is not None else None
         anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
-        if mode == "full":
-            records = adapter.fetch_full([], anchor=anchor)
-        elif mode == "incremental":
-            since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since, anchor=anchor)
-        else:
-            raise ValueError(f"未知同步模式：{mode}")
+        records = _fetch_records(adapter, mode, watermark, anchor, since)
 
         stats = SyncStats(fetched=len(records))
         latest = watermark
@@ -362,7 +392,8 @@ async def run_sync_per_record(
     engine: AsyncEngine,
     tenant_id: UUID,
     adapter: SourceAdapter,
-    mode: Literal["full", "incremental"],
+    mode: SyncMode,
+    since: datetime | None = None,
 ) -> SyncStats:
     """逐记录独立事务同步（CLI / T16 触发式任务的事务策略）。
 
@@ -382,13 +413,7 @@ async def run_sync_per_record(
             watermark = await get_watermark(sess, tenant_id, adapter.name)
             anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
 
-        if mode == "full":
-            records = adapter.fetch_full([], anchor=anchor)
-        elif mode == "incremental":
-            since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since, anchor=anchor)
-        else:
-            raise ValueError(f"未知同步模式：{mode}")
+        records = _fetch_records(adapter, mode, watermark, anchor, since)
 
         stats = SyncStats(fetched=len(records))
         latest = watermark

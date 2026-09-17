@@ -7,19 +7,21 @@ status, started_at}）；status/清单为真实语义超集——T18 契约冻�
 """
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel
 
-from edp_api.modules.ingest.service import SyncStats
-
-SyncMode = Literal["full", "incremental"]
+from edp_api.modules.ingest.service import SyncMode, SyncStats
 
 
 class SyncTriggerRequest(BaseModel):
-    """POST /{adapter_name}/sync 请求体（mode 缺省 full）。"""
+    """POST /{adapter_name}/sync 请求体（mode 缺省 full；since 仅 replay 消费）。
+
+    since（可选）：replay 重放窗口下界（occurred_at ≥ since；naive 按 UTC
+    解释）——仅 mode="replay" 消费，其余模式忽略。
+    """
 
     mode: SyncMode = "full"
+    since: datetime | None = None
 
 
 class AdapterSyncResponse(BaseModel):

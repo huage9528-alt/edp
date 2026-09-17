@@ -95,8 +95,16 @@ def get_job(adapter_name: str) -> SyncJob | None:
     return _jobs.get(adapter_name)
 
 
-def trigger_sync(tenant_id: UUID, adapter_name: str, mode: SyncMode) -> SyncJob:
-    """登记并派发后台同步任务（须在事件循环内调用）；立即返回 RUNNING 任务。"""
+def trigger_sync(
+    tenant_id: UUID,
+    adapter_name: str,
+    mode: SyncMode,
+    since: datetime | None = None,
+) -> SyncJob:
+    """登记并派发后台同步任务（须在事件循环内调用）；立即返回 RUNNING 任务。
+
+    since 仅 replay 语义消费（重放窗口下界），其余模式透传忽略。
+    """
     adapter = get_adapter(adapter_name)  # LookupError → router 转 404
     job = SyncJob(
         sync_id=str(uuid4()),
@@ -106,19 +114,23 @@ def trigger_sync(tenant_id: UUID, adapter_name: str, mode: SyncMode) -> SyncJob:
         started_at=datetime.now(UTC),
     )
     _jobs[adapter_name] = job
-    task = asyncio.create_task(_run(job, tenant_id, adapter, mode))
+    task = asyncio.create_task(_run(job, tenant_id, adapter, mode, since))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return job
 
 
 async def _run(
-    job: SyncJob, tenant_id: UUID, adapter: SourceAdapter, mode: SyncMode
+    job: SyncJob,
+    tenant_id: UUID,
+    adapter: SourceAdapter,
+    mode: SyncMode,
+    since: datetime | None = None,
 ) -> None:
     """后台执行体：逐记录独立事务同步（run_sync_per_record 单实现复用）。"""
     try:
         stats = await ingest_service.run_sync_per_record(
-            core_db.get_engine(), tenant_id, adapter, mode
+            core_db.get_engine(), tenant_id, adapter, mode, since
         )
     except Exception as exc:
         job.status = "FAILED"
