@@ -78,6 +78,7 @@ ACTION_PREFIXES = {
     "evidence.records": "EVIDENCE",
     "decision.records": "DECISION",
     "decision.cases": "CASE",
+    "action.actions": "ACTION",
     # 裸表名回退（无 schema 前缀的表形态）
     "business_objects": "OBJECT",
     "events": "EVENT",

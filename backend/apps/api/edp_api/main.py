@@ -16,6 +16,7 @@ from sqlalchemy import text
 from edp_api.core import db as core_db
 from edp_api.core.contextvars import RequestIDMiddleware
 from edp_api.core.errors import install_error_handlers
+from edp_api.modules.actions.router import router as actions_router
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
@@ -87,6 +88,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(tools_router)
     # decisions 路由（B.5）：决策案例（EDP-018 最小版；records Human-Only）
     app.include_router(decisions_router)
+    # actions 路由（B.5）：行动任务状态机（EDP-020；Human-Only 两转移）
+    app.include_router(actions_router)
     # ebms 路由（B.9 子集）：EBMS 查询聚合（EDP-012，本轮 exceptions）
     app.include_router(ebms_router)
     # catalog 路由（B.7）：注册中心 systems/capabilities/skills（EDP-011）
