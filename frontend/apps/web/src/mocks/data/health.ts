@@ -29,6 +29,8 @@ export const health: HealthResponse = {
     adapters_success_rate: 99.5,
     evidence_count: evidence.length,
     evidence_valid_rate: 100,
+    object_coverage_pct: 96.8,
+    evidence_access_24h: 42,
   },
 };
 

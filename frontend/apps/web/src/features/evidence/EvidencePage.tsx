@@ -32,11 +32,15 @@ function KpiBand({
     | {
         evidence_count: number;
         evidence_valid_rate?: number;
+        object_coverage_pct?: number;
+        evidence_access_24h?: number;
       }
     | undefined;
 }) {
   const count = ops?.evidence_count;
   const validRate = ops?.evidence_valid_rate;
+  const coverage = ops?.object_coverage_pct;
+  const access24h = ops?.evidence_access_24h;
   return (
     <section className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-dom-id="evidence-kpi-band">
       <KpiCard
@@ -46,10 +50,10 @@ function KpiBand({
       />
       <KpiCard
         label="对象覆盖率"
-        value="—"
-        hint="W5 质量报表交付"
+        value={coverage != null ? `${coverage.toFixed(1)}%` : "—"}
+        hint={coverage != null ? undefined : "W5 质量报表交付"}
         icon={<Percent className="w-4 h-4" />}
-        tone="muted"
+        tone={coverage != null ? "primary" : "muted"}
       />
       <KpiCard
         label="校验和有效"
@@ -60,10 +64,10 @@ function KpiBand({
       />
       <KpiCard
         label="原文访问"
-        value="—"
-        hint="过去 24 小时 · W5 计量接入"
+        value={access24h != null ? access24h.toLocaleString() : "—"}
+        hint={access24h != null ? "过去 24 小时" : "过去 24 小时 · W5 计量接入"}
         icon={<FileSearch className="w-4 h-4" />}
-        tone="muted"
+        tone={access24h != null ? "primary" : "muted"}
       />
     </section>
   );
@@ -109,6 +113,15 @@ export function EvidencePage() {
     setDebouncedQ("");
     setSourceSystem("");
     resetCursor();
+  };
+  const removeChip = (key: string) => {
+    if (key === "q") {
+      setSearch("");
+      setDebouncedQ("");
+      resetCursor();
+    } else if (key === "source") {
+      setSourceSystem("");
+    }
   };
 
   const chips: FilterChip[] = [];
@@ -207,7 +220,7 @@ export function EvidencePage() {
         </div>
         {chips.length > 0 && (
           <div className="mt-3">
-            <FilterChips chips={chips} onRemove={clearFilters} onClearAll={clearFilters} />
+            <FilterChips chips={chips} onRemove={removeChip} onClearAll={clearFilters} />
           </div>
         )}
       </section>

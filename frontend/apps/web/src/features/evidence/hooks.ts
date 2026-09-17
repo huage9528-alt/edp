@@ -21,15 +21,6 @@ export function useEvidenceList(filters: EvidenceFilters, cursor: string | null)
   });
 }
 
-/** 证据详情（含 links/snapshot）；选中后才请求。 */
-export function useEvidenceDetail(evidenceId: string | undefined) {
-  return useQuery({
-    queryKey: ["evidence", "detail", evidenceId],
-    queryFn: () => evidenceApi.detail(evidenceId!),
-    enabled: evidenceId != null,
-  });
-}
-
 /** 同对象证据集合（链图用）。 */
 export function useObjectEvidence(objectId: string | undefined) {
   return useQuery({

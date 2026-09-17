@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Modal, message } from "antd";
 import { useState } from "react";
 import { errorSpec } from "@edp/shared";
@@ -28,6 +29,7 @@ export function RecheckModal({ open, onClose, onSubmitted }: RecheckModalProps) 
   const [scope, setScope] = useState<"ALL" | "EXCEPTIONS">("ALL");
   const [error, setError] = useState<string | null>(null);
   const recheck = useRecheck();
+  const queryClient = useQueryClient();
   const available = qualityAvailable();
 
   const toggle = (key: string) => {
@@ -43,6 +45,8 @@ export function RecheckModal({ open, onClose, onSubmitted }: RecheckModalProps) 
       {
         onSuccess: (task) => {
           void message.success("校验任务已提交，完成后将通知");
+          void queryClient.invalidateQueries({ queryKey: ["quality", "report"] });
+          void queryClient.invalidateQueries({ queryKey: ["quality", "exceptions"] });
           onSubmitted(task.task_id);
           onClose();
         },

@@ -1,5 +1,7 @@
 import { message } from "antd";
 import { Drawer } from "antd";
+import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { StatusPill } from "@edp/shared";
 import type { QualityTask } from "../../mocks/types";
 import { useQualityTask } from "./hooks";
@@ -26,8 +28,23 @@ function fmtTs(iso: string): string {
  * 元信息（开始时间/已耗时）、日志时间线（级别 pill + 正文）、下载日志占位。 */
 export function TaskLogDrawer({ taskId, open, onClose }: TaskLogDrawerProps) {
   const taskQuery = useQualityTask(open ? taskId : undefined);
+  const queryClient = useQueryClient();
   const task: QualityTask | undefined = taskQuery.data;
   const elapsed = task ? elapsedText(task.started_at) : "—";
+
+  // 轮询离开 RUNNING（成功/失败终态）→ 再失效一次报告与异常卡（终态读数刷新）
+  const sawRunningRef = useRef(false);
+  const status = task?.status;
+  useEffect(() => {
+    if (status === "RUNNING") sawRunningRef.current = true;
+  }, [status]);
+  useEffect(() => {
+    if (status != null && status !== "RUNNING" && sawRunningRef.current) {
+      sawRunningRef.current = false;
+      void queryClient.invalidateQueries({ queryKey: ["quality", "report"] });
+      void queryClient.invalidateQueries({ queryKey: ["quality", "exceptions"] });
+    }
+  }, [status, queryClient]);
 
   return (
     <Drawer

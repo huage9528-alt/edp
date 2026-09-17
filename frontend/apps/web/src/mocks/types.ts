@@ -97,6 +97,10 @@ export interface HealthResponse {
     policy_hits_today?: number;
     adapters_success_rate?: number;
     evidence_valid_rate?: number;
+    /** mock 扩展：对象覆盖率（%）；真实后端 W5 质量报表交付。 */
+    object_coverage_pct?: number;
+    /** mock 扩展：过去 24 小时证据原文访问次数；真实后端 W5 计量接入。 */
+    evidence_access_24h?: number;
   };
 }
 
