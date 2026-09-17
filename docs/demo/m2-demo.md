@@ -181,11 +181,40 @@ erp            ORDER        48      43       48      48        True
 
 ---
 
-## 已知契约缺口（M2 真实模式 vs MSW；后续里程碑对齐）
+## 已知契约缺口（W3 版；真实后端 vs MSW，后续里程碑对齐）
 
-1. **adapters 清单列**：后端 `GET /admin/adapters` 仅 `adapter/mode/status/health/last_sync_at`；MSW `AdapterSummary` 另有 `access/team/health_pct/isolation` 演示列，且时间字段命名 `last_sync` ≠ `last_sync_at`——适配器页面化时对齐（W4 EDP-402）。
-2. **mode:"replay"**：后端 `SyncTriggerRequest.mode` Literal 仅 `full|incremental`，replay → 422；事件回放向导属 W3 EDP-301，届时扩展 Literal。
-3. **GET /objects 无 total**：真实后端分页响应只有 `items/next_cursor`（B.0 契约），`total` 为 MSW mock 扩展——对象页总数文案在真实模式显示「—」。
-4. **cancel 缺 confirm = 400**：`VALIDATION_ERROR` 经 B.0 权威映射返回 400（OpenAPI 声明 422 为 FastAPI 默认），非 422。
-5. **MSW-only 端点**：`GET /audit-logs/{audit_id}`（审计详情）与 `POST /admin/evidence/reindex`（重索引）后端未实现——分别待 W3/W5 页面化时落地。
-6. **列表 envelope 差异泛化**：`total` 为全部列表端点（audit/evidence/adapters）的 MSW mock 扩展；`GET /admin/adapters` 后端响应连 `next_cursor` 也无——各页面真实模式化时按 B.0 统一。
+> W3 契约冻结随本清单更新（35 路径，指纹前 8 位 `f5ee32a8`）。原 M2 条目按 W3 实现修订：原「mode:"replay" → 422」已由 T13 闭环，替换为 W3-19；编号 W3-nn 供 T20 台账引用。
+
+**契约形态**
+
+1. **W3-01 adapters 清单列**（W4 EDP-402）：后端 `GET /admin/adapters` 仅 `adapter/mode/status/health/last_sync_at`（W3 起为 erp/erp-demo/plm-demo 三行）；MSW `AdapterSummary` 另有 `access/team/health_pct/isolation` 演示列且为 6 适配器全集，时间字段命名 `last_sync` ≠ `last_sync_at`——适配器页面化时对齐。
+2. **W3-02 GET /objects 无 total**：真实后端分页响应只有 `items/next_cursor`（B.0 契约）；`total` 为 MSW mock 扩展。W3 起 `core.pagination.Page` 已增可选 `total`，但**仅 events 填充**（EDP-301 分页文案），objects 等其余端点仍缺省——对象页总数文案真实模式显示「—」。
+3. **W3-03 cancel 缺 confirm = 400**：`VALIDATION_ERROR` 经 B.0 权威映射返回 400（OpenAPI 声明 422 为 FastAPI 默认），非 422。
+4. **W3-04 MSW-only 端点**：`GET /audit-logs/{audit_id}`（审计详情）与 `POST /admin/evidence/reindex`（重索引）后端未实现——分别待 W3/W5 页面化时落地。
+5. **W3-05 全路由 405/404 统一 envelope（行为变更，已获认可）**：T8 为 tools 补 `StarletteHTTPException` 处理器后，**所有路由**的框架 404/405 由 FastAPI 默认 `{"detail": ...}` 变为统一 `ErrorEnvelope`（`METHOD_NOT_ALLOWED` / `NOT_FOUND`）；消费方若解析 `detail` 需改用 `error.code/message`。
+6. **W3-06 非 events 列表端点省略 null 字段**：`response_model_exclude_none` 下，audit/evidence/objects/tenants/decisions/health 等响应中值为 null 的可选字段（含 `next_cursor`）不出现；MSW fixtures 常显式给 `next_cursor: null`——前端按可选处理。
+7. **W3-07 orders 列表 envelope 形态**：B.8 原文「同上述结构数组」（裸数组），实现为 `{"items": [...], "next_cursor": null}` envelope（`OrderListResponse`）——与采购/B.0 分页形态一致，B.8 示例待文档化收口。
+8. **W3-08 采购 next_cursor 恒 null**：`GET /tools/purchase-orders` 本轮不实现游标分页（固定 `next_cursor: null`，`limit` 生效）——后续补游标（对齐 events 锚 `{o,i}` 模式）。
+
+**语义与审计**
+
+9. **W3-09 exceptions status 语义**：真实后端 `OPEN` = 无「已 DECIDED 案例」关联（`decision.cases.source_id = event_id`）、`RESOLVED` = 有；MSW 约定为固定事件（`EVT_ORDER_I_DQ`）标 RESOLVED——页面文案与演示脚本按真实语义表述。
+10. **W3-10 exceptions 含 P3**：真实条件仅 `risk_level IS NOT NULL`，seed 后 10 条（含 P3×2）；MSW `data/ebms.ts` 8 条（不含 P3）——列表数量差异非缺陷，severity 过滤可对齐。
+11. **W3-11 result_type 可空**：`event.events.result_type` 列可空，响应保留 `result_type: null` 可能（seed 恒有值）；MSW 类型为非空——前端渲染需兜底。
+12. **W3-12 展示型事件不迁入 seed**：真实数据为 `{TYPE}_SNAPSHOT` + `capability.result.*` / `adapter.sync.failed`；MSW 的 `order.created` 等展示型事件类型不迁入（避免双轨）。
+13. **W3-13 审计 resource_type 裸名歧义**：审计切面 `resource_type` 写**裸表名**（`records`/`cases`/`events`/`business_objects`），MSW 写全名（`evidence.records`/`decision.cases`/`registry.objects`）；`evidence.records` 与 `decision.records` 裸名同为 `records`，靠 action 前缀（`EVIDENCE_*` / `DECISION_*` / `CASE_*`）消歧——审计页筛选/展示需按 action 前缀或映射表处理。
+14. **W3-14 CASE_CREATE vs MSW CASE_CREATED**：真实 action 为 `CASE_CREATE`（切面 `{PREFIX}_{VERB}` 命名），MSW 为 `CASE_CREATED`——审计页动作文案映射时对齐。
+
+**health / KPI（T12/T13）**
+
+15. **W3-15 db_ha 仅 deep=true**：`GET /health` 非 deep 响应不含 `db_ha`（`response_model_exclude_none`），MSW 恒返回；`?deep=true` 需 `audit:read`（ADMIN 角色集）。另 MSW `replication_lag_mb: 0.4` 为演示值，真实开发库恒 0（无副本）。
+16. **W3-16 last_sync 键为 erp-demo/plm-demo**：真实 `last_sync` 按已同步适配器命名（seed 后为 `erp-demo`/`plm-demo`）；MSW 为 `erp/mes/plm/mdm/crm` 演示全集——总览页适配器健康卡需容忍键差异。
+17. **W3-17 归档命中不计入 idempotency_hit_rate**：`Idempotency-Key` 重放（`deduplicated=true` 存档响应）不累加 `events_duplicated`，故不计入命中率；口径为近 24h `events_duplicated/(events_in+events_duplicated)` 日粒度近似。
+18. **W3-18 P95 口径**：`ingest_latency_ms` 为「函数入口 → INSERT 前」处理耗时（不含 DB 提交/出站），seed 回填 60~299ms 确定性值；`p95_latency_ms` 取近 24h `percentile_cont(0.95)`。
+19. **W3-19 非法 mode 400（非 422）**：`POST /admin/adapters/{name}/sync` 非法 `mode` 由服务层校验返回 400 `VALIDATION_ERROR`（计划原写 422）；`mode:"replay"` 已支持（T13），`since` 仅 replay 消费。
+
+**演示数据（T5）**
+
+20. **W3-20 tools 数据与 B.8 示例差异**：演示数据集以 MSW fixtures 与场景故事线为准，与设计 B.8 示例存在三处有意偏差：① `X-100` 库存 WH-01=0/0（场景 2 缺口来源）、WH-02=3200/800，B.8 示例为 WH-01=3200/800；② `SO-2026-00123` 行合计（P-F×500×240 + X-100×1000×12.5 = 132500）≠ 头金额 120000（fixtures 原值）；③ `S-021` 除 X-100=10 天外另有 Y-200=7 天交期（fixtures 补齐，B.8 仅示例 X-100）。
+21. **W3-21 回流事件 10 条口径**：spec §3.2 写「8 条能力结果 + adapter.sync.failed」、计划 T5 标题写 9 条，实际 **10 条**（对齐 MSW events fixtures：A P3/B P1/C P2/H P0/J P1/E P1/G P3/PRJ-D P2/I P2/adapter P2）——以实际常量为准。
+22. **W3-22 业务日期固定**：快照段 `order_date`/`delivery_date` 等业务日期为 fixtures 固定字面量（如 2026-09-15），仅 `occurred_at` 随 seed 锚平移——跨锚重放业务日期不随动（演示可接受，真实适配器由源系统提供）。
