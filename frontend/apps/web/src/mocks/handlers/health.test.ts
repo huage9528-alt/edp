@@ -23,6 +23,15 @@ describe("health & adapters handlers", () => {
     expect(body.ops_metrics?.p95_latency_ms).toBeLessThan(2000);
   });
 
+  it("ops_metrics.idempotency_hit_rate 为 0~1 比值（真后端口径，渲染端 ×100）", async () => {
+    const body = (await (await fetch(`${BASE}/api/v1/health`)).json()) as {
+      ops_metrics?: { idempotency_hit_rate: number };
+    };
+    const rate = body.ops_metrics?.idempotency_hit_rate ?? -1;
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThanOrEqual(1);
+  });
+
   it("outbox status：pending=3 failed=0", async () => {
     const body = (await (await fetch(`${BASE}/api/v1/admin/outbox/status`)).json()) as { pending: number; failed: number };
     expect(body).toMatchObject({ pending: 3, failed: 0 });

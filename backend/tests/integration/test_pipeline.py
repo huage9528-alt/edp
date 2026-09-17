@@ -1,5 +1,5 @@
 """T14 ingest 管道集成测试（EDP-010）：三元组单事务 / UUIDv5 幂等 / 水位 /
-对账 / RLS / 审计覆盖。
+对账 / RLS / 审计覆盖 / 领域投影（T4：投影落表 + 失败隔离 + 切面排除）。
 
 直调 service 层（管道 HTTP 入口归 T16、CLI 归 T15，此处验证落库语义）；
 会话形态：app_role_engine（edp_app 角色，受 RLS）+ bind_tenant(default
@@ -11,10 +11,13 @@
 不新增对象/证据不替换）；reconcile 的 ok 判定为记录级三计数齐等。
 """
 
+import logging
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from edp_adapters import ErpMockAdapter
+from edp_adapters.base import SourceRecord
 from edp_adapters.erp_mock import UPDATED_ORDER_IDS, WINDOW_END
 from edp_api.core.db import bind_tenant
 from edp_api.modules.audit.aspect import install_audit_aspect
@@ -31,6 +34,23 @@ _EV_SCOPE = (
     "(source_record_id LIKE 'SO-2026-%' OR source_record_id LIKE 'C-1%'"
     " OR source_record_id LIKE 'M-3%')"
 )
+
+# 领域投影表（T4 排除清单）：切面不应产生这些表的派生审计行
+_DOMAIN_AUDIT_TABLES = [
+    "customers",
+    "materials",
+    "products",
+    "suppliers",
+    "boms",
+    "bom_items",
+    "orders",
+    "order_lines",
+    "inventory",
+    "purchase_orders",
+    "supplier_lead_times",
+    "projects",
+    "milestones",
+]
 
 
 @pytest.fixture
@@ -84,6 +104,31 @@ async def _clean_pipeline_rows(db_session: AsyncSession) -> None:
     await db_session.execute(
         text("DELETE FROM event.events WHERE event_type LIKE '%\\_SNAPSHOT'")
     )
+    # 领域投影行（T4）：子表先删（FK 指向 business_objects，不先清父行删不掉）
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.order_lines WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.orders WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.customers WHERE customer_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.materials WHERE material_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
     await db_session.execute(
         text(f"DELETE FROM master.business_objects WHERE {_BO_SCOPE}")
     )
@@ -120,9 +165,14 @@ async def _reconcile(
     return {row.object_type: row for row in rows}
 
 
-async def _scalar(db_session: AsyncSession, sql: str, tenant_id: UUID) -> int:
+async def _scalar(
+    db_session: AsyncSession,
+    sql: str,
+    tenant_id: UUID,
+    params: dict | None = None,
+) -> int:
     return (
-        await db_session.execute(text(sql), {"t": tenant_id})
+        await db_session.execute(text(sql), {"t": tenant_id, **(params or {})})
     ).scalar_one()
 
 
@@ -242,6 +292,161 @@ async def test_full_sync_registers_triple(
     expected = max(r.occurred_at for r in ErpMockAdapter().fetch_full([]))
     assert watermark == expected
     assert watermark < WINDOW_END
+
+
+# ---- 1b. T4 领域投影：管道同事务投影领域快照表 ----
+
+
+async def test_full_sync_projects_domain_tables(
+    app_role_engine: AsyncEngine, db_session: AsyncSession, default_tenant_id: UUID
+) -> None:
+    """full 后：客户/物料快照行 > 0、sales.orders 行数 == ORDER 对象数
+    （ErpMock 订单无 lines，order_lines 不参与断言）。"""
+    stats = await _sync(app_role_engine, default_tenant_id, "full")
+    assert stats.registered == 60
+
+    order_objects = await _scalar(
+        db_session,
+        "SELECT count(*) FROM master.business_objects"
+        " WHERE tenant_id = :t AND object_type = 'ORDER'",
+        default_tenant_id,
+    )
+    customers = await _scalar(
+        db_session,
+        "SELECT count(*) FROM master.customers"
+        " WHERE tenant_id = :t AND customer_id IN"
+        f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})",
+        default_tenant_id,
+    )
+    materials = await _scalar(
+        db_session,
+        "SELECT count(*) FROM master.materials"
+        " WHERE tenant_id = :t AND material_id IN"
+        f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})",
+        default_tenant_id,
+    )
+    orders = await _scalar(
+        db_session,
+        "SELECT count(*) FROM sales.orders"
+        " WHERE tenant_id = :t AND order_id IN"
+        f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})",
+        default_tenant_id,
+    )
+    assert customers > 0
+    assert materials > 0
+    assert order_objects == 40
+    assert orders == order_objects
+
+
+# ---- 1c. T4 投影失败隔离：savepoint 回滚投影，三元组照常落库 ----
+
+
+async def test_projection_failure_does_not_block_pipeline(
+    app_role_engine: AsyncEngine,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """INVENTORY 引用不存在的物料 → delivery.inventory.material_id NOT NULL
+    未命中抛 IntegrityError：savepoint 回滚投影写入，三元组仍完整落库；
+    同会话后续记录继续处理成功（PendingRollback 会在该处炸）。"""
+    bad = SourceRecord(
+        source_system="erp",
+        object_type="INVENTORY",
+        source_id="M-301:WH-01",
+        occurred_at=datetime(2026, 9, 16, 8, 0, tzinfo=UTC),
+        payload={
+            "owner_domain": "delivery",
+            "material_code": "M-999",  # 不存在 → resolve 未命中 → FK NOT NULL
+            "warehouse": "WH-01",
+            "available": 1,
+            "reserved": 0,
+        },
+    )
+    good = SourceRecord(
+        source_system="erp",
+        object_type="ORDER",
+        source_id="SO-2026-00999",
+        occurred_at=datetime(2026, 9, 16, 9, 0, tzinfo=UTC),
+        payload={
+            "owner_domain": "sales",
+            "name": "投影失败隔离用例",
+            "amount": 100.0,
+            "status": "已确认",
+        },
+    )
+
+    session = async_sessionmaker(app_role_engine, expire_on_commit=False)()
+    try:
+        await bind_tenant(session, default_tenant_id)
+        with caplog.at_level(logging.WARNING):
+            assert (
+                await ingest_service.process_record(session, default_tenant_id, bad)
+                is True
+            )
+            # 前条投影失败未污染会话：后续记录照常注册
+            assert (
+                await ingest_service.process_record(session, default_tenant_id, good)
+                is True
+            )
+        await session.commit()
+    finally:
+        await session.close()
+    # 异常路径确实被触发（IntegrityError → savepoint 回滚 → warning 捕获）
+    assert any("领域投影失败" in message for message in caplog.messages)
+
+    object_id = (
+        await db_session.execute(
+            text(
+                "SELECT object_id FROM master.business_objects"
+                " WHERE tenant_id = :t AND source_id = 'M-301:WH-01'"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).scalar_one()
+    # 三元组完整：事件/证据各 1
+    assert (
+        await _scalar(
+            db_session,
+            "SELECT count(*) FROM event.events"
+            " WHERE tenant_id = :t AND object_id = :oid",
+            default_tenant_id,
+            {"oid": object_id},
+        )
+        == 1
+    )
+    assert (
+        await _scalar(
+            db_session,
+            "SELECT count(*) FROM evidence.records"
+            " WHERE tenant_id = :t AND source_record_id LIKE 'M-301:WH-01#v%'",
+            default_tenant_id,
+        )
+        == 1
+    )
+    # 投影行缺失（savepoint 回滚，无半截行）
+    assert (
+        await _scalar(
+            db_session,
+            "SELECT count(*) FROM delivery.inventory"
+            " WHERE tenant_id = :t AND inv_id = :oid",
+            default_tenant_id,
+            {"oid": object_id},
+        )
+        == 0
+    )
+    # 后续记录完整落库
+    assert (
+        await _scalar(
+            db_session,
+            "SELECT count(*) FROM event.events"
+            " WHERE tenant_id = :t AND event_type = 'ORDER_SNAPSHOT'"
+            " AND object_id = (SELECT object_id FROM master.business_objects"
+            " WHERE tenant_id = :t AND source_id = 'SO-2026-00999')",
+            default_tenant_id,
+        )
+        == 1
+    )
 
 
 # ---- 2. incremental（水位=full 后）：5 更新 revision=2/#v2 + 3 新对象 ----
@@ -472,3 +677,15 @@ async def test_audit_aspect_covers_pipeline(
         " WHERE tenant_id = :t AND resource_type = 'outbox'",
         default_tenant_id,
     ) == 0
+    # 领域投影行（T4）同样为派生快照 → 13 张领域表零审计行（排除生效直证）
+    assert (
+        await _scalar(
+            db_session,
+            "SELECT count(*) FROM platform.audit_logs"
+            " WHERE tenant_id = :t AND actor_id = 'adapter:erp'"
+            " AND resource_type = ANY(:types)",
+            default_tenant_id,
+            {"types": _DOMAIN_AUDIT_TABLES},
+        )
+        == 0
+    )

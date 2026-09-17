@@ -13,18 +13,25 @@ PLATFORM_ADMIN/ADMIN/MANAGER——manager1（MANAGER）**有**写权限，不能
 轮询稳定性：deadline 轮询（10s 上界 + 50ms 间隔）——慢宿主（testcontainers
 首次连接池预热）下 60 条逐记录事务通常 1~2s 完成，上界取计划 5s 的两倍
 防 flake；超时 fail 附 last_sync 现场便于诊断。
+
+T13 replay 用例（erp-demo）：清场复用 demo 复位实现（purge_tenant_business_
+data）——演示源 id（C-008/X-100/...）不在 erp mock 清场模式内；锚直写固定值
+（DEMO_ANCHOR 值）使 since 相对锚计算确定（naive since 由服务层按 UTC 归一）。
 """
 
 import asyncio
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 import httpx
 import pytest
+from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from edp_api.core import db as core_db
 from edp_api.main import create_app
 from edp_api.modules.adapters_admin import service as adapters_service
+from edp_api.modules.demo import service as demo_service
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -39,6 +46,11 @@ SEED_PASSWORD = "Admin@123!"
 
 POLL_TIMEOUT = 10.0
 POLL_INTERVAL = 0.05
+
+# 演示数据集 erp 段记录数（replay 全量重放口径；plm 段不经 erp-demo）
+ERP_DEMO_COUNT = sum(1 for spec in SNAPSHOT_RECORDS if spec.source_system == "erp")
+# anchor-5h 窗口内 erp 段记录（offset=-300min：X-100:WH-01 / X-100:WH-02 / S-021:X-100）
+ERP_DEMO_LAST_5H = 3
 
 _BO_SCOPE = "(source_id LIKE 'SO-2026-%' OR source_id LIKE 'C-1%' OR source_id LIKE 'M-3%')"
 _EV_SCOPE = (
@@ -113,12 +125,73 @@ async def _clean_adapter_rows(db_session: AsyncSession) -> None:
     await db_session.execute(
         text("DELETE FROM event.events WHERE event_type LIKE '%\\_SNAPSHOT'")
     )
+    # 领域投影行（T4）：子表先删（FK 指向 business_objects，不先清父行删不掉）
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.order_lines WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM sales.orders WHERE order_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.customers WHERE customer_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM master.materials WHERE material_id IN"
+            f" (SELECT object_id FROM master.business_objects WHERE {_BO_SCOPE})"
+        )
+    )
     await db_session.execute(
         text(f"DELETE FROM master.business_objects WHERE {_BO_SCOPE}")
     )
     await db_session.execute(text("DELETE FROM platform.systems WHERE name = 'erp'"))
     await db_session.commit()
     adapters_service._jobs.clear()
+
+
+@pytest.fixture
+async def clean_demo_rows(
+    db_session: AsyncSession, default_tenant_id: UUID
+) -> None:
+    """erp-demo 用例清场：逆依赖序清本租户业务数据（复用 seed 复位实现——
+    演示源 id（C-008/X-100/...）不在 erp mock 清场模式内）+ 清全链路审计行
+    （actor=adapter:erp）+ 任务注册表。"""
+    yield
+    await demo_service.purge_tenant_business_data(db_session, default_tenant_id)
+    await db_session.execute(
+        text(
+            "DELETE FROM platform.audit_logs"
+            " WHERE tenant_id = :t AND actor_id = 'adapter:erp'"
+        ),
+        {"t": default_tenant_id},
+    )
+    await db_session.commit()
+    adapters_service._jobs.clear()
+
+
+async def _set_demo_anchor(
+    db_session: AsyncSession, tenant_id: UUID, anchor: datetime
+) -> None:
+    """直写演示锚（绕 ORM 审计；仅测试夹具用，模式同 test_demo_seed）。"""
+    await db_session.execute(
+        text(
+            "UPDATE platform.tenants"
+            " SET attributes = jsonb_set(attributes, '{demo_seed,anchor}',"
+            " to_jsonb(CAST(:anchor AS text)))"
+            " WHERE tenant_id = :t"
+        ),
+        {"t": tenant_id, "anchor": anchor.isoformat()},
+    )
+    await db_session.commit()
 
 
 async def _login(
@@ -133,11 +206,19 @@ async def _login(
 
 
 async def _trigger(
-    client: httpx.AsyncClient, headers: dict[str, str], mode: str
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    mode: str,
+    *,
+    adapter: str = "erp",
+    since: str | None = None,
 ) -> str:
-    """POST /erp/sync → 202；断言触发契约（sync_id/status/started_at）后返回 sync_id。"""
+    """POST /{adapter}/sync → 202；断言触发契约后返回 sync_id（since 仅 replay 传）。"""
+    payload: dict[str, Any] = {"mode": mode}
+    if since is not None:
+        payload["since"] = since
     resp = await client.post(
-        f"{ADAPTERS}/erp/sync", json={"mode": mode}, headers=headers
+        f"{ADAPTERS}/{adapter}/sync", json=payload, headers=headers
     )
     assert resp.status_code == 202, resp.text
     body = resp.json()
@@ -147,12 +228,16 @@ async def _trigger(
 
 
 async def _poll_finished(
-    client: httpx.AsyncClient, headers: dict[str, str], sync_id: str
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    sync_id: str,
+    *,
+    adapter: str = "erp",
 ) -> dict[str, Any]:
-    """轮询 /erp/status 直至指定任务完成；返回 last_sync（超时 fail 附现场）。"""
+    """轮询 /{adapter}/status 直至指定任务完成；返回 last_sync（超时 fail 附现场）。"""
     deadline = time.monotonic() + POLL_TIMEOUT
     while True:
-        resp = await client.get(f"{ADAPTERS}/erp/status", headers=headers)
+        resp = await client.get(f"{ADAPTERS}/{adapter}/status", headers=headers)
         assert resp.status_code == 200, resp.text
         last_sync = resp.json()["last_sync"]
         if last_sync and last_sync["sync_id"] == sync_id and last_sync["finished_at"]:
@@ -274,7 +359,7 @@ async def test_analyst_readonly_post_403_get_200(
     assert body["last_sync"] is None  # 本测试未触发过同步（清场后任务表为空）
 
 
-# ---- 6. 清单：analyst1 GET /admin/adapters → 200 + erp 行契约 ----
+# ---- 6. 清单：analyst1 GET /admin/adapters → 200 + 三适配器行契约（T6） ----
 
 
 async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
@@ -282,10 +367,99 @@ async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
     resp = await client.get(ADAPTERS, headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()["items"]
-    assert [item["adapter"] for item in items] == ["erp"]
+    assert [item["adapter"] for item in items] == ["erp", "erp-demo", "plm-demo"]
     erp = items[0]
     assert set(erp) == {"adapter", "mode", "status", "health", "last_sync_at"}
     assert erp["mode"] == "mock"
     assert erp["status"] == "空闲"  # 未同步过
     assert erp["health"] == "OK"
     assert erp["last_sync_at"] is None  # 水位未登记（清场后）
+
+
+# ---- 7. replay（T13）：erp-demo 全量重放 → fetched==duplicated、不推 revision ----
+
+
+async def test_replay_duplicates_all_records(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    clean_demo_rows: None,
+) -> None:
+    headers = await _login(client, "admin")
+    full_id = await _trigger(client, headers, "full", adapter="erp-demo")
+    full = await _poll_finished(client, headers, full_id, adapter="erp-demo")
+    assert full["status"] == "SUCCEEDED"
+    assert full["stats"] == {
+        "fetched": ERP_DEMO_COUNT,
+        "registered": ERP_DEMO_COUNT,
+        "duplicated": 0,
+        "failed": 0,
+    }
+
+    replay_id = await _trigger(client, headers, "replay", adapter="erp-demo")
+    replay = await _poll_finished(client, headers, replay_id, adapter="erp-demo")
+    assert replay["status"] == "SUCCEEDED"
+    assert replay["stats"] == {
+        "fetched": ERP_DEMO_COUNT,
+        "registered": 0,
+        "duplicated": ERP_DEMO_COUNT,
+        "failed": 0,
+    }
+
+    # 幂等直证：重放不新增行、不推 revision（对象数不变且全为 revision=1）
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT count(*), max(revision) FROM master.business_objects"
+                " WHERE tenant_id = :t AND source_system = 'erp'"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).one()
+    assert (row[0], row[1]) == (ERP_DEMO_COUNT, 1)
+
+
+# ---- 8. replay + since：仅近 5h 窗口记录（锚固定 → 确定性 3 条） ----
+
+
+async def test_replay_since_filters_window(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    clean_demo_rows: None,
+) -> None:
+    # 固定锚（DEMO_ANCHOR 值，直写绕 ORM 审计）——since 相对锚计算确定
+    anchor = datetime(2026, 9, 28, 8, 30, tzinfo=UTC)
+    await _set_demo_anchor(db_session, default_tenant_id, anchor)
+
+    headers = await _login(client, "admin")
+    full_id = await _trigger(client, headers, "full", adapter="erp-demo")
+    await _poll_finished(client, headers, full_id, adapter="erp-demo")
+
+    since = (anchor - timedelta(hours=5)).isoformat()
+    replay_id = await _trigger(
+        client, headers, "replay", adapter="erp-demo", since=since
+    )
+    replay = await _poll_finished(client, headers, replay_id, adapter="erp-demo")
+    assert replay["status"] == "SUCCEEDED"
+    assert replay["stats"] == {
+        "fetched": ERP_DEMO_LAST_5H,
+        "registered": 0,
+        "duplicated": ERP_DEMO_LAST_5H,
+        "failed": 0,
+    }
+
+    # 窗口外记录未被触碰：erp 段对象仍为全集
+    assert await _objects_count(db_session, default_tenant_id) == ERP_DEMO_COUNT
+
+
+# ---- 9. 非法 mode：400 VALIDATION_ERROR（统一 envelope，不触发任务） ----
+
+
+async def test_invalid_mode_rejected(client: httpx.AsyncClient) -> None:
+    headers = await _login(client, "admin")
+    resp = await client.post(
+        f"{ADAPTERS}/erp-demo/sync", json={"mode": "bogus"}, headers=headers
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"

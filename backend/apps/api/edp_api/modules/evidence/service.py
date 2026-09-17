@@ -30,6 +30,7 @@ from edp_api.modules.evidence.models import EvidenceLink, EvidenceRecord
 from edp_api.modules.evidence.schemas import (
     EvidenceCreateRequest,
     EvidenceListItem,
+    RefType,
 )
 from edp_api.modules.registry import service as registry_service
 
@@ -96,6 +97,51 @@ async def create_record(
     if req.links:
         await sess.flush()
     return record
+
+
+async def ensure_link(
+    sess: AsyncSession,
+    principal: Principal,
+    *,
+    evidence_id: UUID,
+    ref_type: RefType,
+    ref_id: UUID,
+) -> EvidenceLink | None:
+    """按 (evidence_id, ref_type, ref_id) 幂等建链（跨模块消费口：decisions 的
+    CASE 关联等）。
+
+    证据不存在（含跨租户，RLS 下同义）→ None（调用方决定 400/跳过）；已存在
+    → 返回既有行不重复写；新建走 ORM（切面审计可见）。
+    """
+    if await sess.get(EvidenceRecord, evidence_id) is None:
+        return None
+    existing = (
+        (
+            await sess.execute(
+                select(EvidenceLink).where(
+                    EvidenceLink.evidence_id == evidence_id,
+                    EvidenceLink.ref_type == ref_type,
+                    EvidenceLink.ref_id == ref_id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return existing
+    link = EvidenceLink(
+        link_id=uuid4(),
+        tenant_id=principal.tenant_id,
+        evidence_id=evidence_id,
+        ref_type=ref_type,
+        ref_id=ref_id,
+        created_by=principal.id,
+        updated_by=principal.id,
+    )
+    sess.add(link)
+    await sess.flush()
+    return link
 
 
 async def get_record(

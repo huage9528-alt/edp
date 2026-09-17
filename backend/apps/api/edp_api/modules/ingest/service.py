@@ -1,10 +1,11 @@
 """ingest 管道服务（EDP-010）：源记录三元组单事务落库 + 水位 + 对账。
 
 process_record 是单条记录的唯一处理实现（T15 CLI 与 T16 sync API 共用，
-run_sync 内部亦循环调用它）：对象 upsert → SNAPSHOT 事件 → 证据 → outbox，
-四写在同一事务内（本层只 flush 不 commit，事务边界归调用方：run_sync 挂
-调用方单会话整批提交；run_sync_per_record 每记录 engine.begin() 独立提交
-——CLI 与 T16 触发式任务的事务入口，单条失败只回滚该条不连坐批次）。
+run_sync 内部亦循环调用它）：对象 upsert → 领域投影（T4，savepoint 隔离，
+投影失败不连坐）→ SNAPSHOT 事件 → 证据 → outbox，全部写在同一事务内
+（本层只 flush 不 commit，事务边界归调用方：run_sync 挂调用方单会话整批
+提交；run_sync_per_record 每记录 engine.begin() 独立提交——CLI 与 T16
+触发式任务的事务入口，单条失败只回滚该条不连坐批次）。
 
 幂等（UUIDv5 适配器层 + ON CONFLICT 数据层双保险）：
 - event_id = derive_event_id(tenant, source_system, source_id, occurred_at,
@@ -26,7 +27,8 @@ FORCE RLS——调用方会话需已 bind_tenant（CLI/API 各自绑定；显式
 - EVIDENCE_CREATE：ORM INSERT 由切面自动捕获；
 - SYSTEMS_CREATE / SYSTEMS_UPDATE：水位写回（_advance_watermark ORM 路径，
   切面捕获），每次 run_sync 至多一行；
-- outbox 两行（OBJECT_UPSERT + SNAPSHOT）被切面排除（派生行）；
+- outbox 两行（OBJECT_UPSERT + SNAPSHOT）与领域投影行（13 张快照表）
+  被切面排除（派生行，业务写已逐行有审计）；
 - 切面（before_flush）仅由宿主进程安装（create_app / CLI），本模块不
   自装——未装切面的宿主只有显式补点的 EVENT_CREATE / OBJECT_UPDATE 行；
 - run_sync 进入时 set current_principal（服务主体），使无请求上下文的
@@ -49,6 +51,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -65,8 +68,10 @@ from edp_api.modules.events.uuidv5 import derive_event_id, normalize_occurred_at
 from edp_api.modules.evidence import service as evidence_service
 from edp_api.modules.evidence.schemas import EvidenceCreateRequest
 from edp_api.modules.ingest.models import System
+from edp_api.modules.projections import service as projections_service
 from edp_api.modules.registry import service as registry_service
 from edp_api.modules.registry.schemas import ObjectUpsertRequest
+from edp_api.modules.tenantmgmt import service as tenantmgmt_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,9 @@ AGGREGATE_TYPE_EVENT = "EVENT"
 _SNAPSHOT_SUFFIX_LEN = len("_SNAPSHOT")
 # fetch_incremental 的"自纪元起"哨兵：返回源全集（对账数据源）
 _EPOCH = datetime.min.replace(tzinfo=UTC)
+
+# 同步模式（T13）：replay = fetch_full 全量重放 + 可选 occurred_at ≥ since 过滤
+SyncMode = Literal["full", "incremental", "replay"]
 
 
 def SNAPSHOT_EVENT_TYPE(object_type: str) -> str:  # noqa: N802 —— 计划冻结命名
@@ -121,11 +129,11 @@ _INSERT_EVENT_SQL = text("""
     INSERT INTO event.events
         (event_id, tenant_id, event_type, object_id, source_system, occurred_at,
          actor_type, actor_id, result_type, risk_level, score, data,
-         idempotency_key, created_by, updated_by)
+         idempotency_key, ingest_latency_ms, created_by, updated_by)
     VALUES
         (:event_id, :tenant_id, :event_type, :object_id, :source_system,
          :occurred_at, 'SERVICE', :actor, NULL, NULL, NULL,
-         CAST(:data AS jsonb), :idempotency_key, :actor, :actor)
+         CAST(:data AS jsonb), :idempotency_key, :latency_ms, :actor, :actor)
     ON CONFLICT DO NOTHING
 """)
 
@@ -163,16 +171,28 @@ async def process_record(
     """单条源记录 → 三元组（对象/事件/证据）+ outbox；返回 registered。
 
     duplicated（事件已存在 / ON CONFLICT 命中）返回 False 且不触碰 revision；
-    CLI（逐条独立事务）与 run_sync 共用本实现。
+    领域投影（T4）在对象 upsert 后、事件写入前调用（savepoint 隔离：投影
+    失败仅回滚投影写入记 warning，不阻断三元组/outbox）；CLI（逐条独立
+    事务）与 run_sync 共用本实现。
+
+    W3（T9）：registered/duplicated 两路径各经 tenantmgmt 累加
+    tenant_usage_daily（events_in / events_duplicated，同事务）；
+    ``ingest_latency_ms`` = 本条处理耗时（函数入口至事件 INSERT 前，
+    perf_counter 毫秒截断）。
     """
     principal = service_principal(tenant_id)
+    started = perf_counter()
     event_type = SNAPSHOT_EVENT_TYPE(record.object_type)
     event_id = derive_event_id(
         tenant_id, record.source_system, record.source_id, record.occurred_at, event_type
     )
 
-    # 幂等第一道：事件已存在 → 整条跳过（不动 revision、不写证据）
+    # 幂等第一道：事件已存在 → 整条跳过（不动 revision、不写证据、不投影
+    # ——投影已随首次注册的事务完成，重放重做无意义）
     if await events_service.get_event(sess, event_id) is not None:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_duplicated=1
+        )
         return False
 
     # 对象 upsert（新建 revision=1；更新 revision+1）——owner_domain 提升为
@@ -190,7 +210,24 @@ async def process_record(
         ),
     )
 
+    # 领域投影（spec §2.1：对象 upsert 后、事件写入前，同事务）——savepoint
+    # 包裹：投影失败（如 NOT NULL FK 自然键未命中）只回滚投影写入并记
+    # warning，不把 session 置入 PendingRollback、不连坐三元组/outbox
+    try:
+        async with sess.begin_nested():
+            await projections_service.project_record(
+                sess, tenant_id, record, obj.object_id
+            )
+    except Exception:
+        logger.warning(
+            "领域投影失败：%s/%s",
+            record.source_system,
+            record.source_id,
+            exc_info=True,
+        )
+
     occurred_at = normalize_occurred_at(record.occurred_at)
+    latency_ms = int((perf_counter() - started) * 1000)
     result = await sess.execute(
         _INSERT_EVENT_SQL,
         {
@@ -203,11 +240,15 @@ async def process_record(
             "actor": SERVICE_ACTOR_ID,
             "data": json.dumps({"via": "pipeline"}, ensure_ascii=False),
             "idempotency_key": f"adapter:{event_id}",
+            "latency_ms": latency_ms,
         },
     )
     # 幂等第二道（竞态双保险）：并发重放胜者已写入 → 按 duplicated 收敛；
     # 此前已发生的 upsert revision 推进在单写者管道下不会出现
     if result.rowcount == 0:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_duplicated=1
+        )
         return False
 
     # 纯 SQL INSERT 不经 ORM 状态（切面不可见）——显式补审计
@@ -257,34 +298,67 @@ async def process_record(
         },
         actor=SERVICE_ACTOR_ID,
     )
+    await tenantmgmt_service.bump_usage_daily(sess, tenant_id, events_in=1)
     return True
+
+
+def _fetch_records(
+    adapter: SourceAdapter,
+    mode: SyncMode,
+    watermark: datetime | None,
+    anchor: datetime | None,
+    since: datetime | None,
+) -> list[SourceRecord]:
+    """按模式拉取源记录（T13：replay = 全量重放 + 可选 occurred_at ≥ since）。
+
+    - full：fetch_full([]) 全集；
+    - incremental：自水位（未登记 → 纪元哨兵）；
+    - replay：fetch_full([]) 后按 since 过滤（since 经 normalize_occurred_at
+      归一——naive 按 UTC 解释，前端 datetime-local 无时区值可直传）；
+      其余语义同 full：UUIDv5 幂等 → 重放计 duplicated、不推 revision。
+    未知模式抛 ValueError。
+    """
+    if mode == "full":
+        return adapter.fetch_full([], anchor=anchor)
+    if mode == "incremental":
+        return adapter.fetch_incremental(
+            watermark if watermark is not None else _EPOCH, anchor=anchor
+        )
+    if mode == "replay":
+        records = adapter.fetch_full([], anchor=anchor)
+        if since is None:
+            return records
+        cutoff = normalize_occurred_at(since)
+        return [record for record in records if record.occurred_at >= cutoff]
+    raise ValueError(f"未知同步模式：{mode}")
 
 
 async def run_sync(
     sess: AsyncSession,
     tenant_id: UUID,
     adapter: SourceAdapter,
-    mode: Literal["full", "incremental"],
+    mode: SyncMode,
+    since: datetime | None = None,
 ) -> SyncStats:
-    """同步入口：读水位 → 拉取（full=fetch_full([]) / incremental=自水位）→
+    """同步入口：读水位 → 拉取（full=fetch_full([]) / incremental=自水位 /
+    replay=全量重放 + since 过滤，见 _fetch_records）→
     逐条 process_record（单条失败 failed+1 记日志 continue）→ 水位推进
     max(fetched occurred_at) 写回 systems 行（未登记则 INSERT：
     type=ERP / adapter_mode=mock）。
 
     事务边界归调用方（CLI 逐条独立提交 / API 批提交）；水位不回退——
     full 重放时 fetched 可能整体早于既有水位，取 max(既有水位, fetched)。
+
+    拉取前经 tenantmgmt 解析演示时间锚（T6）并传入 fetch_*：需要相对时间
+    的演示适配器（erp-demo/plm-demo）以锚 + 固定偏移生成 occurred_at；
+    未设置锚 → None 由适配器回退 DEMO_ANCHOR；ErpMock 忽略该参数。
     """
     token = current_principal.set(service_principal(tenant_id))
     try:
         system = await _find_system(sess, tenant_id, adapter.name)
         watermark = system.last_watermark if system is not None else None
-        if mode == "full":
-            records = adapter.fetch_full([])
-        elif mode == "incremental":
-            since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since)
-        else:
-            raise ValueError(f"未知同步模式：{mode}")
+        anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
+        records = _fetch_records(adapter, mode, watermark, anchor, since)
 
         stats = SyncStats(fetched=len(records))
         latest = watermark
@@ -318,7 +392,8 @@ async def run_sync_per_record(
     engine: AsyncEngine,
     tenant_id: UUID,
     adapter: SourceAdapter,
-    mode: Literal["full", "incremental"],
+    mode: SyncMode,
+    since: datetime | None = None,
 ) -> SyncStats:
     """逐记录独立事务同步（CLI / T16 触发式任务的事务策略）。
 
@@ -328,6 +403,7 @@ async def run_sync_per_record(
     仅回滚该条（failed+1 记日志继续，不连坐批次）；水位读取与推进各占
     独立短事务（推进时重取 systems 行——跨会话不重用 detached 实例）。
     水位语义与 run_sync 一致：不回退，取 max(既有水位, fetched 最大时刻)。
+    时间锚与水位同段短事务解析（T6），拉取时透传 fetch_*。
     """
     token = current_principal.set(service_principal(tenant_id))
     try:
@@ -335,14 +411,9 @@ async def run_sync_per_record(
         async with factory() as sess:
             await bind_tenant(sess, tenant_id)
             watermark = await get_watermark(sess, tenant_id, adapter.name)
+            anchor = await tenantmgmt_service.get_demo_anchor(sess, tenant_id)
 
-        if mode == "full":
-            records = adapter.fetch_full([])
-        elif mode == "incremental":
-            since = watermark if watermark is not None else _EPOCH
-            records = adapter.fetch_incremental(since)
-        else:
-            raise ValueError(f"未知同步模式：{mode}")
+        records = _fetch_records(adapter, mode, watermark, anchor, since)
 
         stats = SyncStats(fetched=len(records))
         latest = watermark

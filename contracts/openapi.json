@@ -236,6 +236,537 @@
         "title": "BatchResponse",
         "type": "object"
       },
+      "BomItemResponse": {
+        "description": "BOM 行（B.8：material_code/quantity_per——quantity_per 即用量）。",
+        "properties": {
+          "material_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Code"
+          },
+          "quantity_per": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Per"
+          }
+        },
+        "title": "BomItemResponse",
+        "type": "object"
+      },
+      "BomResponse": {
+        "description": "GET /tools/bom 响应（product_code/bom_version/items[]）。",
+        "properties": {
+          "bom_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bom Version"
+          },
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BomItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "product_code": {
+            "title": "Product Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_code",
+          "items",
+          "evidence_hint"
+        ],
+        "title": "BomResponse",
+        "type": "object"
+      },
+      "CaseCreateRequest": {
+        "description": "POST /decisions/cases 请求（B.5）。",
+        "properties": {
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/CaseOptionIn"
+            },
+            "maxItems": 50,
+            "title": "Options",
+            "type": "array"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "P0",
+                  "P1",
+                  "P2",
+                  "P3"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "CaseCreateRequest",
+        "type": "object"
+      },
+      "CaseCreatedResponse": {
+        "description": "POST /decisions/cases 响应（201）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_no": {
+            "title": "Case No",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "case_no",
+          "status",
+          "created_at"
+        ],
+        "title": "CaseCreatedResponse",
+        "type": "object"
+      },
+      "CaseDetailResponse": {
+        "description": "GET /decisions/cases/{case_id} 响应（B.5）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionItem"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRefItem"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "options": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "question",
+          "context",
+          "options",
+          "risk_level",
+          "status"
+        ],
+        "title": "CaseDetailResponse",
+        "type": "object"
+      },
+      "CaseListItem": {
+        "description": "GET /decisions/cases 列表项（B.5 简投影）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case No"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "case_no",
+          "question",
+          "risk_level",
+          "status",
+          "created_at"
+        ],
+        "title": "CaseListItem",
+        "type": "object"
+      },
+      "CaseOptionIn": {
+        "description": "案例选项（B.5 options[{key,label}]）。",
+        "properties": {
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "CaseOptionIn",
+        "type": "object"
+      },
+      "CustomerRef": {
+        "description": "订单内嵌客户引用（B.8：code/name/level；主数据未解析 → 响应字段为 null）。",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "CustomerRef",
+        "type": "object"
+      },
+      "CustomerResponse": {
+        "description": "GET /tools/customers/{code} 响应（name/level/attributes）。",
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "customer_code": {
+            "title": "Customer Code",
+            "type": "string"
+          },
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customer_code",
+          "name",
+          "attributes",
+          "evidence_hint"
+        ],
+        "title": "CustomerResponse",
+        "type": "object"
+      },
+      "DbHa": {
+        "description": "数据库高可用状态（仅 deep=true；开发库 replicas=0、lag=0）。",
+        "properties": {
+          "replicas": {
+            "title": "Replicas",
+            "type": "integer"
+          },
+          "replication_lag_mb": {
+            "title": "Replication Lag Mb",
+            "type": "number"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "replication_lag_mb",
+          "replicas"
+        ],
+        "title": "DbHa",
+        "type": "object"
+      },
+      "DecisionCreateRequest": {
+        "description": "POST /decisions/cases/{case_id}/records 请求（B.5；Human-Only）。",
+        "properties": {
+          "chosen_option": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Chosen Option",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decision_type": {
+            "default": "HUMAN",
+            "enum": [
+              "HUMAN",
+              "AI_SUGGESTED"
+            ],
+            "title": "Decision Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chosen_option"
+        ],
+        "title": "DecisionCreateRequest",
+        "type": "object"
+      },
+      "DecisionCreatedResponse": {
+        "description": "POST /decisions/cases/{case_id}/records 响应（201）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_status": {
+            "title": "Case Status",
+            "type": "string"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "decision_time": {
+            "format": "date-time",
+            "title": "Decision Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "case_id",
+          "decision_time",
+          "case_status"
+        ],
+        "title": "DecisionCreatedResponse",
+        "type": "object"
+      },
+      "DecisionItem": {
+        "description": "决策记录项（B.5 decisions[]）。",
+        "properties": {
+          "chosen_option": {
+            "title": "Chosen Option",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "decided_by": {
+            "title": "Decided By",
+            "type": "string"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "decision_time": {
+            "format": "date-time",
+            "title": "Decision Time",
+            "type": "string"
+          },
+          "decision_type": {
+            "title": "Decision Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "chosen_option",
+          "decision_type",
+          "decided_by",
+          "decision_time",
+          "comment"
+        ],
+        "title": "DecisionItem",
+        "type": "object"
+      },
       "ErrorBody": {
         "description": "错误体（附录 B.0）；运行时 extra 字段按需并入。",
         "properties": {
@@ -451,6 +982,17 @@
             "title": "Data",
             "type": "object"
           },
+          "delivery_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Status"
+          },
           "event_id": {
             "format": "uuid",
             "title": "Event Id",
@@ -471,10 +1013,32 @@
             ],
             "title": "Idempotency Key"
           },
+          "ingest_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Latency Ms"
+          },
           "object_id": {
             "format": "uuid",
             "title": "Object Id",
             "type": "string"
+          },
+          "object_source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Source Id"
           },
           "occurred_at": {
             "format": "date-time",
@@ -630,6 +1194,33 @@
         "title": "EvidenceCreatedResponse",
         "type": "object"
       },
+      "EvidenceHint": {
+        "description": "关联对象/事件（该对象最新 {TYPE}_SNAPSHOT 事件；无则 event_id=null）。",
+        "properties": {
+          "event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_id"
+        ],
+        "title": "EvidenceHint",
+        "type": "object"
+      },
       "EvidenceLinkIn": {
         "description": "POST /evidence links 项（ref_type 六值枚举 + ref_id）。",
         "properties": {
@@ -718,6 +1309,31 @@
           "captured_at"
         ],
         "title": "EvidenceListItem",
+        "type": "object"
+      },
+      "EvidenceRefItem": {
+        "description": "案例关联证据引用（B.5 evidence_refs[{evidence_id, checksum, source_system}]）。",
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "source_system": {
+            "title": "Source System",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "checksum",
+          "source_system"
+        ],
+        "title": "EvidenceRefItem",
         "type": "object"
       },
       "EvidenceResponse": {
@@ -816,6 +1432,71 @@
         "title": "EvidenceResponse",
         "type": "object"
       },
+      "ExceptionItem": {
+        "description": "B.9 异常列表项（风险事件 + 案例关联派生）。",
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "result_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Type"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "risk_level",
+          "object_id",
+          "order_no",
+          "summary",
+          "occurred_at"
+        ],
+        "title": "ExceptionItem",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -827,6 +1508,57 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "GET /api/v1/health 响应（B.13 子集）。",
+        "properties": {
+          "db": {
+            "title": "Db",
+            "type": "string"
+          },
+          "db_ha": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DbHa"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_sync": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Last Sync",
+            "type": "object"
+          },
+          "ops_metrics": {
+            "$ref": "#/components/schemas/OpsMetrics"
+          },
+          "outbox_pending": {
+            "title": "Outbox Pending",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "db",
+          "outbox_pending",
+          "last_sync",
+          "version",
+          "ops_metrics"
+        ],
+        "title": "HealthResponse",
         "type": "object"
       },
       "HistoryEntry": {
@@ -906,6 +1638,55 @@
         "title": "IdempotencySpec",
         "type": "object"
       },
+      "InventoryResponse": {
+        "description": "GET /tools/inventory 响应（warehouses[] + total_available + snapshot_at）。",
+        "properties": {
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "material_code": {
+            "title": "Material Code",
+            "type": "string"
+          },
+          "material_id": {
+            "format": "uuid",
+            "title": "Material Id",
+            "type": "string"
+          },
+          "snapshot_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot At"
+          },
+          "total_available": {
+            "title": "Total Available",
+            "type": "number"
+          },
+          "warehouses": {
+            "items": {
+              "$ref": "#/components/schemas/WarehouseItem"
+            },
+            "title": "Warehouses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "material_code",
+          "material_id",
+          "warehouses",
+          "total_available",
+          "evidence_hint"
+        ],
+        "title": "InventoryResponse",
+        "type": "object"
+      },
       "LastSyncSummary": {
         "description": "最近一次同步任务（status 端点内嵌；RUNNING 中 finished_at/stats 为空）。",
         "properties": {
@@ -956,6 +1737,35 @@
           "status"
         ],
         "title": "LastSyncSummary",
+        "type": "object"
+      },
+      "LeadTimeItem": {
+        "description": "供应商交期行（B.8：material_code/lead_time_days）。",
+        "properties": {
+          "lead_time_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Time Days"
+          },
+          "material_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Code"
+          }
+        },
+        "title": "LeadTimeItem",
         "type": "object"
       },
       "LoginRequest": {
@@ -1204,11 +2014,189 @@
         "title": "ObjectUpsertRequest",
         "type": "object"
       },
-      "Page_AuditLogItem_": {
+      "OpsMetrics": {
+        "description": "运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致）。",
+        "properties": {
+          "dlq": {
+            "title": "Dlq",
+            "type": "integer"
+          },
+          "events_24h": {
+            "title": "Events 24H",
+            "type": "integer"
+          },
+          "evidence_count": {
+            "title": "Evidence Count",
+            "type": "integer"
+          },
+          "idempotency_hit_rate": {
+            "title": "Idempotency Hit Rate",
+            "type": "number"
+          },
+          "ingest_peak_24h": {
+            "title": "Ingest Peak 24H",
+            "type": "integer"
+          },
+          "p95_latency_ms": {
+            "title": "P95 Latency Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events_24h",
+          "ingest_peak_24h",
+          "p95_latency_ms",
+          "idempotency_hit_rate",
+          "dlq",
+          "evidence_count"
+        ],
+        "title": "OpsMetrics",
+        "type": "object"
+      },
+      "OrderDetail": {
+        "description": "订单详情（B.8：摘要结构 + lines 行明细）。",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Date"
+          },
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/OrderLineItem"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          },
+          "order_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Date"
+          },
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_no",
+          "object_id",
+          "currency",
+          "status",
+          "evidence_hint",
+          "lines"
+        ],
+        "title": "OrderDetail",
+        "type": "object"
+      },
+      "OrderLineItem": {
+        "description": "订单行（product_code/material_code 二选一或并存）。",
+        "properties": {
+          "material_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Code"
+          },
+          "product_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Code"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          }
+        },
+        "title": "OrderLineItem",
+        "type": "object"
+      },
+      "OrderListResponse": {
+        "description": "GET /tools/orders 响应（摘要列表；游标分页字段占位）。",
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/AuditLogItem"
+              "$ref": "#/components/schemas/OrderSummary"
             },
             "title": "Items",
             "type": "array"
@@ -1228,7 +2216,162 @@
         "required": [
           "items"
         ],
+        "title": "OrderListResponse",
+        "type": "object"
+      },
+      "OrderSummary": {
+        "description": "订单摘要（B.8 订单结构，不含 lines 明细）。",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Date"
+          },
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          },
+          "order_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Date"
+          },
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_no",
+          "object_id",
+          "currency",
+          "status",
+          "evidence_hint"
+        ],
+        "title": "OrderSummary",
+        "type": "object"
+      },
+      "Page_AuditLogItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
         "title": "Page[AuditLogItem]",
+        "type": "object"
+      },
+      "Page_CaseListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[CaseListItem]",
         "type": "object"
       },
       "Page_EventResponse_": {
@@ -1250,6 +2393,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -1277,12 +2431,61 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
           "items"
         ],
         "title": "Page[EvidenceListItem]",
+        "type": "object"
+      },
+      "Page_ExceptionItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExceptionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ExceptionItem]",
         "type": "object"
       },
       "Page_ObjectResponse_": {
@@ -1304,6 +2507,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -1331,12 +2545,114 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
           "items"
         ],
         "title": "Page[TenantSummary]",
+        "type": "object"
+      },
+      "PurchaseOrderItem": {
+        "description": "采购单行（B.8：po_no/supplier_code/quantity/expected_date/status）。",
+        "properties": {
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "expected_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Date"
+          },
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          },
+          "po_no": {
+            "title": "Po No",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supplier_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Code"
+          }
+        },
+        "required": [
+          "po_no",
+          "object_id",
+          "status",
+          "evidence_hint"
+        ],
+        "title": "PurchaseOrderItem",
+        "type": "object"
+      },
+      "PurchaseOrderListResponse": {
+        "description": "GET /tools/purchase-orders 响应（items + next_cursor）。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PurchaseOrderListResponse",
         "type": "object"
       },
       "RefreshRequest": {
@@ -1371,6 +2687,44 @@
         "title": "RefreshResponse",
         "type": "object"
       },
+      "SupplierLeadTimesResponse": {
+        "description": "GET /tools/supplier-lead-times 响应（lead_times[] + updated_at）。",
+        "properties": {
+          "evidence_hint": {
+            "$ref": "#/components/schemas/EvidenceHint"
+          },
+          "lead_times": {
+            "items": {
+              "$ref": "#/components/schemas/LeadTimeItem"
+            },
+            "title": "Lead Times",
+            "type": "array"
+          },
+          "supplier_code": {
+            "title": "Supplier Code",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "supplier_code",
+          "lead_times",
+          "evidence_hint"
+        ],
+        "title": "SupplierLeadTimesResponse",
+        "type": "object"
+      },
       "SyncStats": {
         "description": "一次同步的计数结果（T16 status 端点透出）。",
         "properties": {
@@ -1399,16 +2753,29 @@
         "type": "object"
       },
       "SyncTriggerRequest": {
-        "description": "POST /{adapter_name}/sync 请求体（mode 缺省 full）。",
+        "description": "POST /{adapter_name}/sync 请求体（mode 缺省 full；since 仅 replay 消费）。\n\nsince（可选）：replay 重放窗口下界（occurred_at ≥ since；naive 按 UTC\n解释）——仅 mode=\"replay\" 消费，其余模式忽略。",
         "properties": {
           "mode": {
             "default": "full",
             "enum": [
               "full",
-              "incremental"
+              "incremental",
+              "replay"
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
           }
         },
         "title": "SyncTriggerRequest",
@@ -1938,6 +3305,36 @@
         "title": "VerifyResponse",
         "type": "object"
       },
+      "WarehouseItem": {
+        "description": "库存仓库粒度快照（B.8：warehouse/available/reserved）。",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "number"
+          },
+          "reserved": {
+            "title": "Reserved",
+            "type": "number"
+          },
+          "warehouse": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse"
+          }
+        },
+        "required": [
+          "available",
+          "reserved"
+        ],
+        "title": "WarehouseItem",
+        "type": "object"
+      },
       "edp_api__modules__platform__schemas__TenantInfo": {
         "properties": {
           "name": {
@@ -2128,7 +3525,7 @@
     },
     "/api/v1/admin/adapters/{adapter_name}/sync": {
       "post": {
-        "description": "202 登记后台任务（run_sync_per_record 逐记录独立事务）；未注册 404。",
+        "description": "202 登记后台任务（run_sync_per_record 逐记录独立事务）；未注册 404。\n\nmode=replay 全量重放（UUIDv5 幂等 → duplicated）；since 仅 replay 消费。",
         "operationId": "trigger_sync_api_v1_admin_adapters__adapter_name__sync_post",
         "parameters": [
           {
@@ -2538,6 +3935,515 @@
         ]
       }
     },
+    "/api/v1/decisions/cases": {
+      "get": {
+        "description": "游标分页（created_at DESC, case_id tiebreak）；列表为简投影。",
+        "operationId": "list_cases_api_v1_decisions_cases_get",
+        "parameters": [
+          {
+            "description": "案例状态过滤",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "OPEN",
+                    "DECIDED",
+                    "CANCELLED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "案例状态过滤",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "风险级别过滤",
+            "in": "query",
+            "name": "risk_level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "P0",
+                    "P1",
+                    "P2",
+                    "P3"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "风险级别过滤",
+              "title": "Risk Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CaseListItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "决策案例列表（status/risk_level 过滤）",
+        "tags": [
+          "decisions"
+        ]
+      },
+      "post": {
+        "description": "创建案例；source_id 事件/evidence_ids 证据不存在 → 400 VALIDATION_ERROR。",
+        "operationId": "create_case_api_v1_decisions_cases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "创建决策案例（case_no 日序号 + 证据链）",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/cases/{case_id}": {
+      "get": {
+        "description": "详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。",
+        "operationId": "get_case_api_v1_decisions_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "决策案例详情（含证据引用与决策记录）",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/decisions/cases/{case_id}/records": {
+      "post": {
+        "description": "人工提交决策 → case 置 DECIDED；非 HUMAN → 403 GUARD_POLICY_DENIED。",
+        "operationId": "submit_record_api_v1_decisions_cases__case_id__records_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常；GUARD_POLICY_DENIED：策略拒绝该操作"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "提交决策记录（Human-Only）",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/v1/ebms/exceptions": {
+      "get": {
+        "description": "风险事件列表（occurred_at DESC）；case_id 为案例关联派生（B.9）。",
+        "operationId": "list_exceptions_api_v1_ebms_exceptions_get",
+        "parameters": [
+          {
+            "description": "风险级别过滤",
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "P0",
+                    "P1",
+                    "P2",
+                    "P3"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "风险级别过滤",
+              "title": "Severity"
+            }
+          },
+          {
+            "description": "处理状态（默认 OPEN：无已决策案例）",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "OPEN",
+              "description": "处理状态（默认 OPEN：无已决策案例）",
+              "enum": [
+                "OPEN",
+                "RESOLVED"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ExceptionItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "风险事件列表（EBMS 异常视图）",
+        "tags": [
+          "ebms"
+        ]
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页\n（occurred_at DESC, event_id tiebreak）。",
@@ -2813,7 +4719,7 @@
     },
     "/api/v1/events/{event_id}": {
       "get": {
-        "description": "点查；跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。",
+        "description": "点查（含 delivery_status/object_source_id 派生字段，与列表同口径）；\n跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。",
         "operationId": "get_event_api_v1_events__event_id__get",
         "parameters": [
           {
@@ -3242,6 +5148,72 @@
         "summary": "校验证据完整性（重算 checksum 比对）",
         "tags": [
           "evidence"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "基础健康 + ops_metrics；deep=true 返回 db_ha（需 audit:read）。",
+        "operationId": "get_health_api_v1_health_get",
+        "parameters": [
+          {
+            "description": "深度健康检查（需 audit:read 权限）",
+            "in": "query",
+            "name": "deep",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "深度健康检查（需 audit:read 权限）",
+              "title": "Deep",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "健康检查与运行指标",
+        "tags": [
+          "health"
         ]
       }
     },
@@ -4194,6 +6166,651 @@
         "summary": "暂停租户（ACTIVE → SUSPENDED）",
         "tags": [
           "tenants"
+        ]
+      }
+    },
+    "/api/v1/tools/bom": {
+      "get": {
+        "description": "产品 ACTIVE BOM；产品/版本不存在 → 404。",
+        "operationId": "get_bom_api_v1_tools_bom_get",
+        "parameters": [
+          {
+            "description": "产品 code",
+            "in": "query",
+            "name": "product_code",
+            "required": true,
+            "schema": {
+              "description": "产品 code",
+              "title": "Product Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BomResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "产品 BOM（ACTIVE 版本 + 用量行）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/customers/{customer_code}": {
+      "get": {
+        "description": "客户主数据；不存在/跨租户统一 404 NOT_FOUND。",
+        "operationId": "get_customer_api_v1_tools_customers__customer_code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "customer_code",
+            "required": true,
+            "schema": {
+              "title": "Customer Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "客户主数据（name/level/attributes）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/inventory": {
+      "get": {
+        "description": "物料库存；物料不存在 → 404，无库存行 → 200 空 warehouses。",
+        "operationId": "get_inventory_api_v1_tools_inventory_get",
+        "parameters": [
+          {
+            "description": "物料 code",
+            "in": "query",
+            "name": "material_code",
+            "required": true,
+            "schema": {
+              "description": "物料 code",
+              "title": "Material Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "物料库存（仓库粒度 + 合计可用量）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/orders": {
+      "get": {
+        "description": "订单摘要列表（B.8：同详情结构数组，不含 lines 明细）。",
+        "operationId": "list_orders_api_v1_tools_orders_get",
+        "parameters": [
+          {
+            "description": "客户 code 过滤",
+            "in": "query",
+            "name": "customer",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "客户 code 过滤",
+              "title": "Customer"
+            }
+          },
+          {
+            "description": "订单状态过滤",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "订单状态过滤",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "订单摘要列表（customer/status 过滤）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/orders/{order_no}": {
+      "get": {
+        "description": "订单详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。",
+        "operationId": "get_order_api_v1_tools_orders__order_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_no",
+            "required": true,
+            "schema": {
+              "title": "Order No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "订单详情（含行明细与客户）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/purchase-orders": {
+      "get": {
+        "description": "采购单列表（B.8：items + next_cursor；游标分页字段本轮占位）。",
+        "operationId": "list_purchase_orders_api_v1_tools_purchase_orders_get",
+        "parameters": [
+          {
+            "description": "物料 code 过滤",
+            "in": "query",
+            "name": "material_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "物料 code 过滤",
+              "title": "Material Code"
+            }
+          },
+          {
+            "description": "采购单状态过滤",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "采购单状态过滤",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseOrderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "采购单列表（material_code/status 过滤）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/supplier-lead-times": {
+      "get": {
+        "description": "供应商交期；供应商不存在 → 404，无交期行 → 200 空 lead_times。",
+        "operationId": "list_supplier_lead_times_api_v1_tools_supplier_lead_times_get",
+        "parameters": [
+          {
+            "description": "供应商 code",
+            "in": "query",
+            "name": "supplier_code",
+            "required": true,
+            "schema": {
+              "description": "供应商 code",
+              "title": "Supplier Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupplierLeadTimesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "METHOD_NOT_ALLOWED：方法不允许"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "供应商交期（物料粒度）",
+        "tags": [
+          "tools"
         ]
       }
     },

@@ -1,5 +1,6 @@
 import type { EventResponse } from "../types";
 import { daysBefore, hoursBefore, minutesBefore } from "../lib/demo-time";
+import { objects } from "./objects";
 import {
   EVT_ADAPTER_PLM_FAILED, EVT_CASE_B_CREATED, EVT_ORDER_A_RISK, EVT_ORDER_B_RISK, EVT_ORDER_C_RISK,
   EVT_ORDER_E_RISK, EVT_ORDER_G_RISK, EVT_ORDER_H_RISK, EVT_ORDER_I_DQ, EVT_ORDER_J_RISK,
@@ -8,6 +9,10 @@ import {
 } from "./ids";
 
 type RiskLevel = "P0" | "P1" | "P2" | "P3" | null;
+type DeliveryStatus = "DELIVERED" | "PENDING" | "DEAD_LETTER";
+
+/** object_id → source_id 反查（object_source_id 展示列，B.3/§6.2）。 */
+const objectSourceIds = new Map(objects.map((o) => [o.object_id, o.source_id]));
 
 interface EventSeed {
   id: string;
@@ -21,6 +26,14 @@ interface EventSeed {
   risk?: RiskLevel;
   score?: number | null;
   data?: Record<string, unknown>;
+  latencyMs?: number;
+  deliveryStatus?: DeliveryStatus;
+}
+
+/** 接入耗时确定性回填：mockUuid 序号派生 60~299ms（对齐后端 seed `60 + hash % 240` 口径）。 */
+function latencyOf(id: string): number {
+  const seq = Number(id.slice(-12));
+  return 60 + (Number.isFinite(seq) ? seq % 240 : 0);
 }
 
 function evt(seed: EventSeed): EventResponse {
@@ -38,6 +51,9 @@ function evt(seed: EventSeed): EventResponse {
     score: seed.score ?? null,
     data: seed.data ?? {},
     idempotency_key: null,
+    ingest_latency_ms: seed.latencyMs ?? latencyOf(seed.id),
+    delivery_status: seed.deliveryStatus ?? "DELIVERED",
+    object_source_id: objectSourceIds.get(seed.objectId) ?? null,
     created_at: seed.occurredAt,
   };
 }
@@ -84,7 +100,7 @@ const capabilityEvents: EventResponse[] = [
   evt({ id: EVT_ORDER_I_DQ, type: "capability.result.dq_check", objectId: OBJ_ORDER_I, source: "agent-hub", occurredAt: hoursBefore(44), actorType: "AI", actorId: "agent:dq-checker", resultType: "DATA_QUALITY", risk: "P2", score: 0.58, data: { reason: "客户ID在ERP中有两处不同记录", recommendation: "人工确认主记录" } }),
   evt({ id: EVT_ORDER_J_RISK, type: "capability.result.order_risk", objectId: OBJ_ORDER_J, source: "agent-hub", occurredAt: hoursBefore(12), actorType: "AI", actorId: "agent:delivery-order-risk", resultType: "ORDER_RISK", risk: "P1", score: 0.88, data: { reason: "供应商 S-030 即将停产，多源依赖", recommendation: "寻找替代供应商或修改BOM" } }),
   evt({ id: EVT_CASE_B_CREATED, type: "decision.case_created", objectId: OBJ_ORDER_B, source: "agent-hub", occurredAt: hoursBefore(4), actorType: "AI", actorId: "agent:delivery-order-risk", data: { case_no: "DC-20260928-007", question: "订单 SO-2026-00123 存在缺料风险，是否加急采购物料X？" } }),
-  evt({ id: EVT_ADAPTER_PLM_FAILED, type: "adapter.sync.failed", objectId: OBJ_PROJECT_PRJD, source: "edp-adapter", occurredAt: minutesBefore(18), actorType: "SERVICE", actorId: "adapter:plm", risk: "P2", score: 0.5, resultType: "ADAPTER", data: { adapter: "plm", reason: "UPSTREAM_UNAVAILABLE", note: "场景 10：工具调用失败，已转人工跟进" } }),
+  evt({ id: EVT_ADAPTER_PLM_FAILED, type: "adapter.sync.failed", objectId: OBJ_PROJECT_PRJD, source: "edp-adapter", occurredAt: minutesBefore(18), actorType: "SERVICE", actorId: "adapter:plm", risk: "P2", score: 0.5, resultType: "ADAPTER", deliveryStatus: "DEAD_LETTER", data: { adapter: "plm", reason: "UPSTREAM_UNAVAILABLE", note: "场景 10：工具调用失败，已转人工跟进" } }),
 ];
 
 export const events: EventResponse[] = [...orderRoutineEvents, ...inventoryRoutineEvents, ...capabilityEvents];

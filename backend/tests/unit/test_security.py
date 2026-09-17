@@ -40,7 +40,8 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::jwt.warnings.InsecureKeyLengthWarning"
 )
 
-# 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码
+# 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码 + 0010 新增
+# tools:read、ebms:read（T11 EBMS 落地同步）
 ALL_CODES = {
     "registry:read",
     "registry:write",
@@ -55,6 +56,8 @@ ALL_CODES = {
     "audit:read",
     "adapters:read",
     "adapters:write",
+    "tools:read",
+    "ebms:read",
     "tenant:admin",
 }
 
@@ -231,9 +234,9 @@ def test_role_permissions_matrix_matches_seed() -> None:
     }
 
 
-def test_all_permissions_covers_fourteen_codes() -> None:
+def test_all_permissions_covers_sixteen_codes() -> None:
     assert ALL_PERMISSIONS == ALL_CODES
-    assert len(ALL_PERMISSIONS) == 14
+    assert len(ALL_PERMISSIONS) == 16
 
 
 def test_permission_codes_platform_admin_wildcard_all_codes() -> None:

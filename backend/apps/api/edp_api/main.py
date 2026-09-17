@@ -19,12 +19,16 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.decisions.router import router as decisions_router
+from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
 from edp_api.modules.evidence.router import router as evidence_router
+from edp_api.modules.health.router import router as health_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
+from edp_api.modules.tools.router import router as tools_router
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +80,14 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(evidence_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
     app.include_router(adapters_admin_router)
+    # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）
+    app.include_router(tools_router)
+    # decisions 路由（B.5）：决策案例（EDP-018 最小版；records Human-Only）
+    app.include_router(decisions_router)
+    # ebms 路由（B.9 子集）：EBMS 查询聚合（EDP-012，本轮 exceptions）
+    app.include_router(ebms_router)
+    # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
+    app.include_router(health_router)
     for router in extra_routers:
         app.include_router(router)
 

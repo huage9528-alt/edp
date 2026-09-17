@@ -4,6 +4,7 @@ import { clampLimit, paginate } from "../lib/cursor";
 import { errorOf } from "../lib/http";
 import { scenarioResponse } from "../lib/scenario";
 import { events } from "../data/events";
+import { findObject } from "../data/objects";
 import { TENANT_ID, mockUuid } from "../data/ids";
 import { iso } from "../lib/demo-time";
 
@@ -89,6 +90,10 @@ export const eventHandlers = [
         score: item.score ?? null,
         data: item.data ?? {},
         idempotency_key: key,
+        // 刚入库未分发（outbox PENDING）；耗时由生成序号确定性派生（60~299ms）
+        ingest_latency_ms: 60 + (syntheticSeq % 240),
+        delivery_status: "PENDING",
+        object_source_id: findObject(item.object_id)?.source_id ?? null,
         created_at: iso("2026-09-28T08:30:00Z"),
       });
     }

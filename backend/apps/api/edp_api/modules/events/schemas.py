@@ -85,3 +85,7 @@ class EventResponse(BaseModel):
     data: dict[str, Any]
     idempotency_key: str | None
     created_at: datetime
+    # W3 契约扩展（spec §6.2）：列表填充；详情继承 ORM 实测耗时
+    ingest_latency_ms: int | None = None
+    delivery_status: str | None = None
+    object_source_id: str | None = None

@@ -14,7 +14,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,7 @@ from edp_api.modules.tenantmgmt.models import (
     Tenant,
     TenantMember,
     TenantQuota,
+    TenantUsageDaily,
     UserRow,
 )
 from edp_api.modules.tenantmgmt.schemas import (
@@ -145,6 +147,95 @@ async def active_tenant_ids(sess: AsyncSession) -> list[UUID]:
         .scalars()
         .all()
     )
+
+
+# ---- W3 演示时间锚（EDP-016，T6） ----
+
+
+def _demo_seed_anchor(attributes: dict | None) -> datetime | None:
+    """attributes["demo_seed"]["anchor"] ISO 字符串 → aware datetime；非法 → None。"""
+    raw = (attributes or {}).get("demo_seed")
+    anchor = raw.get("anchor") if isinstance(raw, dict) else None
+    if not isinstance(anchor, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(anchor)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+async def get_demo_anchor(sess: AsyncSession, tenant_id: UUID) -> datetime | None:
+    """演示时间锚（tenants.attributes.demo_seed.anchor）；未设置/非法 → None。
+
+    tenants 为控制面表（无 RLS），仍以显式 tenant_id 定位（双保险）；
+    None 由调用方（ingest/适配器）回退 DEMO_ANCHOR 兜底。
+    """
+    tenant = await get_tenant(sess, tenant_id)
+    return _demo_seed_anchor(tenant.attributes) if tenant is not None else None
+
+
+async def set_demo_anchor(
+    sess: AsyncSession, tenant_id: UUID, anchor: datetime
+) -> None:
+    """写演示时间锚（ISO 字符串，读改 attributes 后 flush；租户不存在 → 404）。
+
+    ORM 属性赋值路径（切面可见 TENANTS_UPDATE）；demo_seed.version 缺失时
+    补 1（spec §3.3 结构）。
+    """
+    tenant = await get_tenant(sess, tenant_id)
+    if tenant is None:
+        raise EdpError.not_found("租户不存在")
+    attributes = dict(tenant.attributes or {})
+    demo_seed = dict(attributes.get("demo_seed") or {})
+    demo_seed["anchor"] = anchor.isoformat()
+    demo_seed.setdefault("version", 1)
+    attributes["demo_seed"] = demo_seed
+    tenant.attributes = attributes
+    await sess.flush()
+
+
+# ---- W3 用量计量（T9：events 批量入库 / ingest 管道共用入口） ----
+
+
+async def bump_usage_daily(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    *,
+    events_in: int = 0,
+    events_duplicated: int = 0,
+) -> None:
+    """按 (tenant_id, usage_date=UTC 今日) upsert 累加事件计量。
+
+    计量口径（spec §5.1）：``events_in`` = 实际入库事件数，
+    ``events_duplicated`` = 幂等命中数。调用方（events.ingest_batch /
+    ingest.process_record）在事件写入事务内调用——与事件行同事务提交/
+    回滚，计数不虚增。全零跳过（不产生空行）；表无 RLS（控制面），
+    ON CONFLICT (tenant_id, usage_date) 并发安全。
+    """
+    if events_in == 0 and events_duplicated == 0:
+        return
+    stmt = (
+        pg_insert(TenantUsageDaily)
+        .values(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            usage_date=datetime.now(UTC).date(),
+            events_in=events_in,
+            events_duplicated=events_duplicated,
+        )
+        .on_conflict_do_update(
+            index_elements=["tenant_id", "usage_date"],
+            set_={
+                "events_in": TenantUsageDaily.events_in + events_in,
+                "events_duplicated": (
+                    TenantUsageDaily.events_duplicated + events_duplicated
+                ),
+                "updated_at": func.now(),
+            },
+        )
+    )
+    await sess.execute(stmt)
 
 
 # ---- W2 生命周期（EDP-024） ----

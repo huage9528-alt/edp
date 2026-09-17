@@ -33,4 +33,21 @@ describe("HeroCard 状态卡", () => {
     expect(document.querySelector('[data-dom-id="overview-hero-p95"]')?.textContent).toBe("—");
     expect(document.querySelector('[data-dom-id="overview-hero-success"]')?.textContent).toBe("—");
   });
+
+  it("真 API 缺 adapters_success_rate → 成功率「—」而 P95 正常，不出现 NaN/undefined", () => {
+    const realSubset = {
+      events_24h: 120,
+      ingest_peak_24h: 20,
+      p95_latency_ms: 640,
+      idempotency_hit_rate: 0.994,
+      dlq: 0,
+      evidence_count: 12,
+    };
+    render(<HeroCard coverage={coverageReport} health={{ ...health, ops_metrics: realSubset }} p1Count={0} onOpenRisk={() => {}} />);
+
+    expect(document.querySelector('[data-dom-id="overview-hero-coverage"]')?.textContent).toBe("96.8%");
+    expect(document.querySelector('[data-dom-id="overview-hero-p95"]')?.textContent).toBe("0.64s");
+    expect(document.querySelector('[data-dom-id="overview-hero-success"]')?.textContent).toBe("—");
+    expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+  });
 });

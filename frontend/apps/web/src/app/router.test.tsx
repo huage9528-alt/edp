@@ -68,7 +68,8 @@ describe("路由守卫与壳层渲染", () => {
       expect(document.querySelector('[data-dom-id="nav-objects"]')).not.toBeNull();
     });
     expect(document.querySelector('[data-slot="crumb"]')?.textContent).toBe("事件流");
-    expect(document.querySelector('[data-dom-id="page-placeholder"]')).not.toBeNull();
+    // T16：/admin/events 由占位替换为 EventsPage（页容器锚点）
+    expect(document.querySelector('[data-dom-id="events-page"]')).not.toBeNull();
     expect(document.querySelector('[data-dom-id="global-search"]')).not.toBeNull();
     expect(document.querySelector('[data-dom-id="notifications-btn"]')).not.toBeNull();
     expect(document.querySelector('[data-dom-id="command-palette"]')).not.toBeNull();

@@ -4,7 +4,7 @@ export type Schemas = components["schemas"];
 export type ObjectResponse = Schemas["ObjectResponse"];
 export type EventResponse = Schemas["EventResponse"];
 
-/** 列表包裹：items/next_cursor 对齐 B.0 分页约定；total 为 mock 扩展（spec §5.2 契约偏差）。 */
+/** 列表包裹：items/next_cursor 对齐 B.0 分页约定；total 随 T14 契约冻结（Page.total 可选，本轮仅 events 填充）——mock 始终填充。 */
 export interface Page<T> {
   items: T[];
   next_cursor: string | null;
@@ -75,11 +75,12 @@ export interface QualityReport {
   dimensions: { domain: string; label: string; score_pct: number }[];
 }
 
-/** B.13 GET /api/v1/health；backup 与 ops_metrics 为 mock 扩展（备份卡/总览与事件流 KPI 带，spec §3.2/§5.2）。 */
+/** B.13 GET /api/v1/health；backup 与 ops_metrics 为 mock 扩展（备份卡/总览与事件流 KPI 带，spec §3.2/§5.2）。
+ *  db_ha 仅 ?deep=true 返回（真实模式缺省）；ops_metrics 前 6 字段为真实子集，后 4 字段为 mock 扩展（真 API 缺省 → 字段级兜底）。 */
 export interface HealthResponse {
   status: string;
   db: string;
-  db_ha: { role: string; replication_lag_mb: number; replicas: number };
+  db_ha?: { role: string; replication_lag_mb: number; replicas: number };
   outbox_pending: number;
   last_sync: Record<string, string>;
   version: string;
@@ -88,13 +89,14 @@ export interface HealthResponse {
     events_24h: number;
     ingest_peak_24h: number;
     p95_latency_ms: number;
+    /** 0~1 比值（真后端口径）；渲染端按 rate*100 转百分数。 */
     idempotency_hit_rate: number;
     dlq: number;
-    audit_events_7d: number;
-    policy_hits_today: number;
-    adapters_success_rate: number;
     evidence_count: number;
-    evidence_valid_rate: number;
+    audit_events_7d?: number;
+    policy_hits_today?: number;
+    adapters_success_rate?: number;
+    evidence_valid_rate?: number;
   };
 }
 

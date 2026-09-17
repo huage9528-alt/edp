@@ -95,3 +95,38 @@ Branch: feat/w2
 | T18 | DONE | b15d6f7 | 契约重导出（sha 886ea568，12 新路径）+ api-sdk regen；前端 115 测试/lint 零 schema 破坏；docs/demo/m2-demo.md 七段+六条已知契约缺口；verify-all 全绿（后端 215/前端 115） |
 
 终审（整分支）：Approved——M2 七条出口条件全部有可执行证据；条件项（演示脚本 409 步骤改走成功路径 + 缺口清单补 3 条 + 本行计数更正）已随收口 commit 修复；W3 待办 13 项见对话归档。
+
+---
+
+# SDD Progress Ledger — EDP W3（M3 关键路径）
+
+Plan: docs/superpowers/plans/2026-09-16-edp-w3-m3.md
+Spec: docs/superpowers/specs/2026-09-16-edp-w3-m3-design.md
+Branch: feat/w3-m3（就地分支；未用 worktree——避免前端依赖重装；工作区既有未提交改动与本轮无关，提交纪律=仅 add 任务文件）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | 5df5c10 | 评审 Approved（独立复跑全量 220 绿）；Minor 备忘：dev Key 哈希命中 0 行无告警（W4 补 rowcount）、四 schema 无 ALTER DEFAULT PRIVILEGES、downgrade 非独立幂等（正常 alembic 流程不可达） |
+| T2 | DONE | cf56a41 | 13 表 ORM 与 0002/0004 DDL 逐列核对一致（评审独立编译比对）；36 单测绿；Minor：默认值断言抽查而非全覆盖（可接受） |
+| T3 | DONE | a92d37a | 10 类投影器与 spec §2.2 逐字段一致；41 相关测试 + 全量 297 绿；评审 Important→T4 处理：NOT NULL FK（inventory.material_id/boms.product_id/bom_items.material_id/lead_times.supplier_id）未命中会抛 IntegrityError，投影须 savepoint 包裹；Minor：默认值绕过「仅非 None 覆盖」、更新不刷 updated_at、warning 覆盖不全 |
+| T4 | DONE | 709952d | savepoint 隔离经评审变异验证（no-op 即 PendingRollback 失败）；13 表排除与 ORM fullname 零缺零多；全量 299 绿；计划外必要修正：test_adapters_api/test_cli 清场先删领域行（FK 顺序）；Minor：清场 SQL 未抽公共 helper（T7/T13/T19 需沿用逆依赖序）、投影失败无指标（记已知限制） |
+| T5 | DONE | 9bf254a | 十场景常量与 MSW fixtures 逐字段/逐字对齐；19 单测 + 全量 211 绿；评审 Important→T6/T7：跨适配器依赖（ORDER(erp)→PRODUCT(plm)、BOM(plm)→MATERIAL(erp)）在分适配器 run_sync 下无法同时满足，seed 必须按全局序归并逐条处理；偏差清单待 T14/T20：WH-01/WH-02 与 B.8 冲突、00123 行合计≠amount、S-021 多一条 Y-200 交期、事件 10 条口径、业务日期固定、P3 是否入 exceptions |
+| T6 | DONE | 8aadd06 | 端口锚 keyword-only 零破坏；demo 适配器纯函数/确定性；注册三行；全量 226 单测 + 集成绿；评审确认 T7 硬约束：按 SNAPSHOT_RECORDS 全局序归并逐条处理（不可两次 run_sync_per_record）；Minor 备忘：plm 管道事件 actor 仍 adapter:erp（W2 遗留，可见性低）、demo 两适配器同构重复 |
+| T7 | DONE | 289d113 | 归并全局序 + 逐条独立事务落实硬约束（order_lines.product_id/bom_items.material_id 非空直证）；二跑 0 新增/RESET 行数一致；全量 336 绿 + make seed-demo 实测；评审 Important→T9：RESET 需清 platform.tenant_usage_daily（否则 KPI 翻倍）；→T10：seed 建 case/links 走 raw SQL 无审计，切 decisions_service 时补；Minor：case links 语义漂移（结果证据）、RESET=0 误触发等 |
+| T8 | DONE | a305d7c + e0de4af | 首评 Needs fixes（Critical：rbac 未同步 tools:read；Important：拒绝审计提交请求会话、全局 405 文案写死）→ 修复后复评 Approved；B.8 逐字段保真 + 超集文档化；三层实测（405 envelope/双轨/独立会话 GUARD_DENIED/`SET LOCAL ROLE` 生效）；全量 352 绿；偏差待记：全路由 405/404 envelope 行为变更、orders 列表 envelope、采购 next_cursor 恒 null |
+| T9 | DONE | 60611a4 + f791a8d | 首评 Needs fixes（详情缺 2 字段、演示延迟误伤真实管道事件、Page.total 外溢）→ 修复后复评 Approved；结果证据+RESULT link 幂等、usage 累加、RESET 清 usage（T7 Important 闭环）；全量 359 绿；T12 待办：归档命中不计 events_duplicated、P95 口径（入口→INSERT 前）；T14/T15 待办：非 events 列表端点省略 null（含 next_cursor）记偏差、MSW 形状对齐 |
+| T10 | DONE | 354b8ab + b8bb491 | 首评 Needs fixes（Important：审计前缀按裸表名冲突 decision.records→EVIDENCE_CREATE；服务层死审计）→ 修复后复评 Approved（fullname 优先映射 + 共享独立会话守卫）；B.5 逐字段 + Human-Only 实证；seed 切 service 闭环 T7 Important；全量 371 绿；T20 待记：resource_type 裸名歧义、CASE_CREATE vs MSW CASE_CREATED、裸名回退提醒 |
+| T11 | DONE | 611a061 | B.9 逐字段 + OPEN/RESOLVED 真实 join 语义 + 双轨鉴权（rbac ebms:read 四角色闭环 T8 留痕）；定向 59 + 全量 379 绿；Important 待 W4：cases 无 (tenant,source) 唯一约束 → 同事件多 case 时 exceptions join 行倍增（标量子查询或约束收口）；偏差待记：P3 入列（10 vs MSW 8）、result_type 可空 vs MSW 非空、cases source_id 无索引 |
+| T12 | DONE | a591990 | 基础字段 + ops_metrics 六项与 MSW 逐字；deep 鉴权实测；全量 386 绿；T15 交接：MSW `idempotency_hit_rate` 99.4→0.994（比值量纲）、`db_ha` 改可选；T15/T16 交接：真实模式总览 KpiSection/HeroCard 需字段级 `!= null` 兜底（T12 激活 /health 后缺 4 扩展字段会渲染 undefined%/NaN）；偏差待记：db_ha 仅 deep、last_sync 键为 erp-demo/plm-demo、归档命中不计 hit_rate |
+| T13 | DONE | 8570816 | replay=fetch_full+since 过滤+幂等 duplicated；SyncMode 单一来源 ingest；naive since 归一（T17 datetime-local 依赖）；定向 9 + 全量 389 绿；偏差待记：非法 mode 400（plan 写 422）、since 测试窗口 anchor-5h |
+| T14 | DONE | d6088a5 | 契约 23→35 路径（tools×7/decisions×3/ebms/health），events 四字段 + mode replay/since；指纹 886ea568→f5ee32a8；SDK 独立 regen 验证一致；缺口清单 6→22 条（W3-01~22）；评审 Approved；T20 补记：cases source_id 索引、adapters envelope 子项、W3-04 归属措辞、ebms exclude 例外 |
+| T15 | DONE | ebe17af | MSW 三字段/health 量纲 0.994/db_ha 可选/总览字段级兜底（T12 交接三项闭环）；全量 237 绿 + tsc 0；评审 Approved；T20 补记：cursor.ts 注释过时、Page.total mock 必填 vs 契约可选、BottomThree evidence_valid_rate 真模式渲染 0%（既有） |
+| T16 | DONE | 997548f | KPI 四卡/9 列派生/分页文案/空态/router 替换；web 123 绿 + build；评审 Approved；T20 补记：描述列空值率高（SNAPSHOT data 无 summary）、类型字典缺例行类型、短 ID 截取位跨页不统一（EventsTimeline/RiskDrawer 取头 8）、分页无千分位、spec「原型无搜索框」表述有误（原型有）；T18 可选：total 降级分支补测、翻页竞态禁用、测试注释计数 |
+| T17 | DONE | 0f3324f | 抽屉 420px + 三步向导逐项对齐原型（未选禁用/摘要卡/202/失败 errorSpec/datetime-local→since）；web 128 绿 + build；评审 Approved；T18 修：证据行 MonoId 取头 8 → 应取尾 8（MSW 下恒 ev-00000000，潜伏）；Minor：向导步骤 3 未回显开始时间、空筛选入口死路、证据失败同空态、useAdapterOptions 预取 |
+| T18 | DONE | cc75c4e | 证据行尾 8 修复 + 可证伪用例；total 降级/翻页竞态/注释三项 T16 可选闭环；API 级冒烟全链通过（health 六字段/total=50/筛选 5/证据 RESULT link/replay 36=36）；249 前端测试绿；评审 Approved；T19 必须闭环：compose 镜像重建步骤（现 18000 为旧构建 404）、m3-demo 字段名（has_next_cursor 不存在）与路径注释、浏览器级冒烟限制说明 |
+| T19 | DONE | 3cb0e28 | M3 演示脚本七段（seed 幂等/tools 六接口+evidence_hint/405/403+GUARD_DENIED/exceptions P1 case_id/replay duplicated==fetched/控制台段）+ `test_m3_acceptance.py` 5 用例断言化（②~⑥ 可随时回归）；实测读数与端口偏差（18001 venv）记入 m3-demo.md；无头环境浏览器级冒烟留待彩排；T20 补记：compose `--build`、读数依赖 seed 锚与重放历史、`_jobs` 同进程语义 |
+| T20 | DONE | （本 commit） | verify-all 七 job 复核：backend-lint（ruff + import-linter 2 kept）/backend-test 394 绿/frontend-lint（0 error、1 既有 warning）/frontend-test 249 绿（22+96+131）/contract-export 重导出字节不变 + contract-gate 指纹 `f5ee32a8` 绿；backend-migrate-check 对已填充 dev 库在 0005_seed.downgrade 因 `tenant_usage_daily_tenant_id_fkey` 失败（W1/W2 既有偏差，非 W3）→ 一次性 `postgres:16` 容器（15433）等价全链 upgrade→downgrade→upgrade exit 0，dev 库单事务回滚无损（0010 head / 对象 40 / 事件 50）；缺口清单 22→41 条（W3-23~41，含 T14/T15/T16/T17/T18/T19 评审补记） |
+
+终审（整分支）：**Approved with conditions**——M3 三条出口条件均有「测试 + 演示脚本 + 实测读数」三级证据（tools 六接口 evidence_hint 直证 / 回流→exceptions case_id / seed+replay 幂等）；范围无越界、契约 35 路径指纹 `f5ee32a8` 一致；无 Critical；条件项已闭环：① `_jobs` 跨租户可见性 → 缺口 W3-42；② migrate-check 破坏性说明 → Makefile 注释 + 一次性容器法；③ 终审行回填（本行）+ 合并后复跑 verify-all。跨任务风险备忘（W4 前）：W3-23 cases 索引/唯一约束、W3-38 浏览器冒烟彩排、`evidence.links` 审计前缀裸名（W3-13 同类）。
+
+分支收口（终审通过后执行）：① `make verify-all` 七 job 真绿（migrate-check 以一次性容器等价验证，见 T20 行）；② 缺口清单终稿（W3-01~41）已落 `docs/demo/m2-demo.md`；③ `git checkout master && git merge --no-ff feat/w3-m3`；④ 合并后复跑 `make verify-all`（contract-gate 指纹应仍为 `f5ee32a8`）。
