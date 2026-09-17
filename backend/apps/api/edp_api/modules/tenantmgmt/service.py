@@ -10,7 +10,7 @@ SQL update）。
 """
 
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -36,6 +36,7 @@ from edp_api.modules.tenantmgmt.schemas import (
     TenantQuotaInfo,
     TenantSummary,
     TenantUsage,
+    UsageItem,
 )
 
 DEFAULT_LIMIT = 20
@@ -475,6 +476,62 @@ def _parse_anchor(decoded: dict) -> tuple[datetime, UUID] | None:
     """cursor 载荷 → (created_at, tenant_id)；缺字段/格式非法 → None。"""
     try:
         return datetime.fromisoformat(str(decoded["o"])), UUID(str(decoded["i"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+async def query_usage(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    *,
+    since: date | None = None,
+    until: date | None = None,
+    limit: int = DEFAULT_LIMIT,
+    cursor: str | None = None,
+) -> tuple[list[UsageItem], str | None]:
+    """使用量日报（B.14 最小版，EDP-025）：usage_date 闭区间 + 游标分页
+    （usage_date DESC, id DESC tiebreak，锚 ``{"d","i"}``；非法 cursor 视为首页）。"""
+    limit = max(1, min(limit, MAX_LIMIT))
+    stmt = select(TenantUsageDaily).where(
+        TenantUsageDaily.tenant_id == tenant_id
+    )
+    if since is not None:
+        stmt = stmt.where(TenantUsageDaily.usage_date >= since)
+    if until is not None:
+        stmt = stmt.where(TenantUsageDaily.usage_date <= until)
+    decoded = decode_cursor(cursor)
+    if decoded is not None:
+        anchor = _parse_usage_anchor(decoded)
+        if anchor is not None:
+            usage_date, anchor_id = anchor
+            stmt = stmt.where(
+                or_(
+                    TenantUsageDaily.usage_date < usage_date,
+                    and_(
+                        TenantUsageDaily.usage_date == usage_date,
+                        TenantUsageDaily.id < anchor_id,
+                    ),
+                )
+            )
+    stmt = stmt.order_by(
+        TenantUsageDaily.usage_date.desc(), TenantUsageDaily.id.desc()
+    ).limit(limit + 1)
+    rows = (await sess.execute(stmt)).scalars().all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    next_cursor = None
+    if has_more and page_rows:
+        last = page_rows[-1]
+        next_cursor = encode_cursor(
+            {"d": last.usage_date.isoformat(), "i": str(last.id)}
+        )
+    return [UsageItem.model_validate(row) for row in page_rows], next_cursor
+
+
+def _parse_usage_anchor(decoded: dict) -> tuple[date, UUID] | None:
+    """cursor 载荷 → (usage_date, id)；缺字段/格式非法 → None。"""
+    try:
+        return date.fromisoformat(str(decoded["d"])), UUID(str(decoded["i"]))
     except (KeyError, TypeError, ValueError):
         return None
 
