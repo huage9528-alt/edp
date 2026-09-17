@@ -43,6 +43,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.config import get_settings
+from edp_api.core.errors import EdpError
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
 from edp_api.modules.audit import service as audit_service
@@ -244,13 +245,21 @@ async def ingest_batch(
     - ``risk_level`` 非空的能力结果事件同事务自动落结果证据
       （snapshot=ev.data、source_record_id=``result:{event_id}``、
       captured_at=occurred_at）+ ``RESULT`` link；duplicated 路径不建；
-    - 批次末 upsert ``tenant_usage_daily``（events_in/events_duplicated）。
+    - 批次末 upsert ``tenant_usage_daily``（events_in/events_duplicated）；
+    - EDP-025 批量限额：事件数 > ``tenant_quotas.batch_max_events`` →
+      400 VALIDATION_ERROR（不落库、不占幂等存档）。
 
     Returns:
         {accepted, duplicated, rejected, deduplicated, errors?}——rejected 的
         事件附 ``errors:[{index, code=VALIDATION_ERROR, message}]``。
     """
     tenant_id = principal.tenant_id
+
+    quota = await tenantmgmt_service.get_quota(sess, tenant_id)
+    if len(events) > quota.batch_max_events:
+        raise EdpError.validation_error(
+            f"批量事件数 {len(events)} 超过租户上限 {quota.batch_max_events}"
+        )
 
     archived_json = await platform_service.load_idempotent_response(
         sess, tenant_id, idem_key, INGEST_ENDPOINT

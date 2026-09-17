@@ -133,6 +133,12 @@ async def _clean_memory_rows(
         {"t": default_tenant_id},
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-memories')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-memories'")
     )
     await db_session.commit()

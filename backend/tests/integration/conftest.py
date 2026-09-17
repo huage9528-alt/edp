@@ -19,6 +19,7 @@ from urllib.parse import quote
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -83,6 +84,33 @@ def migrated_db(database_url: str) -> str:
         else:
             os.environ[env_key] = saved
     return database_url
+
+
+@pytest.fixture(autouse=True)
+async def _relax_rate_limit(migrated_db: str) -> AsyncIterator[None]:
+    """EDP-025 限流测试基座：清空进程内令牌桶 + 默认租户配额复位
+    （api_rate_limit 提到高位、batch_max_events/query_timeout_ms 回默认），
+    避免限流器干扰其他集成用例；限流专项测试（test_ratelimit）自行改低
+    配额，下一用例的基座会复位。"""
+    from edp_api.modules.tenantmgmt import ratelimit
+
+    ratelimit.reset_buckets()
+    engine = create_async_engine(migrated_db)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE platform.tenant_quotas"
+                    " SET api_rate_limit = 100000,"
+                    " batch_max_events = 1000,"
+                    " query_timeout_ms = 5000"
+                    " WHERE tenant_id = (SELECT tenant_id FROM platform.tenants"
+                    " WHERE slug = 'default')"
+                )
+            )
+        yield
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

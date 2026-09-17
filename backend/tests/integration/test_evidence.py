@@ -112,6 +112,12 @@ async def _clean_evidence_rows(db_session: AsyncSession) -> None:
         {"p": READONLY_PRINCIPAL},
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-b-evidence')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-b-evidence'")
     )
     await db_session.commit()

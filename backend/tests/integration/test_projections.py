@@ -107,6 +107,8 @@ async def _clean_projection_rows(
         "DELETE FROM master.products WHERE code LIKE 'W3PROJ%'",
         "DELETE FROM master.suppliers WHERE code LIKE 'W3PROJ%'",
         "DELETE FROM master.business_objects WHERE source_id LIKE 'W3PROJ%'",
+        "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+        " (SELECT tenant_id FROM platform.tenants WHERE slug = 'w3proj-tenant-b')",
         "DELETE FROM platform.tenants WHERE slug = 'w3proj-tenant-b'",
     ):
         await db_session.execute(text(sql))

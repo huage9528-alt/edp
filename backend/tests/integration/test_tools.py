@@ -148,6 +148,12 @@ async def _clean_tools_rows(
         text("DELETE FROM platform.users WHERE tenant_id IN (" + b_ids + ")")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-tools')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-tools'")
     )
     await db_session.commit()

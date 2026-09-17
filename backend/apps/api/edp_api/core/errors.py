@@ -220,9 +220,16 @@ _STATUS_TO_ERROR_CODE: dict[int, ErrorCode] = {
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(EdpError)
     async def _handle_edp_error(_: Request, exc: EdpError) -> JSONResponse:
+        # extra.retry_after（RATE_LIMITED）转为响应头，body 保持 B.0 结构
+        extra = dict(exc.extra)
+        retry_after = extra.pop("retry_after", None)
+        headers = (
+            {"Retry-After": str(retry_after)} if retry_after is not None else None
+        )
         return JSONResponse(
             status_code=exc.http_status,
-            content=_error_payload(exc.code, exc.message, exc.extra),
+            content=_error_payload(exc.code, exc.message, extra),
+            headers=headers,
         )
 
     @app.exception_handler(StarletteHTTPException)

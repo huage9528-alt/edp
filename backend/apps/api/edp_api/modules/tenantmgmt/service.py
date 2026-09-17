@@ -111,6 +111,29 @@ async def get_tenant_status(sess: AsyncSession, tenant_id: UUID) -> str | None:
     ).scalar_one_or_none()
 
 
+async def get_quota(sess: AsyncSession, tenant_id: UUID) -> TenantQuota:
+    """租户配额（tenant_quotas 控制面表）；缺行 → DDL 默认值临时实例（不入库）。
+
+    注意：列 ``default=`` 仅在 INSERT 时生效——缺省实例必须显式赋默认值，
+    否则属性为 None（EDP-025 限流读取会 TypeError）。
+
+    EDP-025 限流/批量限额/statement_timeout 读取入口（每请求一次，演示量级
+    可接受；W6 性能评估时可加进程内缓存）。
+    """
+    quota = await sess.get(TenantQuota, tenant_id)
+    if quota is not None:
+        return quota
+    return TenantQuota(
+        tenant_id=tenant_id,
+        api_rate_limit=100,
+        batch_max_events=1000,
+        query_timeout_ms=5000,
+        pool_share=Decimal("2.0"),
+        storage_gb=50,
+        events_per_month=1_000_000,
+    )
+
+
 async def member_roles_for_user(
     sess: AsyncSession, tenant_id: UUID, user_id: UUID
 ) -> list[str]:
@@ -204,16 +227,20 @@ async def bump_usage_daily(
     *,
     events_in: int = 0,
     events_duplicated: int = 0,
+    api_calls: int = 0,
+    throttled_429: int = 0,
 ) -> None:
-    """按 (tenant_id, usage_date=UTC 今日) upsert 累加事件计量。
+    """按 (tenant_id, usage_date=UTC 今日) upsert 累加计量列。
 
-    计量口径（spec §5.1）：``events_in`` = 实际入库事件数，
-    ``events_duplicated`` = 幂等命中数。调用方（events.ingest_batch /
-    ingest.process_record）在事件写入事务内调用——与事件行同事务提交/
-    回滚，计数不虚增。全零跳过（不产生空行）；表无 RLS（控制面），
+    事件口径（spec §5.1）：``events_in`` = 实际入库事件数、
+    ``events_duplicated`` = 幂等去重数（调用方 events.ingest_batch /
+    ingest.process_record 与事件写入同事务调用——失败请求不计入，语义为
+    「受理调用数」，docstring 留痕）；EDP-025 计量：``api_calls`` 每请求
+    +1（tenant_scoped 同请求事务）、``throttled_429`` 限流拒绝 +1（429 路径
+    经独立会话提交）。控制面表（platform schema，不受 RLS）。
     ON CONFLICT (tenant_id, usage_date) 并发安全。
     """
-    if events_in == 0 and events_duplicated == 0:
+    if not any((events_in, events_duplicated, api_calls, throttled_429)):
         return
     stmt = (
         pg_insert(TenantUsageDaily)
@@ -223,6 +250,8 @@ async def bump_usage_daily(
             usage_date=datetime.now(UTC).date(),
             events_in=events_in,
             events_duplicated=events_duplicated,
+            api_calls=api_calls,
+            throttled_429=throttled_429,
         )
         .on_conflict_do_update(
             index_elements=["tenant_id", "usage_date"],
@@ -231,6 +260,8 @@ async def bump_usage_daily(
                 "events_duplicated": (
                     TenantUsageDaily.events_duplicated + events_duplicated
                 ),
+                "api_calls": TenantUsageDaily.api_calls + api_calls,
+                "throttled_429": TenantUsageDaily.throttled_429 + throttled_429,
                 "updated_at": func.now(),
             },
         )

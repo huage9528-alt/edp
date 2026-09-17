@@ -180,6 +180,12 @@ async def _clean_trace_rows(
         text("DELETE FROM trace.traces WHERE tenant_id IN (" + b_ids + ")")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-traces')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-traces'")
     )
     await db_session.commit()
