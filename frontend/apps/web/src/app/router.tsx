@@ -1,4 +1,6 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
+import { CasesPage } from "../features/cases/CasesPage";
+import { CaseDetailPage } from "../features/cases/CaseDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { EventsPage } from "../features/events/EventsPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
@@ -77,8 +79,16 @@ export const routes: RouteObject[] = [
       },
       { path: "tenants", ...withTitle("租户管理") },
       { path: "tenants/:tenant_id", ...withTitle("租户详情") },
-      { path: "cases", ...withTitle("闭环案例") },
-      { path: "cases/:case_id", ...withTitle("案例详情") },
+      {
+        path: "cases",
+        element: <CasesPage />,
+        handle: { title: "闭环案例" } satisfies RouteHandle,
+      },
+      {
+        path: "cases/:case_id",
+        element: <CaseDetailPage />,
+        handle: { title: "案例详情" } satisfies RouteHandle,
+      },
       { path: "decisions", ...withTitle("决策") },
       { path: "actions", ...withTitle("行动") },
       { path: "admin/tools", ...withTitle("Agent 工具") },
