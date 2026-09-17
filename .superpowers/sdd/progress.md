@@ -129,4 +129,6 @@ Branch: feat/w3-m3（就地分支；未用 worktree——避免前端依赖重�
 
 终审（整分支）：**Approved with conditions**——M3 三条出口条件均有「测试 + 演示脚本 + 实测读数」三级证据（tools 六接口 evidence_hint 直证 / 回流→exceptions case_id / seed+replay 幂等）；范围无越界、契约 35 路径指纹 `f5ee32a8` 一致；无 Critical；条件项已闭环：① `_jobs` 跨租户可见性 → 缺口 W3-42；② migrate-check 破坏性说明 → Makefile 注释 + 一次性容器法；③ 终审行回填（本行）+ 合并后复跑 verify-all。跨任务风险备忘（W4 前）：W3-23 cases 索引/唯一约束、W3-38 浏览器冒烟彩排、`evidence.links` 审计前缀裸名（W3-13 同类）。
 
-分支收口（终审通过后执行）：① `make verify-all` 七 job 真绿（migrate-check 以一次性容器等价验证，见 T20 行）；② 缺口清单终稿（W3-01~41）已落 `docs/demo/m2-demo.md`；③ `git checkout master && git merge --no-ff feat/w3-m3`；④ 合并后复跑 `make verify-all`（contract-gate 指纹应仍为 `f5ee32a8`）。
+分支收口（终审通过后执行）：① `make verify-all` 七 job 真绿（migrate-check 以一次性容器等价验证，见 T20 行）；② 缺口清单终稿（W3-01~42）已落 `docs/demo/m2-demo.md`；③ `git checkout master && git merge --no-ff feat/w3-m3`；④ 合并后复跑 `make verify-all`（contract-gate 指纹应仍为 `f5ee32a8`）。
+
+**收口记录（2026-09-16）**：已按 ③ 合并（merge commit `1d6cc1f`，107 文件 / +19803 / −2129）；④ 合并后复跑：backend-lint（ruff + import-linter 2 kept）绿、backend-test **394 passed**、frontend-lint 0 error、api-sdk 22 + shared 96 绿、contract-export 字节不变 + contract-gate 指纹 `f5ee32a8` 绿；migrate-check 沿 T20 一次性容器等价验证。web 套件在宿主满载（Docker Desktop + 其他项目 5 个 uvicorn 占用，collect 最慢 1090s）下默认 15s 超时会随机 flake（每轮失败集不同，均为超时）；放宽 `--maxWorkers=2 --testTimeout=60000` 复跑 **131/131 全绿**——判定为环境抖动（同代码 T20/终审两轮 249/249 已绿）。分支 `feat/w3-m3` 按 W2 惯例保留（无 remote）。
