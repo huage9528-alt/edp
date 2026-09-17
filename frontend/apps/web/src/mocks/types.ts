@@ -143,6 +143,11 @@ export interface AuditLogItem {
   detail: Record<string, unknown>;
 }
 
+// W4 EDP-032 审计策略（契约已冻结，直接引 SDK 生成类型）
+export type PolicyItem = Schemas["PolicyItem"];
+export type PolicyCreateRequest = Schemas["PolicyCreateRequest"];
+export type PolicyUpdateRequest = Schemas["PolicyUpdateRequest"];
+
 /** mock 自有端点（EDP-030 落地后替换）：重校验/重索引任务与任务日志抽屉。 */
 export interface QualityTask {
   task_id: string;

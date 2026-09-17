@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import { ActionsPage } from "../features/decisions_actions/ActionsPage";
 import { DecisionsPage } from "../features/decisions_actions/DecisionsPage";
+import { AuditPage } from "../features/audit/AuditPage";
 import { CasesPage } from "../features/cases/CasesPage";
 import { CaseDetailPage } from "../features/cases/CaseDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -72,7 +73,11 @@ export const routes: RouteObject[] = [
         element: <QualityPage />,
         handle: { title: "数据质量" } satisfies RouteHandle,
       },
-      { path: "admin/audit", ...withTitle("审计日志") },
+      {
+        path: "admin/audit",
+        element: <AuditPage />,
+        handle: { title: "审计日志" } satisfies RouteHandle,
+      },
       { path: "admin/adapters", ...withTitle("适配器管理") },
       {
         path: "admin/systems",
