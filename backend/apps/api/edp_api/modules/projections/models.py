@@ -4,10 +4,10 @@
 metadata 中，跨 metadata 声明会在 flush 排序时解析失败）、不参与迁移；列名与
 DDL 逐字一致。
 
-映射清单（13 张）：
+映射清单（14 张）：
     master(6):   customers / materials / products / suppliers / boms / bom_items
     sales(2):    orders / order_lines
-    delivery(3): inventory / purchase_orders / supplier_lead_times
+    delivery(4): inventory / purchase_orders / supplier_lead_times / capacity
     rd(2):       projects / milestones
 """
 
@@ -320,6 +320,32 @@ class RdMilestone(Base):
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     actual_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(Text, nullable=False, default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class Capacity(Base):
+    """产能快照（delivery.capacity，MES 源；EDP-017 剩余）。
+
+    行粒度 =（产线, 周期, 快照时刻）——uq_capacity 唯一索引；
+    id=uuid5(object_id,"cap") 随对象稳定，重投影原地更新。
+    """
+
+    __tablename__ = "capacity"
+    __table_args__ = {"schema": "delivery"}
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    product_line: Mapped[str] = mapped_column(Text, nullable=False)
+    period: Mapped[str] = mapped_column(Text, nullable=False)
+    capacity_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

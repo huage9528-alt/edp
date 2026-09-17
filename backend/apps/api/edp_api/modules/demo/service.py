@@ -36,11 +36,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from edp_adapters import DemoErpAdapter, DemoPlmAdapter
+from edp_adapters import DemoErpAdapter, DemoMesAdapter, DemoPlmAdapter
 from edp_adapters.base import SourceRecord
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from edp_adapters.demo_erp import SOURCE_SYSTEM as ERP_SOURCE_SYSTEM
 from edp_adapters.demo_plm import SOURCE_SYSTEM as PLM_SOURCE_SYSTEM
+from edp_adapters.mes_mock import SOURCE_SYSTEM as MES_SOURCE_SYSTEM
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -104,15 +105,19 @@ async def resolve_anchor(sess: AsyncSession, tenant_id: UUID) -> datetime:
 
 
 def merged_snapshot_records(anchor: datetime) -> list[SourceRecord]:
-    """按 SNAPSHOT_RECORDS 全局序归并 erp-demo/plm-demo 记录（依赖序）。
+    """按 SNAPSHOT_RECORDS 全局序归并 erp-demo/mes-demo/plm-demo 记录（依赖序）。
 
-    两适配器各自的 fetch_full 保持数据集内部顺序，归并后即全局依赖序：
-    客户/物料/产品/供应商 → 订单/采购/BOM/交期/库存 → 项目+里程碑。
+    三适配器各自的 fetch_full 保持数据集内部顺序，归并后即全局依赖序：
+    客户/物料/产品/供应商 → 订单/采购/BOM/交期/库存 → 项目+里程碑 → 产能。
     """
     by_system: dict[str, dict[str, SourceRecord]] = {
         ERP_SOURCE_SYSTEM: {
             record.source_id: record
             for record in DemoErpAdapter().fetch_full([], anchor=anchor)
+        },
+        MES_SOURCE_SYSTEM: {
+            record.source_id: record
+            for record in DemoMesAdapter().fetch_full([], anchor=anchor)
         },
         PLM_SOURCE_SYSTEM: {
             record.source_id: record

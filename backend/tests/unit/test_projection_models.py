@@ -1,6 +1,6 @@
-"""projections ORM 单测：13 张领域表的 schema/表名/列名逐字对齐迁移 DDL。
+"""projections ORM 单测：14 张领域表的 schema/表名/列名逐字对齐迁移 DDL。
 
-断言口径以迁移 0002（master 6 表）与 0004（sales/delivery/rd 7 表）为准；
+断言口径以迁移 0002（master 6 表）与 0004（sales/delivery/rd 8 表）为准；
 列序与 DDL 声明序一致，列集合必须完全相等（多/少/改名均失败）。
 """
 
@@ -196,11 +196,25 @@ TABLES = [
             *AUDIT,
         ),
     ),
+    (
+        m.Capacity,
+        "delivery",
+        "capacity",
+        (
+            "id",
+            "tenant_id",
+            "product_line",
+            "period",
+            "capacity_qty",
+            "snapshot_at",
+            *AUDIT,
+        ),
+    ),
 ]
 
 
-def test_metadata_holds_exactly_13_tables() -> None:
-    assert len(TABLES) == 13
+def test_metadata_holds_exactly_14_tables() -> None:
+    assert len(TABLES) == 14
     assert set(m.Base.metadata.tables) == {
         f"{schema}.{table}" for _, schema, table, _ in TABLES
     }
@@ -237,6 +251,7 @@ NUMERIC_18_4 = [
     (m.Inventory, "quantity_available"),
     (m.Inventory, "quantity_reserved"),
     (m.PurchaseOrder, "quantity"),
+    (m.Capacity, "capacity_qty"),
 ]
 
 
@@ -259,6 +274,8 @@ def test_nullability_and_defaults_match_ddl() -> None:
     assert m.BomItem.__table__.c.position.nullable is True
     assert m.Inventory.__table__.c.quantity_available.nullable is False
     assert m.PurchaseOrder.__table__.c.supplier_id.nullable is True
+    assert m.Capacity.__table__.c.capacity_qty.nullable is False
+    assert m.Capacity.__table__.c.snapshot_at.nullable is False
 
     assert m.Product.__table__.c.status.default.arg == "ACTIVE"
     assert m.Bom.__table__.c.status.default.arg == "ACTIVE"

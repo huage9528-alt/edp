@@ -563,4 +563,41 @@ SNAPSHOT_RECORDS: tuple[SnapshotSpec, ...] = (
             "owner_domain": "rd",
         },
     ),
+    # ---- 产能快照（mes；场景 7 组合风险：L1 产能紧张） ----
+    SnapshotSpec(
+        "mes",
+        "CAPACITY",
+        "L1:2026-W40",
+        -8 * _DAY,
+        {
+            "product_line": "L1",
+            "period": "2026-W40",
+            "capacity_qty": 1200,
+            "owner_domain": "delivery",
+        },
+    ),
+    SnapshotSpec(
+        "mes",
+        "CAPACITY",
+        "L2:2026-W40",
+        -6 * _DAY,
+        {
+            "product_line": "L2",
+            "period": "2026-W40",
+            "capacity_qty": 3600,
+            "owner_domain": "delivery",
+        },
+    ),
+    SnapshotSpec(
+        "mes",
+        "CAPACITY",
+        "L1:2026-W41",
+        -4 * _DAY,
+        {
+            "product_line": "L1",
+            "period": "2026-W41",
+            "capacity_qty": 2400,
+            "owner_domain": "delivery",
+        },
+    ),
 )

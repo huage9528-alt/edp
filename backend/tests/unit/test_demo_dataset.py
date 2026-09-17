@@ -31,6 +31,7 @@ MAPPED_KEYS = {
     "SUPPLIER_LEAD_TIME": frozenset(
         {"supplier_code", "material_code", "lead_time_days"}
     ),
+    "CAPACITY": frozenset({"product_line", "period", "capacity_qty"}),
 }
 
 # 未映射键的白名单（进 attributes 的业务补充字段；白名单外即改名/笔误）
@@ -45,6 +46,7 @@ ALLOWED_EXTRA_KEYS = {
     "BOM": frozenset(),
     "SUPPLIER_LEAD_TIME": frozenset(),
     "PROJECT": frozenset(),
+    "CAPACITY": frozenset(),
 }
 
 ORDER_LINE_KEYS = frozenset(
@@ -53,7 +55,7 @@ ORDER_LINE_KEYS = frozenset(
 BOM_ITEM_KEYS = frozenset({"material_code", "quantity"})
 MILESTONE_KEYS = frozenset({"name", "due_date", "actual_date", "status"})
 
-# 依赖分组（列表顺序：master 主数据 → 业务快照 → 项目）
+# 依赖分组（列表顺序：master 主数据 → 业务快照 → 项目/产能）
 TYPE_RANK = {
     "CUSTOMER": 0,
     "MATERIAL": 0,
@@ -65,6 +67,7 @@ TYPE_RANK = {
     "SUPPLIER_LEAD_TIME": 1,
     "INVENTORY": 1,
     "PROJECT": 2,
+    "CAPACITY": 2,
 }
 
 ORDER_IDS = {
@@ -146,13 +149,23 @@ def test_snapshot_spec_is_frozen() -> None:
 
 
 def test_snapshot_source_systems_match_demo_adapters() -> None:
-    assert {record.source_system for record in SNAPSHOT_RECORDS} == {"erp", "plm"}
+    assert {record.source_system for record in SNAPSHOT_RECORDS} == {
+        "erp",
+        "mes",
+        "plm",
+    }
     plm_types = {
         record.object_type
         for record in SNAPSHOT_RECORDS
         if record.source_system == "plm"
     }
     assert plm_types == {"PRODUCT", "BOM", "PROJECT"}
+    mes_types = {
+        record.object_type
+        for record in SNAPSHOT_RECORDS
+        if record.source_system == "mes"
+    }
+    assert mes_types == {"CAPACITY"}
 
 
 def test_snapshot_covers_ten_orders() -> None:
