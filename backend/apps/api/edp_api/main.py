@@ -19,6 +19,7 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.catalog.router import router as catalog_router
 from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
@@ -86,6 +87,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(decisions_router)
     # ebms 路由（B.9 子集）：EBMS 查询聚合（EDP-012，本轮 exceptions）
     app.include_router(ebms_router)
+    # catalog 路由（B.7）：注册中心 systems/capabilities/skills（EDP-011）
+    app.include_router(catalog_router)
     # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
     app.include_router(health_router)
     for router in extra_routers:
