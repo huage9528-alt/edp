@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from edp_api.modules.projections.models import (
     Bom,
     BomItem,
+    Capacity,
     Customer,
     Inventory,
     Material,
@@ -452,6 +453,27 @@ async def _project_project(
     await sess.flush()
 
 
+async def _project_capacity(
+    sess: AsyncSession, tenant_id: UUID, record: SourceRecord, object_id: UUID
+) -> None:
+    """产能快照投影（delivery.capacity；EDP-017 剩余，MES 源）。
+
+    行粒度 =（产线, 周期, 快照时刻），id=uuid5(object_id,"cap") 随对象稳定；
+    `_upsert` 原地更新（同对象重投影不新增行）。
+    """
+    payload = record.payload
+    values = dict(
+        id=uuid5(object_id, "cap"),
+        tenant_id=tenant_id,
+        product_line=payload.get("product_line", ""),
+        period=payload.get("period", ""),
+        capacity_qty=_decimal(payload.get("capacity_qty")) or Decimal(0),
+        snapshot_at=record.occurred_at,
+    )
+    await _upsert(sess, Capacity, values, pk="id", object_id=values["id"])
+    await sess.flush()
+
+
 Projector = Callable[[AsyncSession, UUID, SourceRecord, UUID], Awaitable[None]]
 
 _PROJECTORS: dict[str, Projector] = {
@@ -465,6 +487,7 @@ _PROJECTORS: dict[str, Projector] = {
     "BOM": _project_bom,
     "SUPPLIER_LEAD_TIME": _project_supplier_lead_time,
     "PROJECT": _project_project,
+    "CAPACITY": _project_capacity,
 }
 
 

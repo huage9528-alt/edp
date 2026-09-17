@@ -19,16 +19,19 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.catalog.router import router as catalog_router
 from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
 from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.health.router import router as health_router
+from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
 from edp_api.modules.tools.router import router as tools_router
+from edp_api.modules.traces.router import router as traces_router
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,12 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(decisions_router)
     # ebms 路由（B.9 子集）：EBMS 查询聚合（EDP-012，本轮 exceptions）
     app.include_router(ebms_router)
+    # catalog 路由（B.7）：注册中心 systems/capabilities/skills（EDP-011）
+    app.include_router(catalog_router)
+    # traces 路由（B.10）：Agent 执行轨迹写入/查询（EDP-013）
+    app.include_router(traces_router)
+    # memories 路由（B.11）：学习记忆候选 + Human-Only 评审（EDP-014）
+    app.include_router(memories_router)
     # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
     app.include_router(health_router)
     for router in extra_routers:

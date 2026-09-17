@@ -90,6 +90,12 @@ async def _clean_events_rows(db_session: AsyncSession) -> None:
         text("DELETE FROM master.business_objects WHERE source_id LIKE 'SO-EVT-%'")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-b-evt')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-b-evt'")
     )
     await db_session.execute(
@@ -97,6 +103,12 @@ async def _clean_events_rows(db_session: AsyncSession) -> None:
             "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
             " (SELECT tenant_id FROM platform.tenants"
             " WHERE slug IN ('default', 'tenant-purge-evt'))"
+        )
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-purge-evt')"
         )
     )
     await db_session.execute(

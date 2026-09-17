@@ -367,7 +367,12 @@ async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
     resp = await client.get(ADAPTERS, headers=headers)
     assert resp.status_code == 200, resp.text
     items = resp.json()["items"]
-    assert [item["adapter"] for item in items] == ["erp", "erp-demo", "plm-demo"]
+    assert [item["adapter"] for item in items] == [
+        "erp",
+        "erp-demo",
+        "mes-demo",
+        "plm-demo",
+    ]
     erp = items[0]
     assert set(erp) == {"adapter", "mode", "status", "health", "last_sync_at"}
     assert erp["mode"] == "mock"

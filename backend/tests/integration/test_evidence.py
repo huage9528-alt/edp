@@ -112,6 +112,12 @@ async def _clean_evidence_rows(db_session: AsyncSession) -> None:
         {"p": READONLY_PRINCIPAL},
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-b-evidence')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-b-evidence'")
     )
     await db_session.commit()
@@ -334,6 +340,66 @@ async def test_reverse_ref_lookup_and_object_filter(
     )
     assert miss.status_code == 200, miss.text
     assert miss.json()["items"] == []
+
+
+# ---- 3b. q 模糊搜索（source_record_id/source_system，W3R-T8） ----
+
+
+async def test_search_q_matches_record_id_and_source_system(
+    client: httpx.AsyncClient,
+) -> None:
+    headers = await _login(client)
+    object_id = await _create_object(client, headers)
+
+    hit = await _create_evidence(
+        client,
+        headers,
+        object_id,
+        snapshot={**SNAPSHOT, "seq": "q-hit"},
+        source_record_id="ORDER-Q-777#v1",
+    )
+    assert hit.status_code == 201, hit.text
+    other = await _create_evidence(
+        client,
+        headers,
+        object_id,
+        snapshot={**SNAPSHOT, "seq": "q-other"},
+        source_record_id="INVOICE-888#v1",
+    )
+    assert other.status_code == 201, other.text
+
+    by_record = await client.get(
+        EVIDENCE, params={"q": "order-q"}, headers=headers
+    )
+    assert by_record.status_code == 200, by_record.text
+    assert [item["evidence_id"] for item in by_record.json()["items"]] == [
+        hit.json()["evidence_id"]
+    ]
+
+    # source_system 命中（两条都是 erp → 全量）
+    by_source = await client.get(EVIDENCE, params={"q": "ERP"}, headers=headers)
+    assert by_source.status_code == 200, by_source.text
+    assert len(by_source.json()["items"]) == 2
+
+    # 组合过滤：q + object_id 与 q 无结果
+    combo = await client.get(
+        EVIDENCE,
+        params={"q": "order-q", "object_id": object_id},
+        headers=headers,
+    )
+    assert combo.status_code == 200, combo.text
+    assert len(combo.json()["items"]) == 1
+
+    empty = await client.get(
+        EVIDENCE, params={"q": "no-such-record"}, headers=headers
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["items"] == []
+
+    # LIKE 通配符按字面处理（% 不放大匹配）
+    literal = await client.get(EVIDENCE, params={"q": "%"}, headers=headers)
+    assert literal.status_code == 200, literal.text
+    assert literal.json()["items"] == []
 
 
 # ---- 4. API Key 双轨：种子 Key GET 200（readonly）；无 write:evidence POST 403 ----

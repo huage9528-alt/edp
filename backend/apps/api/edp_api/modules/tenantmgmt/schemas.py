@@ -1,6 +1,6 @@
 """tenantmgmt 请求/响应模型（当前租户信息 + W2 租户生命周期 EDP-024/B.14）。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -119,7 +119,7 @@ class TenantUsage(BaseModel):
 
 
 class TenantDetail(BaseModel):
-    """租户详情（GET /api/v1/tenants/{tenant_id}）：配额行 + 用量（可空）。"""
+    """租户详情（GET /api/v1/tenants/{tenant_id}）：详情 + 配额/用量（可空）。"""
 
     tenant_id: UUID
     slug: str
@@ -131,3 +131,16 @@ class TenantDetail(BaseModel):
     updated_at: datetime
     quotas: TenantQuotaInfo | None = None
     usage: TenantUsage | None = None
+
+
+class UsageItem(BaseModel):
+    """GET /tenants/{id}/usage 列表项（B.14 字段 + events_duplicated 超集）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    usage_date: date
+    api_calls: int
+    events_in: int
+    events_duplicated: int
+    storage_gb: Decimal
+    throttled_429: int

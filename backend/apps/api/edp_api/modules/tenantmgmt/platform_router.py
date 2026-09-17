@@ -7,6 +7,7 @@ tenant_quotas 无 RLS；users / tenant_members 的写入由 service 在新租户
 行落库后 bind_tenant 完成）。
 """
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -14,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
-from edp_api.core.errors import ErrorCode, error_responses
+from edp_api.core.errors import EdpError, ErrorCode, error_responses
 from edp_api.core.pagination import Page
 from edp_api.core.security.principal import Principal
 from edp_api.modules.platform.dependencies import require_platform_admin
@@ -26,6 +27,7 @@ from edp_api.modules.tenantmgmt.schemas import (
     TenantDetail,
     TenantLifecycleResponse,
     TenantSummary,
+    UsageItem,
 )
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
@@ -192,3 +194,32 @@ async def cancel_tenant(
         operation="cancel",
         occurred_at=tenant.updated_at,
     )
+
+
+@router.get(
+    "/{tenant_id}/usage",
+    response_model=Page[UsageItem],
+    response_model_exclude_none=True,
+    summary="租户使用量日报（平台运营；EDP-025 计量）",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.NOT_FOUND,
+    ),
+)
+async def get_tenant_usage(
+    tenant_id: UUID,
+    sess: DbSession,
+    principal: PlatformAdmin,
+    since: Annotated[date | None, Query(description="起始日期（含）")] = None,
+    until: Annotated[date | None, Query(description="结束日期（含）")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    cursor: Annotated[str | None, Query()] = None,
+) -> Page[UsageItem]:
+    """使用量日报（B.14 最小版）：usage_date DESC 游标分页；租户不存在 404。"""
+    if await tenantmgmt_service.get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    items, next_cursor = await tenantmgmt_service.query_usage(
+        sess, tenant_id, since=since, until=until, limit=limit, cursor=cursor
+    )
+    return Page(items=items, next_cursor=next_cursor)

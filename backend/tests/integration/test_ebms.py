@@ -142,6 +142,12 @@ async def _clean_ebms_rows(
         text("DELETE FROM platform.users WHERE tenant_id IN (" + b_ids + ")")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-ebms')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-ebms'")
     )
     await db_session.commit()

@@ -82,16 +82,25 @@ async def list_evidence(
     ] = None,
     ref_id: Annotated[UUID | None, Query()] = None,
     object_id: Annotated[UUID | None, Query()] = None,
+    q: Annotated[
+        str | None,
+        Query(
+            max_length=255,
+            description="模糊搜索：source_record_id/source_system ILIKE",
+        ),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = evidence_service.DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[EvidenceListItem]:
-    """ref_type+ref_id（links 子查询）/ object_id 过滤 + 游标分页
-    （captured_at DESC, evidence_id tiebreak）；列表为简投影（详情走 GET /{id}）。"""
+    """ref_type+ref_id（links 子查询）/ object_id 过滤 + ``q`` 模糊搜索 + 游标
+    分页（captured_at DESC, evidence_id tiebreak）；列表为简投影（不含
+    snapshot/links，详情经 GET /{id}）。"""
     return await evidence_service.query_records(
         sess,
         ref_type=ref_type,
         ref_id=ref_id,
         object_id=object_id,
+        q=q,
         limit=limit,
         cursor=cursor,
     )

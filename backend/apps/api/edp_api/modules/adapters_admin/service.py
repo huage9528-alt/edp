@@ -28,6 +28,7 @@ from uuid import UUID, uuid4
 from edp_adapters import (
     AdapterRegistry,
     DemoErpAdapter,
+    DemoMesAdapter,
     DemoPlmAdapter,
     ErpMockAdapter,
 )
@@ -58,12 +59,14 @@ JobStatus = str  # "RUNNING" | "SUCCEEDED" | "FAILED"
 _STATUS_TEXT: dict[str, str] = {"RUNNING": "运行中", "SUCCEEDED": "空闲", "FAILED": "异常"}
 _HEALTH_TEXT: dict[bool, str] = {True: "OK", False: "DEGRADED"}
 
-# 进程内注册表：erp（W2 基线）+ erp-demo/plm-demo（W3 演示数据集，T6）；
-# 清单显示三行（list 按名称升序：erp / erp-demo / plm-demo）
+# 进程内注册表：erp（W2 基线）+ erp-demo/plm-demo/mes-demo（W3 演示数据集，
+# T6 + EDP-017 剩余）；清单显示四行（list 按名称升序：
+# erp / erp-demo / mes-demo / plm-demo）
 _registry = AdapterRegistry()
 _registry.register(ErpMockAdapter())
 _registry.register(DemoErpAdapter())
 _registry.register(DemoPlmAdapter())
+_registry.register(DemoMesAdapter())
 
 # key = adapter name（每适配器仅保留最近一次任务）
 _jobs: dict[str, SyncJob] = {}

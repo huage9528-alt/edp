@@ -24,6 +24,7 @@ MAPPED_TYPES = {
     "BOM",
     "SUPPLIER_LEAD_TIME",
     "PROJECT",
+    "CAPACITY",
 }
 
 

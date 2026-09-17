@@ -1,4 +1,4 @@
-"""T6 演示适配器单测：同锚确定性 / 锚平移仅 occurred_at 变 / 来源过滤 /
+﻿"""T6 演示适配器单测：同锚确定性 / 锚平移仅 occurred_at 变 / 来源过滤 /
 DEMO_ANCHOR 兜底 / 跨适配器合并自然键唯一 / fetch_* 语义（类型过滤与
 严格 >since、升序）。
 
@@ -13,15 +13,18 @@ from edp_adapters.demo_erp import DemoErpAdapter
 from edp_adapters.demo_erp import build_records as build_erp_records
 from edp_adapters.demo_plm import DemoPlmAdapter
 from edp_adapters.demo_plm import build_records as build_plm_records
+from edp_adapters.mes_mock import DemoMesAdapter
+from edp_adapters.mes_mock import build_records as build_mes_records
 
 ANCHOR = datetime(2026, 9, 28, 8, 30, 0, tzinfo=UTC)
 SHIFT = timedelta(hours=5)
 EPOCH = datetime.min.replace(tzinfo=UTC)
 
-_BUILDERS = (build_erp_records, build_plm_records)
+_BUILDERS = (build_erp_records, build_plm_records, build_mes_records)
 _ADAPTER_BUILDERS = (
     (DemoErpAdapter(), build_erp_records),
     (DemoPlmAdapter(), build_plm_records),
+    (DemoMesAdapter(), build_mes_records),
 )
 
 
@@ -35,8 +38,10 @@ def _spec_counts(source_system: str) -> int:
 def test_adapter_names_and_health() -> None:
     assert DemoErpAdapter.name == "erp-demo"
     assert DemoPlmAdapter.name == "plm-demo"
+    assert DemoMesAdapter.name == "mes-demo"
     assert DemoErpAdapter().health_check().ok is True
     assert DemoPlmAdapter().health_check().ok is True
+    assert DemoMesAdapter().health_check().ok is True
 
 
 # ---- 确定性：同锚两次构建完全一致 ----
@@ -48,7 +53,7 @@ def test_same_anchor_builds_identical_records() -> None:
 
 
 def test_same_anchor_fetch_full_identical() -> None:
-    for adapter in (DemoErpAdapter(), DemoPlmAdapter()):
+    for adapter in (DemoErpAdapter(), DemoPlmAdapter(), DemoMesAdapter()):
         assert adapter.fetch_full([], anchor=ANCHOR) == adapter.fetch_full([], anchor=ANCHOR)
 
 
@@ -77,8 +82,13 @@ def test_anchor_shift_moves_occurred_at_only() -> None:
 
 
 def test_occurred_at_equals_anchor_plus_offset() -> None:
+    builders = {
+        "erp": build_erp_records,
+        "plm": build_plm_records,
+        "mes": build_mes_records,
+    }
     for spec in SNAPSHOT_RECORDS:
-        build = build_erp_records if spec.source_system == "erp" else build_plm_records
+        build = builders[spec.source_system]
         record = next(
             item
             for item in build(ANCHOR)
@@ -104,6 +114,14 @@ def test_plm_demo_records_are_all_plm() -> None:
     assert len(records) == _spec_counts("plm")
 
 
+def test_mes_demo_records_are_all_mes() -> None:
+    records = build_mes_records(ANCHOR)
+    assert records
+    assert {record.source_system for record in records} == {"mes"}
+    assert {record.object_type for record in records} == {"CAPACITY"}
+    assert len(records) == _spec_counts("mes")
+
+
 # ---- 兜底：无 anchor → DEMO_ANCHOR ----
 
 
@@ -115,20 +133,29 @@ def test_build_records_without_anchor_falls_back_to_demo_anchor() -> None:
 def test_fetch_without_anchor_falls_back_to_demo_anchor() -> None:
     assert DemoErpAdapter().fetch_full([]) == build_erp_records(DEMO_ANCHOR)
     assert DemoPlmAdapter().fetch_full([]) == build_plm_records(DEMO_ANCHOR)
+    assert DemoMesAdapter().fetch_full([]) == build_mes_records(DEMO_ANCHOR)
 
 
 # ---- 合并：自然键唯一、恰为数据集全量 ----
 
 
 def test_merged_natural_keys_unique() -> None:
-    merged = build_erp_records(ANCHOR) + build_plm_records(ANCHOR)
+    merged = (
+        build_erp_records(ANCHOR)
+        + build_plm_records(ANCHOR)
+        + build_mes_records(ANCHOR)
+    )
     natural_keys = [(record.object_type, record.source_id) for record in merged]
     assert len(natural_keys) == len(set(natural_keys))
     assert len(merged) == len(SNAPSHOT_RECORDS)
 
 
 def test_merged_records_cover_all_snapshot_specs() -> None:
-    merged = build_erp_records(ANCHOR) + build_plm_records(ANCHOR)
+    merged = (
+        build_erp_records(ANCHOR)
+        + build_plm_records(ANCHOR)
+        + build_mes_records(ANCHOR)
+    )
     keys = {(record.object_type, record.source_id) for record in merged}
     expected = {(spec.object_type, spec.source_id) for spec in SNAPSHOT_RECORDS}
     assert keys == expected

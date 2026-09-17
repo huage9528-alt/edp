@@ -10,7 +10,7 @@ SQL update）。
 """
 
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -36,6 +36,7 @@ from edp_api.modules.tenantmgmt.schemas import (
     TenantQuotaInfo,
     TenantSummary,
     TenantUsage,
+    UsageItem,
 )
 
 DEFAULT_LIMIT = 20
@@ -109,6 +110,29 @@ async def get_tenant_status(sess: AsyncSession, tenant_id: UUID) -> str | None:
     return (
         await sess.execute(select(Tenant.status).where(Tenant.tenant_id == tenant_id))
     ).scalar_one_or_none()
+
+
+async def get_quota(sess: AsyncSession, tenant_id: UUID) -> TenantQuota:
+    """租户配额（tenant_quotas 控制面表）；缺行 → DDL 默认值临时实例（不入库）。
+
+    注意：列 ``default=`` 仅在 INSERT 时生效——缺省实例必须显式赋默认值，
+    否则属性为 None（EDP-025 限流读取会 TypeError）。
+
+    EDP-025 限流/批量限额/statement_timeout 读取入口（每请求一次，演示量级
+    可接受；W6 性能评估时可加进程内缓存）。
+    """
+    quota = await sess.get(TenantQuota, tenant_id)
+    if quota is not None:
+        return quota
+    return TenantQuota(
+        tenant_id=tenant_id,
+        api_rate_limit=100,
+        batch_max_events=1000,
+        query_timeout_ms=5000,
+        pool_share=Decimal("2.0"),
+        storage_gb=50,
+        events_per_month=1_000_000,
+    )
 
 
 async def member_roles_for_user(
@@ -204,16 +228,20 @@ async def bump_usage_daily(
     *,
     events_in: int = 0,
     events_duplicated: int = 0,
+    api_calls: int = 0,
+    throttled_429: int = 0,
 ) -> None:
-    """按 (tenant_id, usage_date=UTC 今日) upsert 累加事件计量。
+    """按 (tenant_id, usage_date=UTC 今日) upsert 累加计量列。
 
-    计量口径（spec §5.1）：``events_in`` = 实际入库事件数，
-    ``events_duplicated`` = 幂等命中数。调用方（events.ingest_batch /
-    ingest.process_record）在事件写入事务内调用——与事件行同事务提交/
-    回滚，计数不虚增。全零跳过（不产生空行）；表无 RLS（控制面），
+    事件口径（spec §5.1）：``events_in`` = 实际入库事件数、
+    ``events_duplicated`` = 幂等去重数（调用方 events.ingest_batch /
+    ingest.process_record 与事件写入同事务调用——失败请求不计入，语义为
+    「受理调用数」，docstring 留痕）；EDP-025 计量：``api_calls`` 每请求
+    +1（tenant_scoped 同请求事务）、``throttled_429`` 限流拒绝 +1（429 路径
+    经独立会话提交）。控制面表（platform schema，不受 RLS）。
     ON CONFLICT (tenant_id, usage_date) 并发安全。
     """
-    if events_in == 0 and events_duplicated == 0:
+    if not any((events_in, events_duplicated, api_calls, throttled_429)):
         return
     stmt = (
         pg_insert(TenantUsageDaily)
@@ -223,6 +251,8 @@ async def bump_usage_daily(
             usage_date=datetime.now(UTC).date(),
             events_in=events_in,
             events_duplicated=events_duplicated,
+            api_calls=api_calls,
+            throttled_429=throttled_429,
         )
         .on_conflict_do_update(
             index_elements=["tenant_id", "usage_date"],
@@ -231,6 +261,8 @@ async def bump_usage_daily(
                 "events_duplicated": (
                     TenantUsageDaily.events_duplicated + events_duplicated
                 ),
+                "api_calls": TenantUsageDaily.api_calls + api_calls,
+                "throttled_429": TenantUsageDaily.throttled_429 + throttled_429,
                 "updated_at": func.now(),
             },
         )
@@ -444,6 +476,62 @@ def _parse_anchor(decoded: dict) -> tuple[datetime, UUID] | None:
     """cursor 载荷 → (created_at, tenant_id)；缺字段/格式非法 → None。"""
     try:
         return datetime.fromisoformat(str(decoded["o"])), UUID(str(decoded["i"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+async def query_usage(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    *,
+    since: date | None = None,
+    until: date | None = None,
+    limit: int = DEFAULT_LIMIT,
+    cursor: str | None = None,
+) -> tuple[list[UsageItem], str | None]:
+    """使用量日报（B.14 最小版，EDP-025）：usage_date 闭区间 + 游标分页
+    （usage_date DESC, id DESC tiebreak，锚 ``{"d","i"}``；非法 cursor 视为首页）。"""
+    limit = max(1, min(limit, MAX_LIMIT))
+    stmt = select(TenantUsageDaily).where(
+        TenantUsageDaily.tenant_id == tenant_id
+    )
+    if since is not None:
+        stmt = stmt.where(TenantUsageDaily.usage_date >= since)
+    if until is not None:
+        stmt = stmt.where(TenantUsageDaily.usage_date <= until)
+    decoded = decode_cursor(cursor)
+    if decoded is not None:
+        anchor = _parse_usage_anchor(decoded)
+        if anchor is not None:
+            usage_date, anchor_id = anchor
+            stmt = stmt.where(
+                or_(
+                    TenantUsageDaily.usage_date < usage_date,
+                    and_(
+                        TenantUsageDaily.usage_date == usage_date,
+                        TenantUsageDaily.id < anchor_id,
+                    ),
+                )
+            )
+    stmt = stmt.order_by(
+        TenantUsageDaily.usage_date.desc(), TenantUsageDaily.id.desc()
+    ).limit(limit + 1)
+    rows = (await sess.execute(stmt)).scalars().all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    next_cursor = None
+    if has_more and page_rows:
+        last = page_rows[-1]
+        next_cursor = encode_cursor(
+            {"d": last.usage_date.isoformat(), "i": str(last.id)}
+        )
+    return [UsageItem.model_validate(row) for row in page_rows], next_cursor
+
+
+def _parse_usage_anchor(decoded: dict) -> tuple[date, UUID] | None:
+    """cursor 载荷 → (usage_date, id)；缺字段/格式非法 → None。"""
+    try:
+        return date.fromisoformat(str(decoded["d"])), UUID(str(decoded["i"]))
     except (KeyError, TypeError, ValueError):
         return None
 

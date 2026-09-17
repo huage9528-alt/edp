@@ -134,7 +134,9 @@ async def _clean_isolation_rows(db_session: AsyncSession) -> None:
     await db_session.execute(
         text("DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN (" + b_ids + ")")
     )
-    await db_session.execute(text("DELETE FROM platform.tenants WHERE slug = 'tenant-b'"))
+    await db_session.execute(
+        text("DELETE FROM platform.tenants WHERE slug = 'tenant-b'")
+    )
     await db_session.commit()
 
 

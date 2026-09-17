@@ -1,6 +1,8 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { EventsPage } from "../features/events/EventsPage";
+import { EvidencePage } from "../features/evidence/EvidencePage";
+import { HealthPage } from "../features/health/HealthPage";
 import {
   ForbiddenPage,
   NotFoundPage,
@@ -8,6 +10,7 @@ import {
   SearchPlaceholderPage,
 } from "../features/placeholder/PlaceholderPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
+import { QualityPage } from "../features/quality/QualityPage";
 import { RegistryPage } from "../features/registry/RegistryPage";
 import { AppLayout } from "../shell/AppLayout";
 import { RedirectIfAuthed, RequireAuth } from "./guards";
@@ -55,11 +58,23 @@ export const routes: RouteObject[] = [
         element: <EventsPage />,
         handle: { title: "事件流" } satisfies RouteHandle,
       },
-      { path: "admin/evidence", ...withTitle("证据库") },
-      { path: "admin/quality", ...withTitle("数据质量") },
+      {
+        path: "admin/evidence",
+        element: <EvidencePage />,
+        handle: { title: "证据库" } satisfies RouteHandle,
+      },
+      {
+        path: "admin/quality",
+        element: <QualityPage />,
+        handle: { title: "数据质量" } satisfies RouteHandle,
+      },
       { path: "admin/audit", ...withTitle("审计日志") },
       { path: "admin/adapters", ...withTitle("适配器管理") },
-      { path: "admin/systems", ...withTitle("系统健康") },
+      {
+        path: "admin/systems",
+        element: <HealthPage />,
+        handle: { title: "系统健康" } satisfies RouteHandle,
+      },
       { path: "tenants", ...withTitle("租户管理") },
       { path: "tenants/:tenant_id", ...withTitle("租户详情") },
       { path: "cases", ...withTitle("闭环案例") },

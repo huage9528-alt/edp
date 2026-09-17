@@ -326,3 +326,64 @@ pnpm --filter web build            # tsc --noEmit + vite build 成功
 - **W3-12 / W3-21**：真实事件为 `{TYPE}_SNAPSHOT` + `capability.result.*` + `adapter.sync.failed` 共 50 条；MSW 展示型类型（`order.created` 等）不迁入。
 - **端口偏差**：18000 为 compose api，本文件无头冒烟用 18001 venv 进程（同一 dev 库）；正式演示以 compose 18000 / web 9080 为准（前置须 `up -d --build`）。
 - **T19 已补**：tools 六接口 + evidence_hint、405 举证、403 + GUARD_DENIED、回流 exceptions（P1 含 case_id）、replay 幂等——②~⑥ 已断言化为 `backend/tests/integration/test_m3_acceptance.py`（5 用例），可随时回归。
+
+---
+
+# W3 补齐（W3R）：注册中心 / Trace / Memory / 产能 / 限流
+
+> 环境同前：venv 18001 或 compose 18000；`$H = @{ "X-API-Key" = "edp-dev-agent-hub-key" }`。
+> 以下 ①~⑤ 已断言化为 `backend/tests/integration/test_w3r_acceptance.py`（5 用例），可随时回归。
+
+## ① 注册中心（EDP-011）
+
+```powershell
+# 注册 Delivery.OrderRisk（B.7 示例）
+$body = '{"name":"Delivery.OrderRisk","domain":"delivery","input_schema":{"type":"object"},"output_schema":{"type":"object"},"risk_level":"L2","permission":"READ_ONLY","endpoint":"agent-hub://capabilities/delivery-order-risk","owner":"wuyangpeng"}'
+$r = Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/capabilities" -Headers $H -Body $body -ContentType "application/json"
+$r.capability_id   # 201：capability_id/name=Delivery.OrderRisk/status=ACTIVE/created_at
+Invoke-RestMethod -Uri "http://localhost:18001/api/v1/capabilities?domain=delivery" -Headers $H | ConvertTo-Json -Depth 4
+# 重名重发 → 409 CONFLICT
+```
+
+## ② Trace（EDP-013）
+
+```powershell
+$trace = '{"trace_id":"' + [guid]::NewGuid() + '","agent_id":"agent:delivery-order-risk","task_id":"task-w3r-001","started_at":"2026-09-17T08:00:00Z","finished_at":"2026-09-17T08:00:41Z","status":"SUCCEEDED","input_context":{"order_no":"SO-2026-00123"},"output_structured":{"risk_level":"P1","score":0.86},"token_usage":{"prompt":3120,"completion":480,"total":3600},"tool_calls":[{"seq":1,"tool_name":"get_inventory","input":{"material_code":"X-100"},"output":{"total_available":3200},"status_code":200,"latency_ms":85},{"seq":2,"tool_name":"get_order","input":{"order_no":"SO-2026-00123"},"status_code":200,"latency_ms":42}]}'
+Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/traces" -Headers $H -Body $trace -ContentType "application/json"
+# 重发同 trace_id → 200（幂等，不重写 tool_calls）；GET /traces/{id} 含 2 条 seq 升序
+```
+
+## ③ Memory（EDP-014）
+
+```powershell
+$mem = '{"source_type":"decision","source_id":"' + [guid]::NewGuid() + '","content":{"lesson":"VIP客户订单优先保交付"}}'
+$m = Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/memories" -Headers $H -Body $mem -ContentType "application/json"
+# 201：status=CANDIDATE；SERVICE 评审 → 403 GUARD_POLICY_DENIED + GUARD_DENIED 审计
+Invoke-RestMethod -Method Patch -Uri "http://localhost:18001/api/v1/memories/$($m.memory_id)/review" -Headers $H -Body '{"status":"APPROVED"}' -ContentType "application/json"
+# HUMAN（manager1 JWT）评审 → 200（reviewed_by/reviewed_at）
+```
+
+## ④ 产能（EDP-017 剩余）
+
+```powershell
+# seed 后：delivery.capacity 三行（L1/2026-W40=1200 紧张、L2/2026-W40=3600、L1/2026-W41=2400）
+# mes-demo 重放 → 202 → status：fetched=3 duplicated=3 registered=0
+Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/admin/adapters/mes-demo/sync" -Headers $manager -Body '{"mode":"replay"}' -ContentType "application/json"
+```
+
+## ⑤ 限流配额 + 用量日报（EDP-025 / B.14）
+
+```powershell
+# 把 default 租户 api_rate_limit 调 2 → 前 2 次 200，第 3 次 429 + Retry-After（秒）
+# 审计 RATE_LIMITED + tenant_usage_daily.throttled_429=1
+Invoke-RestMethod -Uri "http://localhost:18001/api/v1/tenants/<tenant_id>/usage" -Headers $admin
+# → items[0]：usage_date/api_calls/events_in/events_duplicated/storage_gb/throttled_429
+```
+
+## ⑥ 前端三页（人工 5 步清单）
+
+1. **证据库** `/admin/evidence`：KPI 四卡（证据数量真值）→ 卡内搜索 `SO-2026-00123` → 选中订单 B 快照 → 链图 2 节点 + 链上校验计数 → 点「校验」→ 状态 pill 即时 VALID；
+2. **重建索引**：MSW 模式（`VITE_USE_MSW=1`）页头「重建索引」可用 → 三步向导 → 202；真模式按钮禁用（tooltip「W5 交付」）；
+3. **数据质量** `/admin/quality`：KPI 四卡（97.8/99.2/98.7/7）→ 维度 5 条（PLM 94.2 warning 色）→ 异常卡 3 条 + 合并提示 → 「重新检查」弹窗（默认全选）→ 提交后通知 + 任务日志抽屉（TASK-.../运行中/日志时间线）；
+4. **系统健康** `/admin/systems`：HA（主库/0.4 MB/1 副本）+ 备份（PASSED）+ Outbox（3/6）+ 告警渠道四卡；「演练回放」链接；每 10s 深层轮询；
+5. **真模式回归**（`VITE_USE_MSW=0`）：证据库列表/verify 走真 API；数据质量面板降级「—」、重校验禁用；系统健康 HA/Outbox 真值、备份卡提示「W5 交付」。

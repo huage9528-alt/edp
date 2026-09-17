@@ -80,6 +80,13 @@ async def _purge_tenant(db_session: AsyncSession, slug: str) -> None:
         {"slug": slug},
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = :slug)"
+        ),
+        {"slug": slug},
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = :slug"), {"slug": slug}
     )
     await db_session.commit()
