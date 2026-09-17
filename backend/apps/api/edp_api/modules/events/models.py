@@ -51,6 +51,7 @@ class Event(Base):
     score: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     idempotency_key: Mapped[str | None] = mapped_column(Text)
+    ingest_latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

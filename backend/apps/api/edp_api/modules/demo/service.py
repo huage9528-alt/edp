@@ -156,6 +156,8 @@ _PURGE_SQL: tuple[str, ...] = (
     "DELETE FROM master.business_objects WHERE tenant_id = :t",
     "DELETE FROM platform.systems WHERE tenant_id = :t",
     "DELETE FROM platform.idempotency_keys WHERE tenant_id = :t",
+    # T7 评审 Important：计量行不清则 RESET 后 KPI/幂等命中率翻倍累计
+    "DELETE FROM platform.tenant_usage_daily WHERE tenant_id = :t",
 )
 
 
@@ -469,21 +471,35 @@ async def _latest_evidence_id(
     ).scalar_one_or_none()
 
 
-_LATENCY_SQL = text("""
+_LATENCY_SQL = text(r"""
     UPDATE event.events
     SET ingest_latency_ms = :floor + (abs(hashtext(event_id::text)) % :span)
-    WHERE tenant_id = :t AND ingest_latency_ms IS NULL
+    WHERE tenant_id = :t
+      AND (
+        event_type LIKE '%\_SNAPSHOT'
+        OR idempotency_key LIKE :result_prefix
+      )
 """)
 
 
 async def _apply_demo_latency(
     factory: async_sessionmaker[AsyncSession], tenant_id: UUID
 ) -> None:
-    """确定性回填接入耗时（60~299ms，spec §6.2）：仅补 NULL——真实入库
-    路径（管道/批量）的实测值不覆盖。"""
+    """确定性覆盖演示事件的接入耗时（60~299ms，spec §6.2「seed 用确定性值」）。
+
+    覆盖范围 = 演示数据集事件：快照事件（``%_SNAPSHOT``）与 seed 回流事件
+    （幂等键前缀 ``seed-demo:results:v1:``）。T9 起管道/批量会写实测耗时
+    （亚毫秒级），若不覆盖则演示 KPI（P95 接入延迟）退化为 0——故此处对
+    演示事件确定性覆盖；非演示事件（真实批量入库等）的实测值不动。
+    """
     async with factory.begin() as sess:
         await bind_tenant(sess, tenant_id)
         await sess.execute(
             _LATENCY_SQL,
-            {"t": tenant_id, "floor": LATENCY_FLOOR_MS, "span": LATENCY_SPAN_MS},
+            {
+                "t": tenant_id,
+                "floor": LATENCY_FLOOR_MS,
+                "span": LATENCY_SPAN_MS,
+                "result_prefix": f"{DEMO_RESULTS_IDEM_KEY}:%",
+            },
         )

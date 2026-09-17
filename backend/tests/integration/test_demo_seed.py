@@ -456,6 +456,19 @@ async def test_seed_reset_rebuilds_same_rows_and_reanchors(
     assert reset.case_created is True
     assert await _demo_counts(db_session, default_tenant_id) == counts_first
 
+    # 计量（T9/T7 评审 Important）：RESET 清旧 usage 行后重建——不翻倍累计
+    usage = (
+        await db_session.execute(
+            text(
+                "SELECT COALESCE(sum(events_in), 0),"
+                " COALESCE(sum(events_duplicated), 0)"
+                " FROM platform.tenant_usage_daily WHERE tenant_id = :t"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).one()
+    assert (int(usage[0]), int(usage[1])) == (SNAPSHOT_COUNT + RESULT_COUNT, 0)
+
     anchor = await tenantmgmt_service.get_demo_anchor(db_session, default_tenant_id)
     assert anchor is not None
     assert anchor != stale

@@ -25,3 +25,4 @@ def decode_cursor(cursor: str | None) -> dict | None:
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
+    total: int | None = None

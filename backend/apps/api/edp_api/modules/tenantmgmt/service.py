@@ -14,7 +14,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,7 @@ from edp_api.modules.tenantmgmt.models import (
     Tenant,
     TenantMember,
     TenantQuota,
+    TenantUsageDaily,
     UserRow,
 )
 from edp_api.modules.tenantmgmt.schemas import (
@@ -191,6 +193,49 @@ async def set_demo_anchor(
     attributes["demo_seed"] = demo_seed
     tenant.attributes = attributes
     await sess.flush()
+
+
+# ---- W3 用量计量（T9：events 批量入库 / ingest 管道共用入口） ----
+
+
+async def bump_usage_daily(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    *,
+    events_in: int = 0,
+    events_duplicated: int = 0,
+) -> None:
+    """按 (tenant_id, usage_date=UTC 今日) upsert 累加事件计量。
+
+    计量口径（spec §5.1）：``events_in`` = 实际入库事件数，
+    ``events_duplicated`` = 幂等命中数。调用方（events.ingest_batch /
+    ingest.process_record）在事件写入事务内调用——与事件行同事务提交/
+    回滚，计数不虚增。全零跳过（不产生空行）；表无 RLS（控制面），
+    ON CONFLICT (tenant_id, usage_date) 并发安全。
+    """
+    if events_in == 0 and events_duplicated == 0:
+        return
+    stmt = (
+        pg_insert(TenantUsageDaily)
+        .values(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            usage_date=datetime.now(UTC).date(),
+            events_in=events_in,
+            events_duplicated=events_duplicated,
+        )
+        .on_conflict_do_update(
+            index_elements=["tenant_id", "usage_date"],
+            set_={
+                "events_in": TenantUsageDaily.events_in + events_in,
+                "events_duplicated": (
+                    TenantUsageDaily.events_duplicated + events_duplicated
+                ),
+                "updated_at": func.now(),
+            },
+        )
+    )
+    await sess.execute(stmt)
 
 
 # ---- W2 生命周期（EDP-024） ----

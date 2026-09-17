@@ -51,6 +51,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -125,11 +126,11 @@ _INSERT_EVENT_SQL = text("""
     INSERT INTO event.events
         (event_id, tenant_id, event_type, object_id, source_system, occurred_at,
          actor_type, actor_id, result_type, risk_level, score, data,
-         idempotency_key, created_by, updated_by)
+         idempotency_key, ingest_latency_ms, created_by, updated_by)
     VALUES
         (:event_id, :tenant_id, :event_type, :object_id, :source_system,
          :occurred_at, 'SERVICE', :actor, NULL, NULL, NULL,
-         CAST(:data AS jsonb), :idempotency_key, :actor, :actor)
+         CAST(:data AS jsonb), :idempotency_key, :latency_ms, :actor, :actor)
     ON CONFLICT DO NOTHING
 """)
 
@@ -170,8 +171,14 @@ async def process_record(
     领域投影（T4）在对象 upsert 后、事件写入前调用（savepoint 隔离：投影
     失败仅回滚投影写入记 warning，不阻断三元组/outbox）；CLI（逐条独立
     事务）与 run_sync 共用本实现。
+
+    W3（T9）：registered/duplicated 两路径各经 tenantmgmt 累加
+    tenant_usage_daily（events_in / events_duplicated，同事务）；
+    ``ingest_latency_ms`` = 本条处理耗时（函数入口至事件 INSERT 前，
+    perf_counter 毫秒截断）。
     """
     principal = service_principal(tenant_id)
+    started = perf_counter()
     event_type = SNAPSHOT_EVENT_TYPE(record.object_type)
     event_id = derive_event_id(
         tenant_id, record.source_system, record.source_id, record.occurred_at, event_type
@@ -180,6 +187,9 @@ async def process_record(
     # 幂等第一道：事件已存在 → 整条跳过（不动 revision、不写证据、不投影
     # ——投影已随首次注册的事务完成，重放重做无意义）
     if await events_service.get_event(sess, event_id) is not None:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_duplicated=1
+        )
         return False
 
     # 对象 upsert（新建 revision=1；更新 revision+1）——owner_domain 提升为
@@ -214,6 +224,7 @@ async def process_record(
         )
 
     occurred_at = normalize_occurred_at(record.occurred_at)
+    latency_ms = int((perf_counter() - started) * 1000)
     result = await sess.execute(
         _INSERT_EVENT_SQL,
         {
@@ -226,11 +237,15 @@ async def process_record(
             "actor": SERVICE_ACTOR_ID,
             "data": json.dumps({"via": "pipeline"}, ensure_ascii=False),
             "idempotency_key": f"adapter:{event_id}",
+            "latency_ms": latency_ms,
         },
     )
     # 幂等第二道（竞态双保险）：并发重放胜者已写入 → 按 duplicated 收敛；
     # 此前已发生的 upsert revision 推进在单写者管道下不会出现
     if result.rowcount == 0:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_duplicated=1
+        )
         return False
 
     # 纯 SQL INSERT 不经 ORM 状态（切面不可见）——显式补审计
@@ -280,6 +295,7 @@ async def process_record(
         },
         actor=SERVICE_ACTOR_ID,
     )
+    await tenantmgmt_service.bump_usage_daily(sess, tenant_id, events_in=1)
     return True
 
 

@@ -34,10 +34,11 @@ record_outbox_result，worker 不直连表）。
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from time import perf_counter
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import Text, Uuid, and_, column, func, or_, select, table, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,14 +54,34 @@ from edp_api.modules.events.schemas import (
     EventResponse,
 )
 from edp_api.modules.events.uuidv5 import derive_event_id, normalize_occurred_at
+from edp_api.modules.evidence import service as evidence_service
+from edp_api.modules.evidence.schemas import EvidenceCreateRequest, EvidenceLinkIn
 from edp_api.modules.platform import service as platform_service
 from edp_api.modules.registry import service as registry_service
+from edp_api.modules.tenantmgmt import service as tenantmgmt_service
 
 INGEST_ENDPOINT = "/events/batch"
 AGGREGATE_TYPE_EVENT = "EVENT"
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
+
+# 跨模块表参与 join：master.business_objects 归 registry 模块（模块间仅可
+# import 对方 service，ORM 不可直接引用）——以核心表构造参与 ORM 主查询
+# （口径同 tools/ingest 的跨模块纯 SQL 读）；RLS 会话已 bind，跨租户行不可见。
+_BUSINESS_OBJECTS = table(
+    "business_objects",
+    column("object_id", Uuid),
+    column("source_id", Text),
+    schema="master",
+)
+
+# outbox.status → 契约分发状态（spec §6.2）；无 outbox 行/未知状态 → None
+_DELIVERY_STATUS = {
+    "PUBLISHED": "DELIVERED",
+    "PENDING": "PENDING",
+    "FAILED": "DEAD_LETTER",
+}
 
 
 # ---- outbox 写入口（registry 与 events 共用） ----
@@ -219,6 +240,12 @@ async def ingest_batch(
 ) -> BatchResponse:
     """批量入库（三层幂等；逐事件校验，不整批失败）。
 
+    - 每条 accepted 事件以 perf_counter 计时写 ``ingest_latency_ms``；
+    - ``risk_level`` 非空的能力结果事件同事务自动落结果证据
+      （snapshot=ev.data、source_record_id=``result:{event_id}``、
+      captured_at=occurred_at）+ ``RESULT`` link；duplicated 路径不建；
+    - 批次末 upsert ``tenant_usage_daily``（events_in/events_duplicated）。
+
     Returns:
         {accepted, duplicated, rejected, deduplicated, errors?}——rejected 的
         事件附 ``errors:[{index, code=VALIDATION_ERROR, message}]``。
@@ -238,6 +265,7 @@ async def ingest_batch(
     actor = principal.id
 
     for index, ev in enumerate(events):
+        started = perf_counter()
         event_id = derive_event_id(
             tenant_id, ev.source_system, str(ev.object_id), ev.occurred_at, ev.event_type
         )
@@ -250,6 +278,8 @@ async def ingest_batch(
             )
             continue
 
+        occurred_at = normalize_occurred_at(ev.occurred_at)
+        latency_ms = int((perf_counter() - started) * 1000)
         stmt = (
             pg_insert(Event)
             .values(
@@ -258,7 +288,7 @@ async def ingest_batch(
                 event_type=ev.event_type,
                 object_id=ev.object_id,
                 source_system=ev.source_system,
-                occurred_at=normalize_occurred_at(ev.occurred_at),
+                occurred_at=occurred_at,
                 actor_type=ev.actor_type,
                 actor_id=ev.actor_id,
                 result_type=ev.result_type,
@@ -266,6 +296,7 @@ async def ingest_batch(
                 score=ev.score,
                 data=ev.data,
                 idempotency_key=f"{idem_key}:{index}",
+                ingest_latency_ms=latency_ms,
                 created_by=actor,
                 updated_by=actor,
             )
@@ -277,6 +308,22 @@ async def ingest_batch(
             continue
 
         accepted += 1
+        if ev.risk_level is not None:
+            # 结果证据（spec §5.1）：能力结果事件（risk_level 非空）同事务
+            # 落证据 + RESULT link；duplicated 路径在 continue 前不达此处
+            await evidence_service.create_record(
+                sess,
+                principal,
+                EvidenceCreateRequest(
+                    source_system=ev.source_system,
+                    source_record_id=f"result:{event_id}",
+                    object_id=ev.object_id,
+                    event_id=event_id,
+                    snapshot=ev.data,
+                    captured_at=occurred_at,
+                    links=[EvidenceLinkIn(ref_type="RESULT", ref_id=event_id)],
+                ),
+            )
         # pg_insert 不经 ORM 状态（切面不可见）——显式补审计（模块间仅 service）；
         # detail 在 flush 前以请求值构造完毕
         await audit_service.record_explicit(
@@ -309,6 +356,11 @@ async def ingest_batch(
             },
             actor=actor,
         )
+
+    # 计量（spec §5.1）：与事件行同事务累加（批次回滚则计数一并回滚）
+    await tenantmgmt_service.bump_usage_daily(
+        sess, tenant_id, events_in=accepted, events_duplicated=duplicated
+    )
 
     response = BatchResponse(
         accepted=accepted,
@@ -348,20 +400,41 @@ async def query_events(
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
 ) -> Page[EventResponse]:
-    """过滤（object_id/event_type/risk_level/since/until，时间闭区间）+ 游标
-    分页（occurred_at DESC, event_id DESC tiebreak）；非法 cursor 视为首页。"""
+    """过滤（object_id/event_type/risk_level/since/until，时间闭区间）+ 同过滤
+    计数（``total``，不含 cursor）+ 游标分页（occurred_at DESC, event_id DESC
+    tiebreak）；主查询左连 outbox 派生 ``delivery_status``、左连
+    business_objects 派生 ``object_source_id``；非法 cursor 视为首页。"""
     limit = max(1, min(limit, MAX_LIMIT))
-    stmt = select(Event)
+    conditions = []
     if object_id is not None:
-        stmt = stmt.where(Event.object_id == object_id)
+        conditions.append(Event.object_id == object_id)
     if event_type:
-        stmt = stmt.where(Event.event_type == event_type)
+        conditions.append(Event.event_type == event_type)
     if risk_level:
-        stmt = stmt.where(Event.risk_level == risk_level)
+        conditions.append(Event.risk_level == risk_level)
     if since is not None:
-        stmt = stmt.where(Event.occurred_at >= since)
+        conditions.append(Event.occurred_at >= since)
     if until is not None:
-        stmt = stmt.where(Event.occurred_at <= until)
+        conditions.append(Event.occurred_at <= until)
+
+    total = (
+        await sess.execute(select(func.count()).select_from(Event).where(*conditions))
+    ).scalar_one()
+
+    stmt = (
+        select(Event, Outbox.status, _BUSINESS_OBJECTS.c.source_id)
+        .select_from(Event)
+        .outerjoin(
+            Outbox,
+            and_(
+                Outbox.aggregate_type == AGGREGATE_TYPE_EVENT,
+                Outbox.aggregate_id == Event.event_id,
+                Outbox.tenant_id == Event.tenant_id,
+            ),
+        )
+        .outerjoin(_BUSINESS_OBJECTS, _BUSINESS_OBJECTS.c.object_id == Event.object_id)
+        .where(*conditions)
+    )
 
     decoded = decode_cursor(cursor)
     if decoded is not None:
@@ -381,20 +454,31 @@ async def query_events(
     stmt = stmt.order_by(Event.occurred_at.desc(), Event.event_id.desc()).limit(
         limit + 1
     )
-    rows = (await sess.execute(stmt)).scalars().all()
+    rows = (await sess.execute(stmt)).all()
 
     has_more = len(rows) > limit
     page_rows = rows[:limit]
     next_cursor = None
     if has_more and page_rows:
-        last = page_rows[-1]
+        last = page_rows[-1][0]
         next_cursor = encode_cursor(
             {"o": last.occurred_at.isoformat(), "i": str(last.event_id)}
         )
     return Page(
-        items=[EventResponse.model_validate(row) for row in page_rows],
+        items=[_event_response(event, status, source_id) for event, status, source_id in page_rows],
         next_cursor=next_cursor,
+        total=total,
     )
+
+
+def _event_response(
+    event: Event, outbox_status: str | None, object_source_id: str | None
+) -> EventResponse:
+    """ORM 行 + 派生列 → 响应（ingest_latency_ms 经 from_attributes 直取）。"""
+    response = EventResponse.model_validate(event)
+    response.delivery_status = _DELIVERY_STATUS.get(outbox_status or "")
+    response.object_source_id = object_source_id
+    return response
 
 
 def _parse_anchor(decoded: dict) -> tuple[datetime, UUID] | None:
