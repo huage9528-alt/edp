@@ -97,7 +97,8 @@ export function ReplayWizard({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<AdapterSyncResponse | null>(null);
 
-  const adaptersQuery = useAdapterOptions();
+  // W3-37：向导打开才拉取适配器清单（未打开不发请求）
+  const adaptersQuery = useAdapterOptions(open);
   const replay = useReplayEvent();
 
   // 关闭即复位：下次打开从步骤 1 开始（destroyOnClose 只卸载内容，状态在本组件）。

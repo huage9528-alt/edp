@@ -156,4 +156,29 @@ describe("ReplayWizard 回放三步向导（MSW 模式）", () => {
     expect($("replay-result")).toBeNull();
     expect(stepEl(3)).not.toBeNull();
   });
+
+  it("W3-37：向导未打开不发适配器清单请求（计数 0），打开后拉取", async () => {
+    let listCalls = 0;
+    server.use(
+      http.get("*/api/v1/admin/adapters", () => {
+        listCalls += 1;
+        return HttpResponse.json({ items: [], next_cursor: null, total: 0 });
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onClose = vi.fn();
+    const tree = (open: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <ReplayWizard open={open} events={[ORDER_B]} onClose={onClose} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tree(false));
+
+    // 未打开：窗口期内不发适配器清单请求
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(listCalls).toBe(0);
+
+    rerender(tree(true));
+    await waitFor(() => expect(listCalls).toBe(1));
+  });
 });

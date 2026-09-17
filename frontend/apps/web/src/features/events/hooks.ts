@@ -47,11 +47,13 @@ export function useEventHealth() {
   });
 }
 
-/** 回放向导目标适配器下拉（T17 消费）：适配器名 → Select option。 */
-export function useAdapterOptions() {
+/** 回放向导目标适配器下拉（T17 消费）：适配器名 → Select option。
+ * W3-37：enabled 门控——向导未打开不发清单请求（open 时才拉取）。 */
+export function useAdapterOptions(enabled = true) {
   return useQuery({
     queryKey: ["events", "adapters"],
     queryFn: eventsApi.adapters,
+    enabled,
     retry: 1,
     select: (page) => page.items.map((a) => ({ value: a.adapter, label: a.adapter })),
   });

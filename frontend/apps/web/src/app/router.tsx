@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import { ActionsPage } from "../features/decisions_actions/ActionsPage";
 import { DecisionsPage } from "../features/decisions_actions/DecisionsPage";
+import { AdaptersPage } from "../features/adapters/AdaptersPage";
 import { AuditPage } from "../features/audit/AuditPage";
 import { CasesPage } from "../features/cases/CasesPage";
 import { CaseDetailPage } from "../features/cases/CaseDetailPage";
@@ -78,7 +79,11 @@ export const routes: RouteObject[] = [
         element: <AuditPage />,
         handle: { title: "审计日志" } satisfies RouteHandle,
       },
-      { path: "admin/adapters", ...withTitle("适配器管理") },
+      {
+        path: "admin/adapters",
+        element: <AdaptersPage />,
+        handle: { title: "适配器管理" } satisfies RouteHandle,
+      },
       {
         path: "admin/systems",
         element: <HealthPage />,
