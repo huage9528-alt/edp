@@ -3,8 +3,10 @@
 exceptions（EDP-012）：风险事件（``risk_level IS NOT NULL``）按 occurred_at
 DESC 游标分页；``severity`` → risk_level 等值；``status``（spec §6.1）：
 OPEN（默认）= 无已 DECIDED 的关联案例、RESOLVED = 存在已 DECIDED 的关联案例
-（EXISTS 相关子查询，与 join 行无关）；``case_id`` 经 decision.cases 左连
-派生（``source_id = cast(event_id, Text)`` + tenant 条件）；``order_no`` =
+（EXISTS 相关子查询，与 join 行无关）；``case_id`` 经 decision.cases **标量
+子查询**派生（``tenant/source_id=cast(event_id)`` 匹配 + ``created_at DESC
+LIMIT 1``——与 0012 唯一索引 uq_cases_tenant_source 双保险：索引挡写入重复、
+子查询挡读取倍增）；``order_no`` =
 ``coalesce(data->>'order_no', business_objects.source_id)``；``summary`` =
 ``coalesce(data->>'summary', data->>'reason', event_type)``。
 
@@ -168,8 +170,29 @@ def _decided_case_exists():
     )
 
 
+def _case_id_scalar():
+    """case_id 标量子查询：source 事件 → 关联案例（created_at DESC LIMIT 1）。
+
+    与 0012 部分唯一索引 uq_cases_tenant_source 双保险（索引挡写入重复，
+    子查询挡读取倍增——左连版本在约束缺失时会把单事件倍增多行）；显式
+    correlate events。
+    """
+    return (
+        select(_CASES.c.case_id)
+        .where(
+            _CASES.c.source_id == cast(_EVENTS.c.event_id, Text),
+            _CASES.c.tenant_id == _EVENTS.c.tenant_id,
+        )
+        .order_by(_CASES.c.created_at.desc(), _CASES.c.case_id.desc())
+        .limit(1)
+        .correlate(_EVENTS)
+        .scalar_subquery()
+        .label("case_id")
+    )
+
+
 def _exceptions_query():
-    """查询骨架：左连 decision.cases 派生 case_id、左连对象表供 order_no 回退。"""
+    """查询骨架：case_id 标量子查询派生、左连对象表供 order_no 回退。"""
     order_no = func.coalesce(
         _EVENTS.c.data["order_no"].astext, _BUSINESS_OBJECTS.c.source_id
     ).label("order_no")
@@ -187,16 +210,9 @@ def _exceptions_query():
             order_no,
             summary,
             _EVENTS.c.occurred_at,
-            _CASES.c.case_id,
+            _case_id_scalar(),
         )
         .select_from(_EVENTS)
-        .outerjoin(
-            _CASES,
-            and_(
-                _CASES.c.source_id == cast(_EVENTS.c.event_id, Text),
-                _CASES.c.tenant_id == _EVENTS.c.tenant_id,
-            ),
-        )
         .outerjoin(
             _BUSINESS_OBJECTS, _BUSINESS_OBJECTS.c.object_id == _EVENTS.c.object_id
         )

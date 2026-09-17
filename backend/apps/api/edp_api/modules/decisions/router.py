@@ -1,8 +1,12 @@
-"""decisions 路由（附录 B.5，EDP-018 最小版）：案例创建/列表/详情 + 决策记录。
+"""decisions 路由（附录 B.5，EDP-018 最小版 + W4 EDP-028 闭环聚合）：
+案例创建/列表/详情 + 决策记录。
 
 - POST /cases：SERVICE scope write:decision / HUMAN decision:decide → 201；
+  source_id 已建案例 → 409 CONFLICT（uq_cases_tenant_source，W4）；
 - GET /cases：双轨读（HUMAN decision:read / SERVICE readonly）游标分页；
-- GET /cases/{case_id}：详情（evidence_refs + decisions）；跨租户统一 404；
+- GET /cases/{case_id}：详情（evidence_refs + decisions + W4 闭环聚合可选
+  字段 event/steps/actions/evidence_chain——`response_model_exclude_none`
+  下按需出现）；跨租户统一 404；
 - POST /cases/{case_id}/records：**Human-Only**（非 HUMAN → 403
   GUARD_POLICY_DENIED + GUARD_DENIED 审计；HUMAN 需 decision:decide）。
 
@@ -57,14 +61,15 @@ _WRITE_ERRORS = (*_READ_ERRORS, ErrorCode.VALIDATION_ERROR)
     response_model=CaseCreatedResponse,
     status_code=status.HTTP_201_CREATED,
     summary="创建决策案例（case_no 日序号 + 证据链）",
-    responses=error_responses(*_WRITE_ERRORS),
+    responses=error_responses(*_WRITE_ERRORS, ErrorCode.CONFLICT),
 )
 async def create_case(
     payload: CaseCreateRequest,
     principal: Annotated[Principal, Depends(require_case_create())],
     sess: DbSession,
 ) -> CaseCreatedResponse:
-    """创建案例；source_id 事件/evidence_ids 证据不存在 → 400 VALIDATION_ERROR。"""
+    """创建案例；source_id 事件/evidence_ids 证据不存在 → 400
+    VALIDATION_ERROR；source_id 已建案例 → 409 CONFLICT（0012 唯一索引）。"""
     case = await decisions_service.create_case(sess, principal, payload)
     return CaseCreatedResponse(
         case_id=case.case_id,
@@ -109,7 +114,8 @@ async def list_cases(
 @router.get(
     "/cases/{case_id}",
     response_model=CaseDetailResponse,
-    summary="决策案例详情（含证据引用与决策记录）",
+    response_model_exclude_none=True,
+    summary="决策案例详情（闭环聚合：证据引用/决策记录/event/steps/actions/证据链）",
     responses=error_responses(*_READ_ERRORS, ErrorCode.NOT_FOUND),
 )
 async def get_case(
@@ -117,7 +123,9 @@ async def get_case(
     principal: Annotated[Principal, Depends(require_decision_read())],
     sess: DbSession,
 ) -> CaseDetailResponse:
-    """详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。"""
+    """详情（B.5 + W4 EDP-028 闭环聚合）：event/steps/actions/evidence_chain
+    为可选字段（无源事件等场景缺省）；不存在/跨租户统一 404 NOT_FOUND
+    （不泄露存在性）。"""
     detail = await decisions_service.get_case_detail(sess, case_id)
     if detail is None:
         raise EdpError.not_found("决策案例不存在")
