@@ -1,5 +1,7 @@
 """T7 演示 seed 集成测试（EDP-016）：首跑 / 二跑幂等 / RESET 复位重建 /
-回流事件与场景 2 案例 / 跨适配器投影 FK 解析（T5/T6 评审硬约束直证）。
+回流事件与场景 2 案例 / 跨适配器投影 FK 解析（T5/T6 评审硬约束直证）；
+W4 增 management 段断言（objectives/kpi_definitions/kpi_values：首跑 12 行、
+重放 0 新增、RESET 重建）。
 
 会话形态：seed 以 app_role_engine（edp_app，FORCE RLS）运行；断言以
 migrator db_session 直查（绕 RLS）。清场复用 demo_service.purge_tenant_
@@ -9,7 +11,7 @@ business_data（逆依赖序，与 seed 复位同一实现）+ 清本模块审�
 
 import re
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
@@ -87,6 +89,16 @@ async def _demo_counts(db_session: AsyncSession, tenant_id: UUID) -> dict[str, i
         "cases": "SELECT count(*) FROM decision.cases WHERE tenant_id = :t",
         "links": "SELECT count(*) FROM evidence.links WHERE tenant_id = :t",
         "systems": "SELECT count(*) FROM platform.systems WHERE tenant_id = :t",
+        # W4 management 段（幂等/RESET 等价断言纳入同一快照）
+        "mgmt_objectives": (
+            "SELECT count(*) FROM management.objectives WHERE tenant_id = :t"
+        ),
+        "mgmt_kpi_definitions": (
+            "SELECT count(*) FROM management.kpi_definitions WHERE tenant_id = :t"
+        ),
+        "mgmt_kpi_values": (
+            "SELECT count(*) FROM management.kpi_values WHERE tenant_id = :t"
+        ),
     }
     return {
         name: await _count(db_session, tenant_id, sql) for name, sql in queries.items()
@@ -107,6 +119,7 @@ async def test_seed_first_run_populates_demo_dataset(
     assert stats.events_accepted == RESULT_COUNT
     assert stats.events_duplicated == 0
     assert stats.case_created is True
+    assert stats.mgmt_inserted == 12  # 3 objectives + 3 kpi_definitions + 6 values
 
     # 快照段：对象/事件/证据/领域表
     assert (
@@ -377,6 +390,94 @@ async def test_seed_first_run_populates_demo_dataset(
     assert anchor is not None
     assert (anchor.minute, anchor.second, anchor.microsecond) == (0, 0, 0)
 
+    # W4 management 段：objectives 3 + kpi_definitions 3 + kpi_values 6
+    assert (
+        await _count(
+            db_session,
+            default_tenant_id,
+            "SELECT count(*) FROM management.objectives WHERE tenant_id = :t",
+        )
+        == 3
+    )
+    assert (
+        await _count(
+            db_session,
+            default_tenant_id,
+            "SELECT count(*) FROM management.kpi_definitions WHERE tenant_id = :t",
+        )
+        == 3
+    )
+    assert (
+        await _count(
+            db_session,
+            default_tenant_id,
+            "SELECT count(*) FROM management.kpi_values WHERE tenant_id = :t",
+        )
+        == 6
+    )
+    objective = (
+        await db_session.execute(
+            text(
+                "SELECT objective_id, target_value, current_value, status, period"
+                " FROM management.objectives"
+                " WHERE tenant_id = :t AND title = 'Q4 准时交付率'"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).one()
+    assert float(objective.target_value) == 95.0
+    assert float(objective.current_value) == 91.2
+    assert objective.status == "ACTIVE"
+    assert objective.period == f"{anchor.year:04d}-{anchor.month:02d}"
+    # 确定性 id（uuid5(NIL, "seed-mgmt:objective:{title}")）
+    assert objective.objective_id == uuid5(
+        UUID(int=0), "seed-mgmt:objective:Q4 准时交付率"
+    )
+
+    definitions = (
+        await db_session.execute(
+            text(
+                "SELECT code, name, unit FROM management.kpi_definitions"
+                " WHERE tenant_id = :t ORDER BY code"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).all()
+    assert [(row.code, row.name, row.unit) for row in definitions] == [
+        ("inventory_turnover", "库存周转率", "次/月"),
+        ("on_time_delivery", "准时交付率", "%"),
+        ("risk_closure_rate", "风险闭环率", "%"),
+    ]
+
+    value_rows = (
+        await db_session.execute(
+            text(
+                "SELECT k.code, v.period, v.value, v.value_id"
+                " FROM management.kpi_values v"
+                " JOIN management.kpi_definitions k ON k.kpi_id = v.kpi_id"
+                " WHERE v.tenant_id = :t"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).all()
+    by_code: dict[str, dict[str, float]] = {}
+    for row in value_rows:
+        by_code.setdefault(row.code, {})[row.period] = float(row.value)
+    iso = anchor.isocalendar()
+    prev = (anchor - timedelta(weeks=1)).isocalendar()
+    this_week = f"{iso.year:04d}-W{iso.week:02d}"
+    prev_week = f"{prev.year:04d}-W{prev.week:02d}"
+    assert by_code["on_time_delivery"] == {this_week: 91.2, prev_week: 90.8}
+    assert by_code["inventory_turnover"][this_week] == 7.2
+    assert by_code["risk_closure_rate"][this_week] == 85.0
+    # kpi_values 行 id = uuid5(NIL, "seed-mgmt:{code}:{period}")
+    on_time_row = next(
+        row for row in value_rows if row.code == "on_time_delivery" and row.period == this_week
+    )
+    assert on_time_row.value_id == uuid5(
+        UUID(int=0), f"seed-mgmt:on_time_delivery:{this_week}"
+    )
+
     # 接入耗时确定性回填 60~299ms（全量事件）
     total_events = await _count(
         db_session,
@@ -416,6 +517,7 @@ async def test_seed_second_run_is_idempotent(
     assert second.events_accepted == 0
     assert second.events_duplicated == RESULT_COUNT
     assert second.case_created is False
+    assert second.mgmt_inserted == 0  # management 段重放 0 新增（锚复用同 id）
     assert await _demo_counts(db_session, default_tenant_id) == counts_before
     assert (
         await tenantmgmt_service.get_demo_anchor(db_session, default_tenant_id)
@@ -454,6 +556,7 @@ async def test_seed_reset_rebuilds_same_rows_and_reanchors(
     assert reset.events_accepted == RESULT_COUNT
     assert reset.events_duplicated == 0
     assert reset.case_created is True
+    assert reset.mgmt_inserted == 12  # RESET 清场后 management 段重建
     assert await _demo_counts(db_session, default_tenant_id) == counts_first
 
     # 计量（T9/T7 评审 Important）：RESET 清旧 usage 行后重建——不翻倍累计
