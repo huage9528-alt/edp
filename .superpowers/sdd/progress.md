@@ -155,4 +155,8 @@ Branch: feat/w3-remaining（自 master 4a1715c 切出）
 | T9 | DONE | 5364d52 | **内联实施**：证据库页（KPI 四卡真/降级、卡内搜索 q 防抖、双栏列表+链图、verify 联动本会话 pill、重索引三步向导 MSW-only 真模式禁用、空态建议关键词）；MSW evidence handler 补 q；5 用例 + 全量 136 绿；lint 恢复基线（helpers 拆 derive.ts） |
 | T10 | DONE | dc2f33d | **内联实施**：数据质量页（KPI 4 卡/维度 5 条 <95 warning/异常卡走真 EBMS API + 合并提示/重校验弹窗默认全选+本地通知/任务日志抽屉轮询）；真模式面板降级 + 重校验禁用（404 模拟用例）；3 用例 + 全量 139 绿 |
 | T11 | DONE | f363e68 | **内联实施**：系统健康页（HA/备份/Outbox/告警四卡 + 演练入口 + 10s 深层轮询；真模式 backup 降级/HA·Outbox 真值）；2 用例 + 全量 141 绿 |
-| T12 | DONE | （本 commit） | **内联实施**：m3-demo.md 补「W3 补齐」六段（catalog/trace/memory/capacity/限流+usage/前端三页人工清单）+ `test_w3r_acceptance.py` 5 用例（①~⑤ 端到端）；门禁：backend-lint 绿 / backend-test **439** / frontend-lint 0 error / frontend-test 259（22+96+141）/ contract-export 字节不变 + gate `09f2dae7` / migrate-check 一次性容器 exit=0 |
+| T12 | DONE | 05cbd0e | **内联实施**：m3-demo.md 补「W3 补齐」六段（catalog/trace/memory/capacity/限流+usage/前端三页人工清单）+ `test_w3r_acceptance.py` 5 用例（①~⑤ 端到端）；门禁：backend-lint 绿 / backend-test **439** / frontend-lint 0 error / frontend-test 259（22+96+141）/ contract-export 字节不变 + gate `09f2dae7` / migrate-check 一次性容器 exit=0 |
+
+**评审债务（限额期间内联实施，待补独立评审）**：T4（memories）、T5（mes/产能）、T6（限流）、T7（usage API）、T8（证据 q+契约）、T9（证据库页）、T10（质量页）、T11（健康页）、T12（收口）——共 9 项任务评审 + 整分支终审未做（T1~T3 已评）。限额恢复后补做；发现问题的修复以新提交落 master。已内联验证证据：各任务定向测试 + 全量 439/259 绿 + lint/import-linter + 契约指纹 + migrate-check 容器等价。
+
+**合并记录（2026-09-17）**：按用户决策「先合并，评审债务后补」合并 `feat/w3-remaining` → master（分支保留，无 remote）；合并后复跑契约指纹与后端 lint。
