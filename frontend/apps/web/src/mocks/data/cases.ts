@@ -35,7 +35,7 @@ export const CASE_C_DELAY = mockUuid(905);
 export const CASE_G_VIP = mockUuid(906);
 export const CASE_I_DQ = mockUuid(907);
 const DECISION_B = mockUuid(801);
-const ACTION_B_EXPEDITE = mockUuid(802);
+export const ACTION_B_EXPEDITE = mockUuid(802);
 const EVID_RESULT_B = mockUuid(620);
 const EVID_DECISION_B = mockUuid(621);
 
