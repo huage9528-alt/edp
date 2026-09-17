@@ -163,7 +163,12 @@ export function EventDetailDrawer({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-foreground truncate">
-                      <MonoId prefix="ev" id={ev.evidence_id} copyable={false} />
+                      <MonoId
+                        prefix="ev"
+                        id={ev.evidence_id.slice(-8)}
+                        full={ev.evidence_id}
+                        copyable={false}
+                      />
                     </div>
                     <div className="text-[10px] text-muted-foreground">
                       {ev.source_system} · {fmtDateTime(ev.captured_at)}

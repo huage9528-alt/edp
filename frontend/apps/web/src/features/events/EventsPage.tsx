@@ -60,6 +60,8 @@ export function EventsPage() {
   const offset = pageIndex * EVENTS_PAGE_LIMIT;
   const start = items.length === 0 ? 0 : offset + 1;
   const end = offset + items.length;
+  // 翻页在途禁用导航（keepPreviousData 下旧页仍可见，防竞态双击重复 push 游标）。
+  const navLocked = eventsQuery.isFetching;
 
   const segmentClass = (active: boolean) =>
     `h-9 px-3 text-xs font-medium ${
@@ -189,8 +191,8 @@ export function EventsPage() {
               end={end}
               total={total}
               page={pageIndex + 1}
-              hasPrev={pageIndex > 0}
-              hasNext={nextCursor != null}
+              hasPrev={pageIndex > 0 && !navLocked}
+              hasNext={nextCursor != null && !navLocked}
               onPrev={() => setCursorStack((s) => (s.length > 1 ? s.slice(0, -1) : s))}
               onNext={() => {
                 if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
@@ -205,8 +207,9 @@ export function EventsPage() {
               <button
                 type="button"
                 aria-label="上一页"
+                data-dom-id="pagination-prev"
                 onClick={() => setCursorStack((s) => (s.length > 1 ? s.slice(0, -1) : s))}
-                disabled={pageIndex === 0}
+                disabled={pageIndex === 0 || navLocked}
                 className={navButtonClass}
               >
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />
@@ -214,10 +217,11 @@ export function EventsPage() {
               <button
                 type="button"
                 aria-label="下一页"
+                data-dom-id="pagination-next"
                 onClick={() => {
                   if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
                 }}
-                disabled={nextCursor == null}
+                disabled={nextCursor == null || navLocked}
                 className={navButtonClass}
               >
                 <ChevronRight className="w-4 h-4" aria-hidden="true" />

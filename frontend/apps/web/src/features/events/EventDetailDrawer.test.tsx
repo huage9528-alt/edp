@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { findEvent } from "../../mocks/data/events";
-import { EVT_ORDER_B_RISK } from "../../mocks/data/ids";
+import { EVID_ORDER_B_SNAPSHOT, EVT_ORDER_B_RISK } from "../../mocks/data/ids";
 import { server } from "../../mocks/server";
 import { EventDetailDrawer } from "./EventDetailDrawer";
 
 const ORDER_B = findEvent(EVT_ORDER_B_RISK)!;
 const shortOf = (id: string) => `evt-${id.slice(-8)}`;
+const shortEvidenceOf = (id: string) => `ev-${id.slice(-8)}`;
 
 function renderDrawer() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -78,5 +80,43 @@ describe("EventDetailDrawer 事件详情抽屉（MSW 模式）", () => {
 
     fireEvent.click(drawer.querySelector('[data-dom-id="event-drawer-close"]')!);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("有 RESULT link 证据 → 证据行短 ID 取尾 8 位（非头部全零），title 携带全量", async () => {
+    server.use(
+      http.get("*/api/v1/evidence", ({ request }) => {
+        const q = new URL(request.url).searchParams;
+        expect(q.get("ref_type")).toBe("RESULT");
+        expect(q.get("ref_id")).toBe(EVT_ORDER_B_RISK);
+        return HttpResponse.json({
+          items: [
+            {
+              evidence_id: EVID_ORDER_B_SNAPSHOT,
+              source_system: "erp",
+              source_record_id: "SO-2026-00123#v7",
+              object_id: ORDER_B.object_id,
+              checksum: "sha256:test",
+              snapshot: { order_no: "SO-2026-00123" },
+              captured_at: ORDER_B.occurred_at,
+              links: [{ ref_type: "RESULT", ref_id: EVT_ORDER_B_RISK }],
+            },
+          ],
+          next_cursor: null,
+          total: 1,
+        });
+      }),
+    );
+
+    renderDrawer();
+
+    const row = (await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="event-drawer-evidence-row"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    }))!;
+    expect(within(row).getByText(shortEvidenceOf(EVID_ORDER_B_SNAPSHOT))).toBeInTheDocument();
+    expect(row.querySelector(`[title="${EVID_ORDER_B_SNAPSHOT}"]`)).not.toBeNull();
+    expect(screen.queryByText("ev-00000000")).toBeNull();
+    expect(document.querySelector('[data-dom-id="event-drawer-evidence-empty"]')).toBeNull();
   });
 });

@@ -373,7 +373,7 @@ export function ReplayWizard({
                   <CheckCircle2 className="w-6 h-6" aria-hidden="true" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-foreground">回放任务已提交</div>
+                  <div className="text-sm font-semibold text-foreground">回放已下发</div>
                   <div className="text-[11px] text-muted-foreground mt-1">
                     任务已下发至目标适配器，可在适配器管理页查看执行状态。
                   </div>

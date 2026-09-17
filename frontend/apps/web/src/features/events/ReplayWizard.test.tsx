@@ -125,8 +125,8 @@ describe("ReplayWizard 回放三步向导（MSW 模式）", () => {
     fireEvent.click(btn("replay-execute"));
     await waitFor(() => expect($("replay-sync-id").textContent).toBe(SYNC_ID));
     expect($("replay-status").textContent).toContain("RUNNING");
-    // 成功面板（toast 同文案在 message 容器，故限定在结果面板内断言）
-    expect(within($("replay-result")).getByText("回放任务已提交")).toBeInTheDocument();
+    // 成功面板标题与 toast（「回放任务已提交」）区分，限定在结果面板内断言
+    expect(within($("replay-result")).getByText("回放已下发")).toBeInTheDocument();
     expect(calls).toEqual([
       {
         adapter: "erp",
