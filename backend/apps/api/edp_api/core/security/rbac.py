@@ -10,11 +10,13 @@ from edp_api.core.security.auth import get_principal
 from edp_api.core.security.principal import Principal
 
 # 与种子迁移保持同步（0005 基线 + 0008 新增 adapters 两码 + 0010 新增
-# tools:read，角色集逐条一致）：
+# tools:read、ebms:read，角色集逐条一致）：
 # adapters:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST；
 # adapters:write → PLATFORM_ADMIN/ADMIN/MANAGER；
 # tools:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0010；SERVICE 走
-# readonly scope 轨道，不入本矩阵）。
+# readonly scope 轨道，不入本矩阵）；
+# ebms:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0010，角色集同
+# decision:read；SERVICE 走 readonly scope 轨道，不入本矩阵）。
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -31,6 +33,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "adapters:read",
         "adapters:write",
         "tools:read",
+        "ebms:read",
         "tenant:admin",
     },
     "ADMIN": {
@@ -48,6 +51,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "adapters:read",
         "adapters:write",
         "tools:read",
+        "ebms:read",
     },
     "MANAGER": {
         "registry:read",
@@ -64,6 +68,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "evidence:write",
         "adapters:write",
         "tools:read",
+        "ebms:read",
     },
     "ANALYST": {
         "registry:read",
@@ -74,6 +79,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "audit:read",
         "adapters:read",
         "tools:read",
+        "ebms:read",
     },
     "SERVICE": {
         "registry:read",
