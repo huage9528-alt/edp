@@ -39,8 +39,8 @@
    );
    ```
 2. **W3-23 收口**：`decision.cases` 补 `UNIQUE INDEX uq_cases_tenant_source ON decision.cases(tenant_id, source_id) WHERE source_id IS NOT NULL` + 普通索引（seed 一对一，既有数据无重复，testcontainers 实测兜底）；
-3. **权限码**（uuid5 惯例）：`actions:read`（trace, read）→ PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST；`actions:write` → PLATFORM_ADMIN/ADMIN/MANAGER；`audit:policy_read` → 与 audit:read 同角色集（rbac.py 实测对齐）；`audit:policy_write` → PLATFORM_ADMIN/ADMIN；
-4. **dev API Key scopes 追加** `write:actions`（数组去重守卫）。
+3. **权限码**（uuid5 惯例）：**复用既有 `action:read`/`action:execute`**（0005 基线已有——action:execute → PLATFORM_ADMIN/ADMIN/MANAGER，action:read 另含 ANALYST；不新增 actions:* 码）；新增 `audit:policy_read` → 与 audit:read 同角色集（PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST 四角色，rbac.py:38 实测对齐）、`audit:policy_write` → PLATFORM_ADMIN/ADMIN；
+4. **dev API Key scopes 追加** `write:action`（数组去重守卫；与模块 resource 名 `action` 一致——`make_require_access("action", "write")` 的 API Key 轨道）。
 
 ## 3. Section B：EDP-020 Action 状态机（T2，`modules/actions`）
 
@@ -48,10 +48,10 @@ B.5 逐字段；六文件模块模式。
 
 | 端点 | 鉴权 | 要点 |
 |---|---|---|
-| POST `/actions` | JWT `actions:write` / API Key `write:actions` | 请求 `{case_id, title, action_type, owner?, owner_role?, due_date?, description?}`；case_id 不存在 → 400（可选关联）；201 `{action_id, status:"PROPOSED", created_at}` |
-| GET `/actions?status=&owner=&case_id=&limit=` | JWT `actions:read` / readonly | 游标分页（created_at DESC）；简投影含 `allowed_to[]` |
+| POST `/actions` | JWT `action:execute` / API Key `write:action` | 请求 `{case_id, title, action_type, owner?, owner_role?, due_date?, description?}`；case_id 不存在 → 400（可选关联）；201 `{action_id, status:"PROPOSED", created_at}` |
+| GET `/actions?status=&owner=&case_id=&limit=` | JWT `action:read` / readonly | 游标分页（created_at DESC）；简投影含 `allowed_to[]` |
 | GET `/actions/{action_id}` | 同上 | 完整对象 + `allowed_to[]`；跨租户 404 |
-| PATCH `/actions/{action_id}/status` | JWT `actions:write`（**Human-Only 转移额外 Guard**） | 请求 `{from_status, to_status, comment?}`；200 `{action_id, status, updated_at}` |
+| PATCH `/actions/{action_id}/status` | JWT `action:execute`（**Human-Only 转移额外 Guard**） | 请求 `{from_status, to_status, comment?}`；200 `{action_id, status, updated_at}` |
 
 **状态机（9 态，集中定义转移表）**：
 
