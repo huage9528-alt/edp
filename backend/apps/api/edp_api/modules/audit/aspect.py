@@ -18,7 +18,11 @@
   行上 tenant_id 列，否则 current_tenant_id；request_id 转 UUID（非法置 NULL）；
 - 同一 flush 内多对象逐行各记一条；before_flush 内 session.add 的 AuditLog
   会参与本次 flush（SQLAlchemy 语义：before_flush 事件先于 flush 计划收集，
-  事件内新增对象随后一并纳入），且事件不因新增对象再次触发（无递归）。
+  事件内新增对象随后一并纳入），且事件不因新增对象再次触发（无递归）；
+- 命中打标（EDP-032 最小版，T4）：写审计行前经
+  audit_policies.service.matching 做 ACTIVE 策略三维匹配（resource/
+  action/actor，空数组=通配），命中非空 → detail["policy_hits"]（str 化
+  policy_id 稳定排序）；匹配失败/异常仅告警，不影响审计写入。
 """
 
 import json
@@ -38,6 +42,7 @@ from edp_api.core.contextvars import (
 )
 from edp_api.core.security.principal import Principal
 from edp_api.modules.audit.models import AuditLog
+from edp_api.modules.audit_policies import service as audit_policies_service
 
 logger = logging.getLogger(__name__)
 
@@ -129,18 +134,61 @@ def _audit_orm_write(session, obj: object, verb: str) -> None:
         prefix = ACTION_PREFIXES.get(fullname) or ACTION_PREFIXES.get(
             table_name, table_name.upper()
         )
+        tenant_id = _row_tenant_id(obj, state)
+        _tag_policy_hits(
+            session,
+            detail,
+            tenant_id=tenant_id,
+            resource_type=fullname,
+            action=f"{prefix}_{verb}",
+        )
         entry = make_entry(
             action=f"{prefix}_{verb}",
             resource_type=table_name,
             resource_id=_resource_id(obj, state),
             detail=detail,
-            tenant_id=_row_tenant_id(obj, state),
+            tenant_id=tenant_id,
         )
         # before_flush 内 add 的对象参与本次 flush（见模块 docstring）
         session.add(entry)
     except Exception:
         # 审计绝不阻断业务写：序列化/装载异常仅告警
         logger.warning("审计切面处理对象失败：%r", obj, exc_info=True)
+
+
+def _tag_policy_hits(
+    session: Session,
+    detail: dict,
+    *,
+    tenant_id: UUID | None,
+    resource_type: str,
+    action: str,
+) -> None:
+    """命中打标（EDP-032 最小版，T4）：ACTIVE 策略三维匹配非空 →
+    detail["policy_hits"]（str 化 policy_id，稳定排序）。
+
+    匹配经 audit_policies.service（import-linter 允许的模块间 service 路径）；
+    缓存未命中在同会话惰性加载（before_flush 内 SELECT，flush 过程中
+    autoflush 关闭，无递归）。resource 维 fullname/裸名两形态由
+    matching 内部归一处理。匹配失败/异常不得影响审计写入——仅告警。
+    """
+    if tenant_id is None:
+        return
+    try:
+        actor_type, _ = resolve_actor()
+        hits = audit_policies_service.matching(
+            tenant_id,
+            resource_type=resource_type,
+            action=action,
+            actor_type=actor_type,
+            sync_session=session,
+        )
+        if hits:
+            detail["policy_hits"] = sorted(str(policy_id) for policy_id in hits)
+    except Exception:
+        logger.warning(
+            "审计策略命中打标失败：%s/%s", resource_type, action, exc_info=True
+        )
 
 
 # ---- detail 构造（INSERT=after / UPDATE=变更字段 / DELETE=before） ----

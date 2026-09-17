@@ -20,6 +20,7 @@ from edp_api.modules.actions.router import router as actions_router
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.audit_policies.router import router as audit_policies_router
 from edp_api.modules.catalog.router import router as catalog_router
 from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.ebms.router import router as ebms_router
@@ -80,6 +81,9 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(tenant_platform_router)
     # audit 路由（B.6）：查询面，统一挂 tenant_scoped（租户收敛见 service）
     app.include_router(audit_router)
+    # audit_policies 路由（EDP-032 最小版）：/admin/audit-policies CRUD，
+    # 命中打标经 audit.aspect 消费 audit_policies.service.matching
+    app.include_router(audit_policies_router)
     # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(evidence_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
