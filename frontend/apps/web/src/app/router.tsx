@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter, type RouteObject } from "react-router-do
 import { LoginPage } from "../features/auth/LoginPage";
 import { EventsPage } from "../features/events/EventsPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
+import { HealthPage } from "../features/health/HealthPage";
 import {
   ForbiddenPage,
   NotFoundPage,
@@ -69,7 +70,11 @@ export const routes: RouteObject[] = [
       },
       { path: "admin/audit", ...withTitle("审计日志") },
       { path: "admin/adapters", ...withTitle("适配器管理") },
-      { path: "admin/systems", ...withTitle("系统健康") },
+      {
+        path: "admin/systems",
+        element: <HealthPage />,
+        handle: { title: "系统健康" } satisfies RouteHandle,
+      },
       { path: "tenants", ...withTitle("租户管理") },
       { path: "tenants/:tenant_id", ...withTitle("租户详情") },
       { path: "cases", ...withTitle("闭环案例") },
