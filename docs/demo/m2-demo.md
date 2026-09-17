@@ -279,3 +279,4 @@ erp            ORDER        48      43       48      48        True
 64. **W4-07 适配器日志抽屉仅最近一次 sync**：`GET /admin/adapters/{name}/status` 只保留最近一次 sync 的 status/stats（`_jobs` 覆盖语义）；适配器页日志抽屉按单次呈现，完整任务日志 W5（EDP-030）。
 65. **W4-08 test_adapters_api._set_demo_anchor 对 NULL attributes 静默无效**：`_set_demo_anchor` 用 `jsonb_set(attributes, ...)` 更新 seed 锚，当行 `attributes IS NULL` 时 jsonb_set 返回 NULL、更新静默无效（既有测试基建缺陷，当前 seed 行恒有 attributes 故未触发）——建议改 `jsonb_set(coalesce(attributes,'{}'), ...)`；本轮契约冻结不动他人测试，留待后续。
 66. **W4-09 tools 组 429 已逐端点声明，其余租户域仍缺**：本轮契约冻结 tools 组 7 端点统一补 429 `RATE_LIMITED` 声明（B.8 明文统一行为，经 `error_responses` 仅影响 OpenAPI 文档、不改运行时）；其余租户域端点运行时可 429 但未逐端点声明（沿 W3R-15 口径）——SDK/前端按可选处理。
+67. **W4-10 决策记录不自动落 DECISION 证据**：`POST /decisions/cases/{id}/records` 只写 decision.records + 案例置 DECIDED，不自动创建 `ref_type=DECISION` 证据——案例详情 `evidence_chain` 的 DECISION 层需消费方补建（M4 演示脚本 ④ 与 `test_m4_acceptance` 均按「决策意见落证最小补建」口径先 `POST /evidence` 再读链）；后续在 submit_record 内同事务落证收口。
