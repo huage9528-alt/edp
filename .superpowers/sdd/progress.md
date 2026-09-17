@@ -132,3 +132,27 @@ Branch: feat/w3-m3（就地分支；未用 worktree——避免前端依赖重�
 分支收口（终审通过后执行）：① `make verify-all` 七 job 真绿（migrate-check 以一次性容器等价验证，见 T20 行）；② 缺口清单终稿（W3-01~42）已落 `docs/demo/m2-demo.md`；③ `git checkout master && git merge --no-ff feat/w3-m3`；④ 合并后复跑 `make verify-all`（contract-gate 指纹应仍为 `f5ee32a8`）。
 
 **收口记录（2026-09-16）**：已按 ③ 合并（merge commit `1d6cc1f`，107 文件 / +19803 / −2129）；④ 合并后复跑：backend-lint（ruff + import-linter 2 kept）绿、backend-test **394 passed**、frontend-lint 0 error、api-sdk 22 + shared 96 绿、contract-export 字节不变 + contract-gate 指纹 `f5ee32a8` 绿；migrate-check 沿 T20 一次性容器等价验证。web 套件在宿主满载（Docker Desktop + 其他项目 5 个 uvicorn 占用，collect 最慢 1090s）下默认 15s 超时会随机 flake（每轮失败集不同，均为超时）；放宽 `--maxWorkers=2 --testTimeout=60000` 复跑 **131/131 全绿**——判定为环境抖动（同代码 T20/终审两轮 249/249 已绿）。分支 `feat/w3-m3` 按 W2 惯例保留（无 remote）。
+
+---
+
+# SDD Progress Ledger — EDP W3 补齐（W3R）
+
+Plan: docs/superpowers/plans/2026-09-16-edp-w3-remaining.md
+Spec: docs/superpowers/specs/2026-09-16-edp-w3-remaining-design.md
+Branch: feat/w3-remaining（自 master 4a1715c 切出）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | d073df5 | 评审（并入 T2 评审补核）Approved；交接：T3/T4 须同步 rbac.py（trace:read/memory:read/memory:review）+ test_auth 计数 + test_security ALL_CODES |
+| T2 | DONE | 7d6a3d0 | B.7 八端点逐字段 + 双轨/409/局部更新/跨租户实证；共表不写水位列断言；全量 402 绿；Minor 待 T12 顺手：catalog/service.py docstring「显式 tenant_id 双保险」与实现不符（读路径纯 RLS）、游标翻页未实测（>limit 数据） |
+| T3 | DONE | a2061df | B.10 逐字段 + ON CONFLICT 幂等无 TOCTOU + 跨租户撞主键 409（评审裁定可接受）；trace:read 四角色同步（rbac/ALL_CODES/test_auth）；TRACE_CREATE 显式审计；全量 407 绿；Minor：B.10 契约无顶层 error 字段（上游缺口记 T8 偏差） |
+| T4 | 中断 | - | 2026-09-17 派发实现子代理时遇 5 小时用量限额（重置 18:42）——恢复时按计划「## T4」+ 台账 T1 交接（rbac memory:read/memory:review 同步）重新派发即可 |
+| T4 | DONE | c05b34a | **内联实施**（限额期间子代理不可用）：memories 六件套 + Human-Only 评审（独立会话 GUARD_DENIED）+ rbac 两码同步（ALL_CODES 19/test_auth 19/MANAGER 矩阵含 memory:review）；集成 5 用例 + 定向 56 绿 + 全量 411 绿（计时 flake 单跑通过）；**评审债务：待限额恢复后补评** |
+| T5 | DONE | 9ef02b4 | **内联实施**：mes-demo 适配器（3 条 CAPACITY，场景 7 L1 紧张）+ delivery.capacity 投影（14 表）+ 数据集/归并/注册（清单 4 行）；新增 test_capacity_projection（seed 3 行 + replay duplicated==fetched）；全量 418 绿；偏差：mes 单测并入 test_demo_adapters（未新建 test_mes_mock.py，覆盖等价）；**评审债务：待补评** |
+| T6 | DONE | 2726d73 | **内联实施**：令牌桶（进程内 per-tenant，80% 告警每窗口一次）+ 429/Retry-After（EdpError extra→响应头）+ 独立会话审计/计数 + statement_timeout（SET LOCAL）+ batch_max_events + B.14 前置（get_quota/bump 扩展）；全量 429 绿；**spec 偏差（已裁定）**：api_calls 计量改独立短会话（同事务写法持有 usage 行锁至请求结束，并发请求互等；registry 并发用例放大为死锁）——语义从「受理成功调用」变「全部请求」，记缺口清单；测试基建：conftest 每用例复位配额三字段 + 14 处临时租户清场补 usage 删除；**评审债务：待补评** |
+| T7 | DONE | 7155a94 | **内联实施**：`GET /tenants/{id}/usage`（平台 ADMIN，since/until 闭区间 + 游标）+ `query_usage`/`UsageItem`（events_duplicated 超集）；4 集成用例；**评审债务：待补评** |
+| T8 | DONE | 379dd3a | **内联实施**：evidence `q`（ILIKE + 通配转义，含组合过滤/字面 % 用例）+ 契约导出（新增 15 路径 + q）→ 指纹 `f5ee32a8→09f2dae7` + SDK regen（22 测试绿）+ 缺口清单 W3R-01~12（限流单副本/api_calls 偏差/审计动作词表/usage 权限面等）；全量 434 绿；usage 用例隔离修正（前后全清，防他测今日行干扰） |
+| T9 | DONE | 5364d52 | **内联实施**：证据库页（KPI 四卡真/降级、卡内搜索 q 防抖、双栏列表+链图、verify 联动本会话 pill、重索引三步向导 MSW-only 真模式禁用、空态建议关键词）；MSW evidence handler 补 q；5 用例 + 全量 136 绿；lint 恢复基线（helpers 拆 derive.ts） |
+| T10 | DONE | dc2f33d | **内联实施**：数据质量页（KPI 4 卡/维度 5 条 <95 warning/异常卡走真 EBMS API + 合并提示/重校验弹窗默认全选+本地通知/任务日志抽屉轮询）；真模式面板降级 + 重校验禁用（404 模拟用例）；3 用例 + 全量 139 绿 |
+| T11 | DONE | f363e68 | **内联实施**：系统健康页（HA/备份/Outbox/告警四卡 + 演练入口 + 10s 深层轮询；真模式 backup 降级/HA·Outbox 真值）；2 用例 + 全量 141 绿 |
+| T12 | DONE | （本 commit） | **内联实施**：m3-demo.md 补「W3 补齐」六段（catalog/trace/memory/capacity/限流+usage/前端三页人工清单）+ `test_w3r_acceptance.py` 5 用例（①~⑤ 端到端）；门禁：backend-lint 绿 / backend-test **439** / frontend-lint 0 error / frontend-test 259（22+96+141）/ contract-export 字节不变 + gate `09f2dae7` / migrate-check 一次性容器 exit=0 |
