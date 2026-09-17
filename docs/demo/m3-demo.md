@@ -333,6 +333,14 @@ pnpm --filter web build            # tsc --noEmit + vite build 成功
 
 > 环境同前：venv 18001 或 compose 18000；`$H = @{ "X-API-Key" = "edp-dev-agent-hub-key" }`。
 > 以下 ①~⑤ 已断言化为 `backend/tests/integration/test_w3r_acceptance.py`（5 用例），可随时回归。
+> ③~⑤ 用到 JWT 的段落先做两个登录赋值（④ `$manager` / ⑤ `$admin`）：
+
+```powershell
+$mLogin = Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/auth/login" -ContentType "application/json" -Body '{"username":"manager1","password":"Admin@123!"}'
+$manager = @{ Authorization = "Bearer $($mLogin.access_token)" }
+$aLogin = Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/auth/login" -ContentType "application/json" -Body '{"username":"admin","password":"Admin@123!"}'
+$admin = @{ Authorization = "Bearer $($aLogin.access_token)" }
+```
 
 ## ① 注册中心（EDP-011）
 
@@ -376,6 +384,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:18001/api/v1/admin/adapter
 ```powershell
 # 把 default 租户 api_rate_limit 调 2 → 前 2 次 200，第 3 次 429 + Retry-After（秒）
 # 审计 RATE_LIMITED + tenant_usage_daily.throttled_429=1
+# <tenant_id> 取值：default 租户经 GET /api/v1/tenants/current（$manager 凭据）取 tenant_id
 Invoke-RestMethod -Uri "http://localhost:18001/api/v1/tenants/<tenant_id>/usage" -Headers $admin
 # → items[0]：usage_date/api_calls/events_in/events_duplicated/storage_gb/throttled_429
 ```

@@ -250,7 +250,7 @@ erp            ORDER        48      43       48      48        True
 
 **W3 补齐轮（W3R，2026-09-17）**
 
-43. **W3R-01 限流为单副本语义**：`tenantmgmt/ratelimit.py` 令牌桶为进程内 per-tenant，多副本部署实际速率 ≈ limit×副本数；网关层仅提供全局 `limit_req`（租户维度需鉴权后信息，nginx 无法分键）——多副本前需外置（Redis）或由网关按租户头限流（W4+）。
+43. **W3R-01 限流为单副本语义**：`tenantmgmt/ratelimit.py` 令牌桶为进程内 per-tenant，多副本部署实际速率 ≈ limit×副本数；网关侧全局样例见 `deploy/nginx-limit-req.conf.example`，租户维度归应用层（需鉴权后信息，nginx 无法分键）——多副本前需外置（Redis）或由网关按租户头限流（W4+）。
 44. **W3R-02 `api_calls` 计量改独立短会话（spec 偏差）**：原 spec 为「同请求事务（失败不计入）」，实现改独立会话立即提交——原因是 usage 行 upsert 持锁至请求结束，并发请求在同租户 usage 行上串行互等（并发用例放大为死锁）；语义随之变为「全部请求（含失败）」。
 45. **W3R-03 80% 水位告警动作词表外扩展**：限流审计 `action=RATE_LIMITED` / `RATE_LIMIT_WARNING`（B.6 动作词表未列）——审计页（EDP-401）过滤字典需并入。
 46. **W3R-04 B.14 usage 最小版仅平台 ADMIN**：`GET /tenants/{id}/usage` 未开放「租户内 ADMIN 查本租户」（B.14 原文）；W5 租户页按需补租户轨道。
@@ -262,3 +262,8 @@ erp            ORDER        48      43       48      48        True
 52. **W3R-10 平台级路由不计量/不限流**：`/auth/*`、`/tenants` 平台管理、`/healthz` 不挂 tenant_scoped——api_calls/限流只覆盖租户域（设计 3.5 语义；平台运营路由的滥用防护归网关/W4+）。
 53. **W3R-11 MES 单测并入既有文件**：计划命名 `tests/unit/test_mes_mock.py`，实现并入 `test_demo_adapters.py`（覆盖等价：确定性/过滤/兜底/合并全量），留痕。
 54. **W3R-12 Memory 评审流转仅最小版**：`PATCH /memories/{id}/review`（Human-Only）已交付，候选→知识库的完整流转与中枢界面接管归 W6（设计 A.7 注明）。
+55. **W3R-13 证据状态 pill=本会话校验语义**：证据库列表契约无状态字段，卡片状态 pill 来自用户本会话 verify 结果（未校验为中性、刷新即失）——非持久化校验状态。
+56. **W3R-14 `/admin/outbox/status` 未实现**：系统健康页 Outbox 卡以 `/health` 的 `outbox_pending`/`dlq` 字段近似（pending/死信计数）；细粒度 outbox 状态端点（oldest_pending/published_last_hour 等）后端未实现，MSW 为 mock 扩展。
+57. **W3R-15 429 未逐端点声明**：租户域端点运行时可返回 429 `RATE_LIMITED` + `Retry-After` 头（EDP-025 应用层限流），冻结契约（W3 35 路径）未逐端点声明 429——SDK/前端按可选处理，W4 契约窗口评估补声明。
+
+> Minor 备忘：`memories.reviewed_by` / `decisions.decided_by` 落 user UUID（B.11 示例为用户名）——SDK 消费方按 UUID 口径处理。

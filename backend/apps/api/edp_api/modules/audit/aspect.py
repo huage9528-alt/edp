@@ -59,6 +59,7 @@ EXCLUDED_TABLES = frozenset(
         "sales.orders",
         "sales.order_lines",
         "delivery.inventory",
+        "delivery.capacity",
         "delivery.purchase_orders",
         "delivery.supplier_lead_times",
         "rd.projects",

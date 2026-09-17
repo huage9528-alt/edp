@@ -305,4 +305,7 @@ async def test_rate_limit_429_and_usage_report(
     items = usage.json()["items"]
     assert items, usage.text
     assert items[0]["throttled_429"] == 1
-    assert items[0]["api_calls"] >= 2
+    # 精确 2：前 2 次 /events 各 +1；第 3 次在 tenant_scoped 限流分支即 429，
+    # 不达 record_api_call（只计 throttled_429）；login 与 usage 端点为平台级
+    # 路由不计量（W3R-02/W3R-10 口径——限流后通过的请求才计 api_calls）
+    assert items[0]["api_calls"] == 2

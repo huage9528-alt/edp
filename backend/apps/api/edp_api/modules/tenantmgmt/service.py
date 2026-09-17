@@ -237,8 +237,10 @@ async def bump_usage_daily(
     ``events_duplicated`` = 幂等去重数（调用方 events.ingest_batch /
     ingest.process_record 与事件写入同事务调用——失败请求不计入，语义为
     「受理调用数」，docstring 留痕）；EDP-025 计量：``api_calls`` 每请求
-    +1（tenant_scoped 同请求事务）、``throttled_429`` 限流拒绝 +1（429 路径
-    经独立会话提交）。控制面表（platform schema，不受 RLS）。
+    +1（**独立短会话**立即提交，见 ``ratelimit.record_api_call``——同请求
+    事务写法下 usage 行锁持续到请求结束，并发请求串行互等；语义随之为
+    「全部请求（含失败）」，W3R-02）、``throttled_429`` 限流拒绝 +1（429 路径
+    同经独立会话提交）。控制面表（platform schema，不受 RLS）。
     ON CONFLICT (tenant_id, usage_date) 并发安全。
     """
     if not any((events_in, events_duplicated, api_calls, throttled_429)):
