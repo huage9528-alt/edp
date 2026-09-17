@@ -58,6 +58,28 @@ describe("KpiSection 8 KPI 网格", () => {
     expect(within(cardOf("业务对象")).getByText("23")).toBeInTheDocument();
   });
 
+  it("真 API 仅 6 字段子集 → 扩展字段卡「—」且无 NaN/undefined%（字段级兜底）", () => {
+    const realSubset = {
+      events_24h: 120,
+      ingest_peak_24h: 20,
+      p95_latency_ms: 640,
+      idempotency_hit_rate: 0.994,
+      dlq: 0,
+      evidence_count: 12,
+    };
+    render(<KpiSection health={{ ...health, ops_metrics: realSubset }} objectsTotal={23} adapters={adapters} />);
+
+    expect(within(cardOf("24H 事件")).getByText("120")).toBeInTheDocument();
+    expect(within(cardOf("证据存储")).getByText("12")).toBeInTheDocument();
+    expect(within(cardOf("适配器成功率")).getByText("—")).toBeInTheDocument();
+    expect(within(cardOf("审计日志量")).getByText("—")).toBeInTheDocument();
+    expect(within(cardOf("策略命中")).getByText("—")).toBeInTheDocument();
+    expect(kpiSection().textContent).not.toMatch(/NaN|undefined/);
+    // 缺字段的 hint 一并隐藏（不渲染 校验和有效率/失败恢复）
+    expect(screen.queryByText(/校验和有效率/)).toBeNull();
+    expect(screen.queryByText(/次失败已恢复/)).toBeNull();
+  });
+
   it("objectsTotal 缺失 → 业务对象卡亦 '—'", () => {
     render(<KpiSection health={health} />);
 

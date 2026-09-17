@@ -48,8 +48,8 @@ export function HeroCard({ coverage, health, p1Count, onOpenRisk }: {
       </div>
       <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-primary-foreground/20">
         <HeroMetric domId="overview-hero-coverage" label="对象覆盖率" value={coverage ? `${coverage.overall_pct}%` : "—"} />
-        <HeroMetric domId="overview-hero-p95" label="P95 接入延迟" value={ops ? `${(ops.p95_latency_ms / 1000).toFixed(2)}s` : "—"} />
-        <HeroMetric domId="overview-hero-success" label="适配器成功率" value={ops ? `${ops.adapters_success_rate}%` : "—"} />
+        <HeroMetric domId="overview-hero-p95" label="P95 接入延迟" value={ops?.p95_latency_ms != null ? `${(ops.p95_latency_ms / 1000).toFixed(2)}s` : "—"} />
+        <HeroMetric domId="overview-hero-success" label="适配器成功率" value={ops?.adapters_success_rate != null ? `${ops.adapters_success_rate}%` : "—"} />
       </div>
     </section>
   );
