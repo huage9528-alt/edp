@@ -247,3 +247,18 @@ erp            ORDER        48      43       48      48        True
 40. **W3-40 冒烟数值依赖 seed 锚与重放历史**：事件时间/`ingest_latency_ms`/`event_id`/`case_id` 随锚变化；`idempotency_hit_rate` 随重放历史（RESET 首跑 0.0 → 二跑 ≈0.44 → replay 后 ≈0.60）——演示前 `make seed-demo RESET=1`，读数口径见 `m3-demo.md`「读数说明」。
 41. **W3-41 `_jobs` 私有接缝**：`adapters_admin/service.py` 以模块级 `_jobs` dict 存任务状态（M2 单副本语义），`/status` 轮询必须命中同一进程、重启即失——跨进程/多副本需外置任务状态（W4+）。
 42. **W3-42 `_jobs` 未按租户分键（跨租户可见性）**：`_jobs` 以适配器名为 key（`adapters_admin/service.py`），任意租户持 `adapters:read` 的用户经 `GET /{name}/status` 可读到他租户触发的 `sync_id/stats/error`，且不同租户触发会互相覆盖——终审补记，W4 外置任务状态时按 `(tenant_id, adapter)` 分键。
+
+**W3 补齐轮（W3R，2026-09-17）**
+
+43. **W3R-01 限流为单副本语义**：`tenantmgmt/ratelimit.py` 令牌桶为进程内 per-tenant，多副本部署实际速率 ≈ limit×副本数；网关层仅提供全局 `limit_req`（租户维度需鉴权后信息，nginx 无法分键）——多副本前需外置（Redis）或由网关按租户头限流（W4+）。
+44. **W3R-02 `api_calls` 计量改独立短会话（spec 偏差）**：原 spec 为「同请求事务（失败不计入）」，实现改独立会话立即提交——原因是 usage 行 upsert 持锁至请求结束，并发请求在同租户 usage 行上串行互等（并发用例放大为死锁）；语义随之变为「全部请求（含失败）」。
+45. **W3R-03 80% 水位告警动作词表外扩展**：限流审计 `action=RATE_LIMITED` / `RATE_LIMIT_WARNING`（B.6 动作词表未列）——审计页（EDP-401）过滤字典需并入。
+46. **W3R-04 B.14 usage 最小版仅平台 ADMIN**：`GET /tenants/{id}/usage` 未开放「租户内 ADMIN 查本租户」（B.14 原文）；W5 租户页按需补租户轨道。
+47. **W3R-05 usage 含 `events_duplicated` 超集字段**：B.14 未列（W3-M3 计量列）；SDK 消费方按可选处理。
+48. **W3R-06 产能数据暂无消费面**：`delivery.capacity` 已投影（mes-demo），但 tools 六接口不含产能查询——ProductReadiness 真实接入（EDP-017 完整版）时按需加工具或能力直读。
+49. **W3R-07 B.10 无顶层 `error` 字段**：trace.traces DDL 有 `error JSONB`，B.10 请求体未定义——失败轨迹错误只能进 `tool_calls.error`/`output_structured`；补契约时同步详情投影。
+50. **W3R-08 跨租户 trace_id 撞主键 409**：trace_id 为全局主键（客户端 UUID），他租户同 id 重发 → 409（不泄露内容但暴露存在性）——UUIDv4 碰撞概率可忽略，留痕。
+51. **W3R-09 `evidence?q` 为契约扩展**：B.4 未列 `q`（证据库页卡内搜索真源）；LIKE 通配符按字面转义。
+52. **W3R-10 平台级路由不计量/不限流**：`/auth/*`、`/tenants` 平台管理、`/healthz` 不挂 tenant_scoped——api_calls/限流只覆盖租户域（设计 3.5 语义；平台运营路由的滥用防护归网关/W4+）。
+53. **W3R-11 MES 单测并入既有文件**：计划命名 `tests/unit/test_mes_mock.py`，实现并入 `test_demo_adapters.py`（覆盖等价：确定性/过滤/兜底/合并全量），留痕。
+54. **W3R-12 Memory 评审流转仅最小版**：`PATCH /memories/{id}/review`（Human-Only）已交付，候选→知识库的完整流转与中枢界面接管归 W6（设计 A.7 注明）。

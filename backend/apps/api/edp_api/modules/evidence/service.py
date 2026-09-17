@@ -202,12 +202,14 @@ async def query_records(
     ref_type: str | None = None,
     ref_id: UUID | None = None,
     object_id: UUID | None = None,
+    q: str | None = None,
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
 ) -> Page[EvidenceListItem]:
-    """过滤（ref_type+ref_id 成对 → links 子查询 IN；object_id 直过滤）+
-    游标分页（captured_at DESC, evidence_id DESC tiebreak，锚 {"c","i"}）；
-    非法 cursor 视为首页。"""
+    """过滤（ref_type+ref_id 可对 → links 子查询 IN；object_id 直接过滤；
+    ``q`` 对 source_record_id/source_system ILIKE 模糊匹配，``%``/``_`` 转义）
+    + 游标分页（captured_at DESC, evidence_id DESC tiebreak，锚 {"c","i"}；非法
+    cursor 视为首页）。"""
     limit = max(1, min(limit, MAX_LIMIT))
     stmt = select(EvidenceRecord)
     if ref_type and ref_id is not None:
@@ -221,6 +223,14 @@ async def query_records(
         )
     if object_id is not None:
         stmt = stmt.where(EvidenceRecord.object_id == object_id)
+    if q:
+        pattern = f"%{q.strip().replace('\\', '\\\\').replace('%', r'\%').replace('_', r'\_')}%"
+        stmt = stmt.where(
+            or_(
+                EvidenceRecord.source_record_id.ilike(pattern, escape="\\"),
+                EvidenceRecord.source_system.ilike(pattern, escape="\\"),
+            )
+        )
 
     decoded = decode_cursor(cursor)
     if decoded is not None:

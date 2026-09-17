@@ -53,22 +53,28 @@ async def default_tenant_id(db_session: AsyncSession) -> UUID:
 async def _clean_usage_rows(
     db_session: AsyncSession, default_tenant_id: UUID
 ) -> None:
+    """用例前后清空默认租户的 usage 行与限流审计行——本模块断言精确计数，
+    需隔离其他用例写入的今日行（全量运行时同库共享）。"""
+
+    async def _purge() -> None:
+        await db_session.execute(
+            text(
+                "DELETE FROM platform.tenant_usage_daily WHERE tenant_id = :t"
+            ),
+            {"t": default_tenant_id},
+        )
+        await db_session.execute(
+            text(
+                "DELETE FROM platform.audit_logs WHERE tenant_id = :t"
+                " AND resource_type = 'ratelimit'"
+            ),
+            {"t": default_tenant_id},
+        )
+        await db_session.commit()
+
+    await _purge()
     yield
-    await db_session.execute(
-        text(
-            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id = :t"
-            " AND usage_date < CURRENT_DATE"
-        ),
-        {"t": default_tenant_id},
-    )
-    await db_session.execute(
-        text(
-            "DELETE FROM platform.audit_logs WHERE tenant_id = :t"
-            " AND resource_type = 'ratelimit'"
-        ),
-        {"t": default_tenant_id},
-    )
-    await db_session.commit()
+    await _purge()
 
 
 async def _login(client: httpx.AsyncClient, username: str) -> dict[str, str]:
