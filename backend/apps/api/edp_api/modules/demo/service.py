@@ -24,19 +24,17 @@ SNAPSHOT_RECORDS 全局序（数据集本为依赖序）归并，逐条独立事
 （systems 行 name=erp-demo/plm-demo，复用 ingest 水位助手保持与 run_sync
 同一 ORM 写回路径与审计口径）。
 
-案例直写说明：T10 decisions 模块尚未落地（计划 T7 早于 T10），
-_ensure_demo_case 为 seed 本地最小实现（decision.cases + evidence.links
-CASE 关联）；T10 落地后可改经 decisions_service.create_case（幂等语义
-不变：先查 (source_type, source_id) 再建）。
+案例创建说明（T10 起）：_ensure_demo_case 经 decisions_service.find_case_by_source/
+create_case（ORM + 审计切面，替代 T7 的 raw SQL 直写——评审 Important）；context
+按 B.5 并入 source_event_id（T5 评审 Minor-4，seed 时由派生 event_id 回填）。
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from edp_adapters import DemoErpAdapter, DemoPlmAdapter
 from edp_adapters.base import SourceRecord
@@ -48,6 +46,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from edp_api.core.contextvars import current_principal
 from edp_api.core.db import bind_tenant
+from edp_api.modules.decisions import service as decisions_service
+from edp_api.modules.decisions.schemas import CaseCreateRequest, CaseOptionIn
 from edp_api.modules.demo.dataset import DEMO_CASE, RESULT_EVENTS, ResultEventSpec
 from edp_api.modules.events import service as events_service
 from edp_api.modules.events.schemas import EventIn
@@ -328,27 +328,6 @@ def _to_event_in(spec: ResultEventSpec, object_id: UUID, anchor: datetime) -> Ev
     )
 
 
-_CASE_LOOKUP_SQL = text("""
-    SELECT case_id FROM decision.cases
-    WHERE tenant_id = :t AND source_type = :source_type AND source_id = :source_id
-    LIMIT 1
-""")
-
-_CASE_SEQ_SQL = text("""
-    SELECT count(*) FROM decision.cases
-    WHERE tenant_id = :t AND case_no LIKE :prefix
-""")
-
-_CASE_INSERT_SQL = text("""
-    INSERT INTO decision.cases
-        (case_id, tenant_id, case_no, question, context, options, risk_level,
-         source_type, source_id, status, created_by, updated_by)
-    VALUES
-        (:case_id, :t, :case_no, :question, CAST(:context AS jsonb),
-         CAST(:options AS jsonb), :risk_level, :source_type, :source_id, 'OPEN',
-         :actor, :actor)
-""")
-
 _CASE_EVIDENCE_SQL = text("""
     SELECT evidence_id FROM evidence.records
     WHERE tenant_id = :t AND object_id = :object_id
@@ -356,17 +335,11 @@ _CASE_EVIDENCE_SQL = text("""
     LIMIT 1
 """)
 
-_CASE_LINK_SQL = text("""
-    INSERT INTO evidence.links
-        (link_id, tenant_id, evidence_id, ref_type, ref_id, created_by, updated_by)
-    VALUES (:link_id, :t, :evidence_id, 'CASE', :case_id, :actor, :actor)
-""")
-
 
 async def _ensure_demo_case(
     sess: AsyncSession, tenant_id: UUID, anchor: datetime
 ) -> bool:
-    """场景 2 决策案例（DEMO_CASE）：不存在则创建（+CASE 证据链）。
+    """场景 2 决策案例（DEMO_CASE）：不存在则经 decisions 服务创建（+CASE 证据链）。
 
     幂等键 = (source_type="capability.result", source_id=源结果事件 id)；
     源事件缺失（快照未落）→ 跳过记 warning。返回是否新建。
@@ -391,67 +364,38 @@ async def _ensure_demo_case(
     if await events_service.get_event(sess, event_id) is None:
         logger.warning("seed 案例源事件缺失：%s", event_id)
         return False
-    existing = (
-        await sess.execute(
-            _CASE_LOOKUP_SQL,
-            {
-                "t": tenant_id,
-                "source_type": CASE_SOURCE_TYPE,
-                "source_id": str(event_id),
-            },
-        )
-    ).scalar_one_or_none()
+    existing = await decisions_service.find_case_by_source(
+        sess, CASE_SOURCE_TYPE, str(event_id)
+    )
     if existing is not None:
         return False
 
-    actor = spec.actor_id or ingest_service.SERVICE_ACTOR_ID
-    case_id = uuid4()
-    await sess.execute(
-        _CASE_INSERT_SQL,
-        {
-            "case_id": case_id,
-            "t": tenant_id,
-            "case_no": await _next_case_no(sess, tenant_id, anchor),
-            "question": DEMO_CASE.question,
-            "context": json.dumps(DEMO_CASE.context, ensure_ascii=False),
-            "options": json.dumps(
-                [{"key": option.key, "label": option.label} for option in DEMO_CASE.options],
-                ensure_ascii=False,
-            ),
-            "risk_level": DEMO_CASE.risk_level,
-            "source_type": CASE_SOURCE_TYPE,
-            "source_id": str(event_id),
-            "actor": actor,
-        },
-    )
+    evidence_ids: list[UUID] = []
     for ref in DEMO_CASE.evidence_source_refs:
         evidence_id = await _latest_evidence_id(sess, tenant_id, ref)
         if evidence_id is None:
             logger.warning("seed 案例证据缺失：%s/%s", ref[0], ref[1])
             continue
-        await sess.execute(
-            _CASE_LINK_SQL,
-            {
-                "link_id": uuid4(),
-                "t": tenant_id,
-                "evidence_id": evidence_id,
-                "case_id": case_id,
-                "actor": actor,
-            },
-        )
+        evidence_ids.append(evidence_id)
+
+    await decisions_service.create_case(
+        sess,
+        ingest_service.service_principal(tenant_id),
+        CaseCreateRequest(
+            question=DEMO_CASE.question,
+            # T5 评审 Minor-4：B.5 context 含 source_event_id（seed 派生回填）
+            context={**DEMO_CASE.context, "source_event_id": str(event_id)},
+            options=[
+                CaseOptionIn(key=option.key, label=option.label)
+                for option in DEMO_CASE.options
+            ],
+            risk_level=DEMO_CASE.risk_level,
+            source_type=CASE_SOURCE_TYPE,
+            source_id=str(event_id),
+            evidence_ids=evidence_ids,
+        ),
+    )
     return True
-
-
-async def _next_case_no(
-    sess: AsyncSession, tenant_id: UUID, anchor: datetime
-) -> str:
-    """DC-{YYYYMMDD}-{NNN}（T10 case_no 约定；日期取演示锚日保 seed 确定性，
-    序号 = 当日已有行数 + 1）。"""
-    prefix = f"DC-{anchor:%Y%m%d}-"
-    seq = (
-        await sess.execute(_CASE_SEQ_SQL, {"t": tenant_id, "prefix": f"{prefix}%"})
-    ).scalar_one()
-    return f"{prefix}{seq + 1:03d}"
 
 
 async def _latest_evidence_id(

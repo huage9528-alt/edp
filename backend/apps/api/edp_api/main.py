@@ -19,6 +19,7 @@ from edp_api.core.errors import install_error_handlers
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.events.router import router as events_router
 from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.platform.router import router as platform_router
@@ -79,6 +80,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(adapters_admin_router)
     # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）
     app.include_router(tools_router)
+    # decisions 路由（B.5）：决策案例（EDP-018 最小版；records Human-Only）
+    app.include_router(decisions_router)
     for router in extra_routers:
         app.include_router(router)
 
