@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import { LoginPage } from "../features/auth/LoginPage";
 import { EventsPage } from "../features/events/EventsPage";
+import { EvidencePage } from "../features/evidence/EvidencePage";
 import {
   ForbiddenPage,
   NotFoundPage,
@@ -55,7 +56,11 @@ export const routes: RouteObject[] = [
         element: <EventsPage />,
         handle: { title: "事件流" } satisfies RouteHandle,
       },
-      { path: "admin/evidence", ...withTitle("证据库") },
+      {
+        path: "admin/evidence",
+        element: <EvidencePage />,
+        handle: { title: "证据库" } satisfies RouteHandle,
+      },
       { path: "admin/quality", ...withTitle("数据质量") },
       { path: "admin/audit", ...withTitle("审计日志") },
       { path: "admin/adapters", ...withTitle("适配器管理") },

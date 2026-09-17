@@ -11,7 +11,8 @@ function sortedAll() {
 }
 
 export const evidenceHandlers = [
-  // B.4 GET /evidence：object_id / ref_type+ref_id（links 命中，逆向追溯链图）过滤
+  // B.4 GET /evidence：object_id / ref_type+ref_id（links 命中，逆向追溯链图）/
+  // q（source_record_id/source_system 模糊匹配，W3R 契约扩展）过滤
   http.get("*/api/v1/evidence", ({ request }) => {
     const scenario = scenarioResponse(request);
     if (scenario) return scenario;
@@ -19,9 +20,17 @@ export const evidenceHandlers = [
     const refType = q.get("ref_type");
     const refId = q.get("ref_id");
     const objectId = q.get("object_id");
+    const query = q.get("q")?.trim().toLowerCase();
     const filtered = sortedAll().filter((e) => {
       if (objectId && e.object_id !== objectId) return false;
       if (refType && refId && !(e.links ?? []).some((l) => l.ref_type === refType && l.ref_id === refId)) return false;
+      if (
+        query &&
+        !e.source_record_id.toLowerCase().includes(query) &&
+        !e.source_system.toLowerCase().includes(query)
+      ) {
+        return false;
+      }
       return true;
     });
     return HttpResponse.json(paginate(filtered, clampLimit(q.get("limit")), q.get("cursor")));
