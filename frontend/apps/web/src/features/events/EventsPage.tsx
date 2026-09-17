@@ -3,10 +3,13 @@ import { ChevronLeft, ChevronRight, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CursorPagination, EmptyState, FilterChips, type FilterChip } from "@edp/shared";
 import { EVENT_TYPE_LABELS, eventTypeDisplay } from "../../lib/labels";
+import type { EventResponse } from "../../mocks/types";
 import { EVENTS_PAGE_LIMIT } from "./api";
+import { EventDetailDrawer } from "./EventDetailDrawer";
 import { EventTable } from "./EventTable";
 import { useEventHealth, useEvents } from "./hooks";
 import { KpiBand } from "./KpiBand";
+import { ReplayWizard } from "./ReplayWizard";
 
 const TIME_RANGES = [
   { value: "24h", label: "24H", hours: 24 },
@@ -24,13 +27,16 @@ function sinceOf(range: TimeRange): string {
 /**
  * 事件流页（EDP-301，视觉基线：`原型设计/pages/事件流.html` + 设计 13.6.2）：
  * 页头（新建订阅占位 / 回放事件入口）+ KPI 带 + 工具栏（类型下拉/时间范围/筛选 chips）
- * + 9 列表格 + 游标分页 + 空态。回放向导与详情抽屉由 T17 挂载（当前入口为占位 toast）。
+ * + 9 列表格 + 游标分页 + 空态；行「详情」打开事件详情抽屉，页头/空态入口打开回放三步向导。
  */
 export function EventsPage() {
   const [eventType, setEventType] = useState("");
   const [range, setRange] = useState<TimeRange>("24h");
   // 游标导航栈：栈顶为当前页 cursor（首页 null）；onNext push / onPrev pop。
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const [detailEvent, setDetailEvent] = useState<EventResponse | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const pageIndex = cursorStack.length - 1;
   const cursor = cursorStack[pageIndex];
 
@@ -65,7 +71,7 @@ export function EventsPage() {
 
   return (
     <div className="space-y-4" data-dom-id="events-page">
-      {/* 页头（原型行 336~350）：新建订阅占位；回放事件主按钮 T17 接向导 */}
+      {/* 页头（原型行 336~350）：新建订阅占位；回放事件主按钮打开三步向导 */}
       <section className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <h1 className="text-xl font-semibold text-foreground">事件流</h1>
         <div className="flex items-center gap-2">
@@ -81,7 +87,7 @@ export function EventsPage() {
           <button
             type="button"
             data-dom-id="events-replay-btn"
-            onClick={() => message.info("回放向导后续交付")}
+            onClick={() => setWizardOpen(true)}
             className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 flex items-center gap-1.5"
           >
             <RotateCcw className="w-4 h-4" aria-hidden="true" />
@@ -161,7 +167,7 @@ export function EventsPage() {
             primaryAction={{ label: "清空筛选", onClick: clearFilters }}
             secondaryAction={{
               label: "回放事件",
-              onClick: () => message.info("回放向导后续交付"),
+              onClick: () => setWizardOpen(true),
             }}
           />
         </div>
@@ -172,7 +178,10 @@ export function EventsPage() {
         >
           <EventTable
             events={items}
-            onDetail={() => message.info("事件详情后续交付")}
+            onDetail={(event) => {
+              setDetailEvent(event);
+              setDrawerOpen(true);
+            }}
           />
           {total != null ? (
             <CursorPagination
@@ -217,6 +226,13 @@ export function EventsPage() {
           )}
         </section>
       )}
+
+      <EventDetailDrawer
+        event={detailEvent}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
+      <ReplayWizard open={wizardOpen} events={items} onClose={() => setWizardOpen(false)} />
     </div>
   );
 }
