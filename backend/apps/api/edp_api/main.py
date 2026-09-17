@@ -25,6 +25,7 @@ from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
+from edp_api.modules.tools.router import router as tools_router
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(evidence_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
     app.include_router(adapters_admin_router)
+    # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）
+    app.include_router(tools_router)
     for router in extra_routers:
         app.include_router(router)
 

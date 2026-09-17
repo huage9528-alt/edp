@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from edp_api.core.contextvars import current_request_id
 
@@ -195,12 +196,46 @@ def _summarize_validation_error(exc: RequestValidationError) -> str:
     return f"{loc}: {msg}" if loc else msg
 
 
+# 路由层 StarletteHTTPException（框架抛出，非 EdpError）→ 统一 envelope 的错误码
+# 映射；405 单列（Read-Only 路由非 GET 的统一语义，EDP-015），其余状态码保留
+# detail 文案；未映射状态码 code 回退 INTERNAL（HTTP 状态码仍原样保留）。
+_STATUS_TO_ERROR_CODE: dict[int, ErrorCode] = {
+    400: ErrorCode.VALIDATION_ERROR,
+    401: ErrorCode.UNAUTHENTICATED,
+    403: ErrorCode.FORBIDDEN,
+    404: ErrorCode.NOT_FOUND,
+    405: ErrorCode.METHOD_NOT_ALLOWED,
+    409: ErrorCode.CONFLICT,
+    429: ErrorCode.RATE_LIMITED,
+    503: ErrorCode.UPSTREAM_UNAVAILABLE,
+}
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(EdpError)
     async def _handle_edp_error(_: Request, exc: EdpError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.http_status,
             content=_error_payload(exc.code, exc.message, exc.extra),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _handle_http_exception(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        if exc.status_code == 405:
+            # Read-Only 路由（/tools/*）非 GET 的统一语义（设计 B.0/8.3）
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=_error_payload(
+                    ErrorCode.METHOD_NOT_ALLOWED, "只读路由收到非 GET 请求"
+                ),
+                headers=exc.headers,
+            )
+        code = _STATUS_TO_ERROR_CODE.get(exc.status_code, ErrorCode.INTERNAL)
+        message = str(exc.detail) if exc.detail is not None else _RESPONSE_DESCRIPTIONS[code]
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=_error_payload(code, message),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
