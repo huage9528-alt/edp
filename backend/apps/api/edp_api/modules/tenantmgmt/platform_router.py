@@ -69,6 +69,7 @@ async def create_tenant(
 @router.get(
     "",
     response_model=Page[TenantSummary],
+    response_model_exclude_none=True,
     summary="租户清单（过滤 + 游标分页）",
     responses=error_responses(ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN),
 )

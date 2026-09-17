@@ -43,7 +43,7 @@ from edp_adapters.base import SourceRecord
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from edp_adapters.demo_erp import SOURCE_SYSTEM as ERP_SOURCE_SYSTEM
 from edp_adapters.demo_plm import SOURCE_SYSTEM as PLM_SOURCE_SYSTEM
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from edp_api.core.contextvars import current_principal
@@ -202,7 +202,7 @@ async def seed(
         await _run_snapshot(factory, tenant_id, records, stats)
         await _advance_watermarks(factory, tenant_id, records)
         await _run_result_events(factory, tenant_id, anchor, stats)
-        await _apply_demo_latency(factory, tenant_id)
+        await _apply_demo_latency(factory, tenant_id, anchor)
         return stats
     finally:
         current_principal.reset(token)
@@ -471,26 +471,43 @@ async def _latest_evidence_id(
     ).scalar_one_or_none()
 
 
-_LATENCY_SQL = text(r"""
+_LATENCY_SQL = text("""
     UPDATE event.events
     SET ingest_latency_ms = :floor + (abs(hashtext(event_id::text)) % :span)
     WHERE tenant_id = :t
-      AND (
-        event_type LIKE '%\_SNAPSHOT'
-        OR idempotency_key LIKE :result_prefix
-      )
-""")
+      AND (event_id IN :ids OR idempotency_key LIKE :result_prefix)
+""").bindparams(bindparam("ids", expanding=True))
+
+
+def demo_snapshot_event_ids(tenant_id: UUID, anchor: datetime) -> list[UUID]:
+    """演示快照段事件的确定性 event_id 集合。
+
+    与 process_record 同派生式（derive_event_id + {object_type}_SNAPSHOT，
+    occurred_at 用适配器输出原值）——只按 event_id 精确圈定演示事件，
+    不误伤同类型（``*_SNAPSHOT``）的真实 ErpMock 管道事件。
+    """
+    return [
+        derive_event_id(
+            tenant_id,
+            record.source_system,
+            record.source_id,
+            record.occurred_at,
+            ingest_service.SNAPSHOT_EVENT_TYPE(record.object_type),
+        )
+        for record in merged_snapshot_records(anchor)
+    ]
 
 
 async def _apply_demo_latency(
-    factory: async_sessionmaker[AsyncSession], tenant_id: UUID
+    factory: async_sessionmaker[AsyncSession], tenant_id: UUID, anchor: datetime
 ) -> None:
     """确定性覆盖演示事件的接入耗时（60~299ms，spec §6.2「seed 用确定性值」）。
 
-    覆盖范围 = 演示数据集事件：快照事件（``%_SNAPSHOT``）与 seed 回流事件
-    （幂等键前缀 ``seed-demo:results:v1:``）。T9 起管道/批量会写实测耗时
-    （亚毫秒级），若不覆盖则演示 KPI（P95 接入延迟）退化为 0——故此处对
-    演示事件确定性覆盖；非演示事件（真实批量入库等）的实测值不动。
+    覆盖范围 = 演示数据集事件：快照段（按 anchor 复算的 event_id 集合）与
+    seed 回流事件（幂等键前缀 ``seed-demo:results:v1:``）。T9 起管道/批量
+    会写实测耗时（亚毫秒级），若不覆盖则演示 KPI（P95 接入延迟）退化为
+    0——故此处对演示事件确定性覆盖；非演示事件（真实 ErpMock 管道、真实
+    批量入库等）的实测值一律不动。
     """
     async with factory.begin() as sess:
         await bind_tenant(sess, tenant_id)
@@ -500,6 +517,7 @@ async def _apply_demo_latency(
                 "t": tenant_id,
                 "floor": LATENCY_FLOOR_MS,
                 "span": LATENCY_SPAN_MS,
+                "ids": demo_snapshot_event_ids(tenant_id, anchor),
                 "result_prefix": f"{DEMO_RESULTS_IDEM_KEY}:%",
             },
         )

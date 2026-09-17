@@ -122,8 +122,9 @@ async def get_event(
     principal: Annotated[Principal, Depends(require_read("event"))],
     sess: DbSession,
 ) -> EventResponse:
-    """点查；跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。"""
-    event = await events_service.get_event(sess, event_id)
-    if event is None:
+    """点查（含 delivery_status/object_source_id 派生字段，与列表同口径）；
+    跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。"""
+    response = await events_service.get_event_response(sess, event_id)
+    if response is None:
         raise EdpError.not_found("事件不存在")
-    return EventResponse.model_validate(event)
+    return response

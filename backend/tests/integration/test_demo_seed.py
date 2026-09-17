@@ -9,7 +9,7 @@ business_data（逆依赖序，与 seed 复位同一实现）+ 清本模块审�
 
 import re
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
@@ -474,3 +474,46 @@ async def test_seed_reset_rebuilds_same_rows_and_reanchors(
     assert anchor != stale
     assert (anchor.minute, anchor.second, anchor.microsecond) == (0, 0, 0)
     assert abs((datetime.now(UTC) - anchor).total_seconds()) < 3600
+
+
+async def test_demo_latency_only_covers_demo_events(
+    app_role_engine: AsyncEngine,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+) -> None:
+    """T9 评审 Minor-1：非演示事件的实测耗时不被确定性回填覆盖。
+
+    造一条 event_type 同快照形态（ORDER_SNAPSHOT）但 event_id 非演示集合的
+    事件（哨兵 7777ms）→ 再跑 seed（内部 _apply_demo_latency）→ 哨兵不变；
+    旧实现按 ``event_type LIKE '%_SNAPSHOT'`` 会误覆盖该行。
+    """
+    await _seed(app_role_engine, default_tenant_id)
+    object_id = (
+        await db_session.execute(
+            text(
+                "SELECT object_id FROM master.business_objects"
+                " WHERE tenant_id = :t LIMIT 1"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).scalar_one()
+    foreign_event = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO event.events"
+            " (event_id, tenant_id, event_type, object_id, source_system,"
+            "  occurred_at, data, ingest_latency_ms)"
+            " VALUES (:e, :t, 'ORDER_SNAPSHOT', :o, 'erp', now(), '{}'::jsonb, 7777)"
+        ),
+        {"e": foreign_event, "t": default_tenant_id, "o": object_id},
+    )
+    await db_session.commit()
+
+    await _seed(app_role_engine, default_tenant_id)
+
+    assert (
+        await db_session.execute(
+            text("SELECT ingest_latency_ms FROM event.events WHERE event_id = :e"),
+            {"e": foreign_event},
+        )
+    ).scalar_one() == 7777

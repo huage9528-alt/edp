@@ -32,6 +32,7 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 @router.get(
     "",
     response_model=Page[AuditLogItem],
+    response_model_exclude_none=True,
     summary="查询审计日志（过滤 + 游标分页）",
     responses=error_responses(
         ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN, ErrorCode.TENANT_SUSPENDED

@@ -385,8 +385,39 @@ async def ingest_batch(
 
 
 async def get_event(sess: AsyncSession, event_id: UUID) -> Event | None:
-    """按 event_id 点查；RLS 下跨租户 = 不存在（None，不泄露存在性）。"""
+    """按 event_id 点查（裸 ORM 行；内部调用方用）；跨租户 = None。"""
     return await sess.get(Event, event_id)
+
+
+def _event_query():
+    """事件查询骨架（列表/详情共用同一响应组装路径）：outbox 左连派生
+    ``delivery_status``、business_objects 左连派生 ``object_source_id``。"""
+    return (
+        select(Event, Outbox.status, _BUSINESS_OBJECTS.c.source_id)
+        .select_from(Event)
+        .outerjoin(
+            Outbox,
+            and_(
+                Outbox.aggregate_type == AGGREGATE_TYPE_EVENT,
+                Outbox.aggregate_id == Event.event_id,
+                Outbox.tenant_id == Event.tenant_id,
+            ),
+        )
+        .outerjoin(_BUSINESS_OBJECTS, _BUSINESS_OBJECTS.c.object_id == Event.object_id)
+    )
+
+
+async def get_event_response(
+    sess: AsyncSession, event_id: UUID
+) -> EventResponse | None:
+    """按 event_id 点查响应（含派生字段，spec §6.2 列表 + 详情同口径）；
+    RLS 下跨租户 = 不存在（None，不泄露存在性）。"""
+    row = (
+        await sess.execute(_event_query().where(Event.event_id == event_id))
+    ).one_or_none()
+    if row is None:
+        return None
+    return _event_response(*row)
 
 
 async def query_events(
@@ -421,20 +452,7 @@ async def query_events(
         await sess.execute(select(func.count()).select_from(Event).where(*conditions))
     ).scalar_one()
 
-    stmt = (
-        select(Event, Outbox.status, _BUSINESS_OBJECTS.c.source_id)
-        .select_from(Event)
-        .outerjoin(
-            Outbox,
-            and_(
-                Outbox.aggregate_type == AGGREGATE_TYPE_EVENT,
-                Outbox.aggregate_id == Event.event_id,
-                Outbox.tenant_id == Event.tenant_id,
-            ),
-        )
-        .outerjoin(_BUSINESS_OBJECTS, _BUSINESS_OBJECTS.c.object_id == Event.object_id)
-        .where(*conditions)
-    )
+    stmt = _event_query().where(*conditions)
 
     decoded = decode_cursor(cursor)
     if decoded is not None:

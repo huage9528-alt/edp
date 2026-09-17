@@ -69,6 +69,7 @@ async def upsert_object(
 @router.get(
     "",
     response_model=Page[ObjectResponse],
+    response_model_exclude_none=True,
     summary="组合键查询业务对象列表",
     responses=error_responses(
         ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN, ErrorCode.TENANT_SUSPENDED

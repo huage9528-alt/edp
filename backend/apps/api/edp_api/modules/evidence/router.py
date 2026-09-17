@@ -67,6 +67,7 @@ async def create_evidence(
 @router.get(
     "",
     response_model=Page[EvidenceListItem],
+    response_model_exclude_none=True,
     summary="逆向追溯查询证据列表",
     responses=error_responses(
         ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN, ErrorCode.TENANT_SUSPENDED

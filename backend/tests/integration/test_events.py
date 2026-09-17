@@ -465,6 +465,13 @@ async def test_list_total_matches_filters(client: httpx.AsyncClient) -> None:
     )
     assert by_since.json()["total"] == 1
 
+    empty = await client.get(
+        EVENTS, params={"event_type": "evt.test.none"}, headers=jwt_headers
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["total"] == 0
+    assert empty.json()["items"] == []
+
 
 # ---- 10. delivery_status（outbox 左连派生）与 object_source_id（对象 join） ----
 
@@ -504,6 +511,50 @@ async def test_delivery_status_and_object_source_id(
     await db_session.commit()
     failed = await client.get(EVENTS, params=params, headers=jwt_headers)
     assert failed.json()["items"][0]["delivery_status"] == "DEAD_LETTER"
+
+
+# ---- 10b. 详情派生字段（与列表同组装路径）：PENDING/PUBLISHED/无 outbox ----
+
+
+async def test_event_detail_derived_fields(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    object_ids = await _create_objects(client, 1)
+    assert (
+        await client.post(
+            EVENTS + "/batch", json=_batch(object_ids), headers=_key_headers(_key())
+        )
+    ).json()["accepted"] == 1
+
+    jwt_headers = {"Authorization": f"Bearer {await _login(client, 'manager1')}"}
+    listed = await client.get(
+        EVENTS, params={"event_type": "evt.test.created"}, headers=jwt_headers
+    )
+    event_id = UUID(listed.json()["items"][0]["event_id"])
+
+    detail = await client.get(f"{EVENTS}/{event_id}", headers=jwt_headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["delivery_status"] == "PENDING"
+    assert body["object_source_id"] == "SO-EVT-0001"
+    assert isinstance(body["ingest_latency_ms"], int)
+
+    await db_session.execute(
+        text("UPDATE event.outbox SET status = 'PUBLISHED' WHERE aggregate_id = :e"),
+        {"e": event_id},
+    )
+    await db_session.commit()
+    published = await client.get(f"{EVENTS}/{event_id}", headers=jwt_headers)
+    assert published.json()["delivery_status"] == "DELIVERED"
+
+    # 无 outbox 行（如直接落库的事件）→ delivery_status 为 null，不报错
+    await db_session.execute(
+        text("DELETE FROM event.outbox WHERE aggregate_id = :e"), {"e": event_id}
+    )
+    await db_session.commit()
+    orphan = await client.get(f"{EVENTS}/{event_id}", headers=jwt_headers)
+    assert orphan.status_code == 200, orphan.text
+    assert orphan.json()["delivery_status"] is None
 
 
 # ---- 11. 结果事件（risk_level）自动落证据 + RESULT link；重放不重复 ----
