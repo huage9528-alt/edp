@@ -27,9 +27,13 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from edp_api.core import db as core_db
+from edp_api.core.errors import EdpError, ErrorCode
 from edp_api.core.security.apikey import hash_key
+from edp_api.core.security.principal import Principal
 from edp_api.main import create_app
 from edp_api.modules.audit.aspect import install_audit_aspect
+from edp_api.modules.decisions import service as decisions_service
+from edp_api.modules.decisions.schemas import DecisionCreateRequest
 from edp_api.modules.demo import service as demo_service
 from edp_api.modules.demo.dataset import DEMO_CASE
 from sqlalchemy import text
@@ -297,7 +301,7 @@ async def test_seed_case_creation_is_audited(
             text(
                 "SELECT count(*) FROM platform.audit_logs"
                 " WHERE tenant_id = :t AND actor_id = 'adapter:erp'"
-                " AND action = 'CASES_CREATE'"
+                " AND action = 'CASE_CREATE'"
             ),
             {"t": default_tenant_id},
         )
@@ -544,6 +548,68 @@ async def test_human_submit_record_decides_case(
     assert case.status == "DECIDED"
     assert case.decided_at is not None
 
+    # 切面审计消歧回归（Important-1）：decision.records → DECISION_CREATE，
+    # 不得再与 evidence.records 的 EVIDENCE_CREATE 混名
+    decision_audits = (
+        (
+            await db_session.execute(
+                text(
+                    "SELECT action FROM platform.audit_logs"
+                    " WHERE resource_id = :r"
+                ),
+                {"r": str(body["decision_id"])},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "DECISION_CREATE" in decision_audits
+    assert "EVIDENCE_CREATE" not in decision_audits
+
+
+# ---- 5b. 服务层守卫直调（不经 HTTP 依赖）→ 独立会话审计 + GUARD_POLICY_DENIED ----
+
+
+async def test_direct_service_guard_denied_is_audited(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+) -> None:
+    """直调 decisions_service.submit_record（SERVICE 主体）同样拒绝留痕：
+    审计走独立会话提交，不随被拒调用方事务回滚（Minor-2 行为直证）。"""
+    case_id = uuid4()
+    principal = Principal(id="agent-direct", kind="SERVICE", tenant_id=default_tenant_id)
+
+    with pytest.raises(EdpError) as ei:
+        await decisions_service.submit_record(
+            db_session,
+            principal,
+            case_id,
+            DecisionCreateRequest(chosen_option="EXPEDITE"),
+        )
+    assert ei.value.code == ErrorCode.GUARD_POLICY_DENIED
+    assert ei.value.message == "该操作仅限人工执行"
+
+    rows = (
+        (
+            await db_session.execute(
+                text(
+                    "SELECT actor_id, detail FROM platform.audit_logs"
+                    " WHERE action = 'GUARD_DENIED'"
+                    " AND resource_type = 'decision.records'"
+                    " AND resource_id = :r"
+                ),
+                {"r": str(case_id)},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0]["actor_id"] == "agent-direct"
+    assert rows[0]["detail"]["reason"] == "Human-Only"
+    assert rows[0]["detail"]["path"] is None
+
 
 # ---- 6. 重复决策 → 409 CONFLICT ----
 
@@ -600,6 +666,19 @@ async def test_analyst_read_ok_but_decide_forbidden(
         f"{BASE}/cases/{case_id}/records",
         headers=headers,
         json={"chosen_option": "EXPEDITE"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+
+# ---- 7b. HUMAN 权限轨道：analyst1 创建案例 → 403（无 decision:decide） ----
+
+
+async def test_analyst_create_case_forbidden(client: httpx.AsyncClient) -> None:
+    headers = await _login(client, "analyst1")
+
+    resp = await client.post(
+        f"{BASE}/cases", headers=headers, json={"question": "无权限创建"}
     )
     assert resp.status_code == 403, resp.text
     assert resp.json()["error"]["code"] == "FORBIDDEN"

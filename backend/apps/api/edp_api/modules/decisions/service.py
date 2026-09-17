@@ -8,11 +8,12 @@ create_case（B.5）：
 - source_id 可解析为 UUID 时校验事件存在（不存在/跨租户 → 400）。
 
 submit_record（B.5，Human-Only）：
-- ``principal.kind != "HUMAN"`` → 先落 GUARD_DENIED 审计（resource_type=
-  decision.records）再抛 GUARD_POLICY_DENIED；HUMAN 的 ``decision:decide``
-  由依赖层判定；
+- ``principal.kind != "HUMAN"`` → 经 ``record_guard_denied`` 独立会话落
+  GUARD_DENIED 审计（resource_type=decision.records）再抛
+  GUARD_POLICY_DENIED（HTTP 路径由依赖层先行拦截，同函数落审计；直调
+  service 同样留痕）；HUMAN 的 ``decision:decide`` 由依赖层判定；
 - 案例非 OPEN → 409 CONFLICT；成功同事务写 decision.records + case 置
-  DECIDED/decided_at。
+  DECIDED/decided_at（updated_at 显式刷新）。
 
 find_case_by_source：seed 幂等查询口（demo 服务消费，替代 T7 raw SQL 直写）。
 query_cases/get_case_detail：游标分页（created_at DESC, case_id DESC tiebreak，
@@ -32,6 +33,8 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from edp_api.core import db as core_db
+from edp_api.core.db import bind_tenant
 from edp_api.core.errors import EdpError
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
 from edp_api.core.security.principal import Principal
@@ -56,7 +59,46 @@ MAX_LIMIT = 100
 CASE_NO_PREFIX = "DC"
 CASE_REF_TYPE = "CASE"
 GUARD_DENIED_ACTION = "GUARD_DENIED"
+GUARD_DENIED_RESOURCE_TYPE = "decision.records"
+HUMAN_ONLY_REASON = "Human-Only"
 HUMAN_ONLY_MESSAGE = "该操作仅限人工执行"
+
+
+async def record_guard_denied(
+    principal: Principal,
+    *,
+    path: str | None,
+    reason: str,
+    resource_id: str | None,
+) -> None:
+    """独立会话落 GUARD_DENIED 审计（Human-Only 拒绝路径唯一实现）。
+
+    拒绝必然伴随事务回滚（HTTP 请求会话 / 直调 service 的事务），审计不能
+    依赖调用方事务——独立会话与业务事务解耦保证拒绝留痕；审计失败仅
+    warning，不改变 403 决策。依赖层（require_decision_decide）与服务层
+    守卫共用本函数。
+    """
+    try:
+        session = core_db.get_session_local()()
+        try:
+            await bind_tenant(session, principal.tenant_id)
+            await audit_service.record_explicit(
+                session,
+                action=GUARD_DENIED_ACTION,
+                resource_type=GUARD_DENIED_RESOURCE_TYPE,
+                resource_id=resource_id,
+                detail={
+                    "path": path,
+                    "reason": reason,
+                    "scopes": list(principal.scopes),
+                },
+                principal=principal,
+            )
+            await session.commit()
+        finally:
+            await session.close()
+    except Exception:
+        logger.warning("GUARD_DENIED 审计落库失败", exc_info=True)
 
 
 async def create_case(
@@ -264,13 +306,11 @@ async def submit_record(
         (决策记录, 案例)；case_id 不存在（含跨租户）→ None。
     """
     if principal.kind != "HUMAN":
-        await audit_service.record_explicit(
-            sess,
-            action=GUARD_DENIED_ACTION,
-            resource_type="decision.records",
+        await record_guard_denied(
+            principal,
+            path=None,
+            reason=HUMAN_ONLY_REASON,
             resource_id=str(case_id),
-            detail={"reason": "Human-Only"},
-            principal=principal,
         )
         raise EdpError.guard_policy_denied(HUMAN_ONLY_MESSAGE)
 
@@ -297,6 +337,7 @@ async def submit_record(
     case.status = "DECIDED"
     case.decided_at = decided_at
     case.updated_by = principal.id
+    case.updated_at = func.now()
     await sess.flush()
     return record, case
 

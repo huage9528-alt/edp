@@ -66,9 +66,18 @@ EXCLUDED_TABLES = frozenset(
     }
 )
 
-# 表名 → action 前缀（缺省取表名大写）：business_objects 行写即
-# OBJECT_CREATE/OBJECT_UPDATE/OBJECT_DELETE，与 B.6 动作命名对齐
+# 表 fullname → action 前缀（fullname 优先；裸表名回退供无 schema 表，
+# 未知表回退表名大写）：business_objects 行写即 OBJECT_CREATE/OBJECT_UPDATE/
+# OBJECT_DELETE，与 B.6 动作命名对齐。fullname 优先消除跨 schema 同名表歧义
+# ——evidence.records 与 decision.records 裸名同为 "records"（此前均记
+# EVIDENCE_CREATE），decision 表由此消歧为 DECISION_/CASE_ 前缀。
 ACTION_PREFIXES = {
+    "master.business_objects": "OBJECT",
+    "event.events": "EVENT",
+    "evidence.records": "EVIDENCE",
+    "decision.records": "DECISION",
+    "decision.cases": "CASE",
+    # 裸表名回退（无 schema 前缀的表形态）
     "business_objects": "OBJECT",
     "events": "EVENT",
     "records": "EVIDENCE",
@@ -115,8 +124,11 @@ def _audit_orm_write(session, obj: object, verb: str) -> None:
         detail = _build_detail(obj, state, verb)
         if detail is None:
             return  # UPDATE 无真实变更（dirty 含等值重设）
+        prefix = ACTION_PREFIXES.get(fullname) or ACTION_PREFIXES.get(
+            table_name, table_name.upper()
+        )
         entry = make_entry(
-            action=f"{ACTION_PREFIXES.get(table_name, table_name.upper())}_{verb}",
+            action=f"{prefix}_{verb}",
             resource_type=table_name,
             resource_id=_resource_id(obj, state),
             detail=detail,
