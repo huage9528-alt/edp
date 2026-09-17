@@ -2,6 +2,11 @@
 
 错误响应结构（附录 B.0）：
     {"error": {"code", "message", "request_id", **extra}}
+
+路由层 StarletteHTTPException（框架 404/405 等）同样收敛为统一 envelope：
+405 全路由通用文案「方法不允许」（T8 评审认可的**全路由行为变更**——此前
+405 由框架默认返回 {"detail": ...}；契约偏差由 T14 导出时记录），其余状态码
+保留 detail 文案。
 """
 
 import logging
@@ -197,8 +202,9 @@ def _summarize_validation_error(exc: RequestValidationError) -> str:
 
 
 # 路由层 StarletteHTTPException（框架抛出，非 EdpError）→ 统一 envelope 的错误码
-# 映射；405 单列（Read-Only 路由非 GET 的统一语义，EDP-015），其余状态码保留
-# detail 文案；未映射状态码 code 回退 INTERNAL（HTTP 状态码仍原样保留）。
+# 映射；405 文案为全路由通用「方法不允许」（T8 评审认可的全路由行为变更，
+# 不再写死只读路由语义——Read-Only 仅注册 GET 使非 GET 落到此处）；其余状态码
+# 保留 detail 文案；未映射状态码 code 回退 INTERNAL（HTTP 状态码仍原样保留）。
 _STATUS_TO_ERROR_CODE: dict[int, ErrorCode] = {
     400: ErrorCode.VALIDATION_ERROR,
     401: ErrorCode.UNAUTHENTICATED,
@@ -222,12 +228,9 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http_exception(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         if exc.status_code == 405:
-            # Read-Only 路由（/tools/*）非 GET 的统一语义（设计 B.0/8.3）
             return JSONResponse(
                 status_code=exc.status_code,
-                content=_error_payload(
-                    ErrorCode.METHOD_NOT_ALLOWED, "只读路由收到非 GET 请求"
-                ),
+                content=_error_payload(ErrorCode.METHOD_NOT_ALLOWED, "方法不允许"),
                 headers=exc.headers,
             )
         code = _STATUS_TO_ERROR_CODE.get(exc.status_code, ErrorCode.INTERNAL)

@@ -5,10 +5,13 @@
    readonly scope）GET 六接口 200，逐字段对齐 B.8 示例，evidence_hint 指向
    该对象最新 {TYPE}_SNAPSHOT 事件；
 2. 非 GET（POST/PUT/DELETE/PATCH）→ 405 且 body 为统一 envelope
-   （METHOD_NOT_ALLOWED，Allow: GET 头保留；无凭据也 405——路由先于鉴权）；
+   （METHOD_NOT_ALLOWED + 通用文案「方法不允许」，Allow: GET 头保留；无凭据
+   也 405——路由先于鉴权）；非 tools 路由（/healthz）同样收敛（全路由行为）；
+2b. 认证双轨：无凭据 401；HUMAN（manager1 JWT，MANAGER 角色）tools:read
+   轨道 GET 200（修复前 rbac 常量漏同步 tools:read → 全 403）；
 3. 无 readonly scope 临时 Key → 403 FORBIDDEN 且 audit_logs 出现
    GUARD_DENIED 行（resource_type=tools，detail 含 path/reason/scopes；
-   拒绝路径显式提交，不随请求回滚丢弃）；
+   拒绝审计走独立会话提交，不随请求事务回滚丢弃）；
 4. 跨租户：tenant-tools（migrator 直造 + readonly Key）读 default 数据 →
    详情 404 / 列表空，不泄露存在性；
 5. 404/空数组分层：订单/客户/BOM/物料/供应商对象不存在 → 404；对象存在但
@@ -35,11 +38,16 @@ from edp_api.modules.tools import service as tools_service
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-pytestmark = [pytest.mark.integration]
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.filterwarnings("ignore::jwt.warnings.InsecureKeyLengthWarning"),
+]
 
 BASE = "/api/v1/tools"
 DEV_KEY = "edp-dev-agent-hub-key"
 DEV_HEADERS = {"X-API-Key": DEV_KEY}
+LOGIN = "/api/v1/auth/login"
+SEED_PASSWORD = "Admin@123!"
 
 # 无 readonly scope 的临时 API Key（403 用例；每测试自行插入/清场）
 NO_READONLY_KEY = "t8-tools-no-readonly-key"
@@ -339,7 +347,7 @@ async def test_non_get_methods_405_envelope(
     assert resp.headers.get("allow") == "GET"
     body = resp.json()["error"]
     assert body["code"] == "METHOD_NOT_ALLOWED"
-    assert body["message"] == "只读路由收到非 GET 请求"
+    assert body["message"] == "方法不允许"
     UUID(body["request_id"])
 
 
@@ -349,6 +357,41 @@ async def test_put_delete_patch_405(client: httpx.AsyncClient) -> None:
         resp = await client.request(method, target, json={})
         assert resp.status_code == 405, resp.text
         assert resp.json()["error"]["code"] == "METHOD_NOT_ALLOWED"
+
+
+async def test_non_tools_route_405_generic_message(client: httpx.AsyncClient) -> None:
+    """405 统一 envelope 为全路由行为（非 tools 专属）：/healthz 仅 GET。"""
+    resp = await client.post("/healthz")
+    assert resp.status_code == 405, resp.text
+    assert resp.headers.get("allow") == "GET"
+    body = resp.json()["error"]
+    assert body["code"] == "METHOD_NOT_ALLOWED"
+    assert body["message"] == "方法不允许"
+    UUID(body["request_id"])
+
+
+# ---- 2b. 认证语义：无凭据 401 / HUMAN JWT（tools:read 轨道）200 ----
+
+
+async def test_missing_credentials_401(client: httpx.AsyncClient) -> None:
+    resp = await client.get(f"{BASE}/orders")
+    assert resp.status_code == 401, resp.text
+    assert resp.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+async def test_human_jwt_manager_tools_read_200(
+    client: httpx.AsyncClient, demo: demo_service.SeedStats
+) -> None:
+    """HUMAN 轨道：manager1（MANAGER 角色）JWT → tools:read → 200。"""
+    login = await client.post(
+        LOGIN, json={"username": "manager1", "password": SEED_PASSWORD}
+    )
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    resp = await client.get(f"{BASE}/orders/SO-2026-00123", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["order_no"] == "SO-2026-00123"
 
 
 # ---- 3. 无 readonly scope Key → 403 + GUARD_DENIED 审计 ----
