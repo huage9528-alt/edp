@@ -246,3 +246,4 @@ erp            ORDER        48      43       48      48        True
 39. **W3-39 compose 镜像需 `--build` 重建**：18000/9080 旧镜像不含 W3 契约（`/health` 404、events 无 `total`、web 无事件流页）；演示前必须 `docker compose ... up -d --build`（已写入 `m3-demo.md` 环境前置）。
 40. **W3-40 冒烟数值依赖 seed 锚与重放历史**：事件时间/`ingest_latency_ms`/`event_id`/`case_id` 随锚变化；`idempotency_hit_rate` 随重放历史（RESET 首跑 0.0 → 二跑 ≈0.44 → replay 后 ≈0.60）——演示前 `make seed-demo RESET=1`，读数口径见 `m3-demo.md`「读数说明」。
 41. **W3-41 `_jobs` 私有接缝**：`adapters_admin/service.py` 以模块级 `_jobs` dict 存任务状态（M2 单副本语义），`/status` 轮询必须命中同一进程、重启即失——跨进程/多副本需外置任务状态（W4+）。
+42. **W3-42 `_jobs` 未按租户分键（跨租户可见性）**：`_jobs` 以适配器名为 key（`adapters_admin/service.py`），任意租户持 `adapters:read` 的用户经 `GET /{name}/status` 可读到他租户触发的 `sync_id/stats/error`，且不同租户触发会互相覆盖——终审补记，W4 外置任务状态时按 `(tenant_id, adapter)` 分键。

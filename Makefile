@@ -9,6 +9,11 @@ backend-test:
 backend-isolation:
 	cd backend && uv run pytest tests/integration/test_tenant_isolation.py -q
 
+# 注意：本目标对「已填充业务数据」的库具破坏性——`downgrade base` 会在 0005_seed
+# 回滚时被 tenant_usage_daily 外键拦截（W1/W2 既有行为，非迁移缺陷），且降级链会
+# 先 drop 后续迁移的列。CI/空库直接跑；本地 dev 库请用一次性容器等价验证：
+#   docker run -d --name edp-migrate-check -e POSTGRES_PASSWORD=edp -p 15433:5432 postgres:16
+#   EDP_DATABASE_URL=postgresql+asyncpg://postgres:edp@localhost:15433/postgres make backend-migrate-check
 backend-migrate-check:
 	cd backend && uv run alembic upgrade head && uv run alembic downgrade base && uv run alembic upgrade head
 

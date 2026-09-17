@@ -127,6 +127,6 @@ Branch: feat/w3-m3（就地分支；未用 worktree——避免前端依赖重�
 | T19 | DONE | 3cb0e28 | M3 演示脚本七段（seed 幂等/tools 六接口+evidence_hint/405/403+GUARD_DENIED/exceptions P1 case_id/replay duplicated==fetched/控制台段）+ `test_m3_acceptance.py` 5 用例断言化（②~⑥ 可随时回归）；实测读数与端口偏差（18001 venv）记入 m3-demo.md；无头环境浏览器级冒烟留待彩排；T20 补记：compose `--build`、读数依赖 seed 锚与重放历史、`_jobs` 同进程语义 |
 | T20 | DONE | （本 commit） | verify-all 七 job 复核：backend-lint（ruff + import-linter 2 kept）/backend-test 394 绿/frontend-lint（0 error、1 既有 warning）/frontend-test 249 绿（22+96+131）/contract-export 重导出字节不变 + contract-gate 指纹 `f5ee32a8` 绿；backend-migrate-check 对已填充 dev 库在 0005_seed.downgrade 因 `tenant_usage_daily_tenant_id_fkey` 失败（W1/W2 既有偏差，非 W3）→ 一次性 `postgres:16` 容器（15433）等价全链 upgrade→downgrade→upgrade exit 0，dev 库单事务回滚无损（0010 head / 对象 40 / 事件 50）；缺口清单 22→41 条（W3-23~41，含 T14/T15/T16/T17/T18/T19 评审补记） |
 
-终审（整分支）：待终审（最终评审后回填）。
+终审（整分支）：**Approved with conditions**——M3 三条出口条件均有「测试 + 演示脚本 + 实测读数」三级证据（tools 六接口 evidence_hint 直证 / 回流→exceptions case_id / seed+replay 幂等）；范围无越界、契约 35 路径指纹 `f5ee32a8` 一致；无 Critical；条件项已闭环：① `_jobs` 跨租户可见性 → 缺口 W3-42；② migrate-check 破坏性说明 → Makefile 注释 + 一次性容器法；③ 终审行回填（本行）+ 合并后复跑 verify-all。跨任务风险备忘（W4 前）：W3-23 cases 索引/唯一约束、W3-38 浏览器冒烟彩排、`evidence.links` 审计前缀裸名（W3-13 同类）。
 
 分支收口（终审通过后执行）：① `make verify-all` 七 job 真绿（migrate-check 以一次性容器等价验证，见 T20 行）；② 缺口清单终稿（W3-01~41）已落 `docs/demo/m2-demo.md`；③ `git checkout master && git merge --no-ff feat/w3-m3`；④ 合并后复跑 `make verify-all`（contract-gate 指纹应仍为 `f5ee32a8`）。
