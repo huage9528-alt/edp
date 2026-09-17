@@ -19,7 +19,10 @@ from edp_api.core.security.principal import Principal
 # decision:read；SERVICE 走 readonly scope 轨道，不入本矩阵）；
 # trace:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0011；SERVICE 走
 # readonly scope 轨道，不入本矩阵；trace 写仅 API Key write:trace——无
-# 角色持有 trace:write）。
+# 角色持有 trace:write）；
+# memory:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、memory:review →
+# PLATFORM_ADMIN/ADMIN/MANAGER（0011；SERVICE 走 readonly / write:memory
+# scope 轨道，不入本矩阵）。
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -38,6 +41,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "tools:read",
         "ebms:read",
         "trace:read",
+        "memory:read",
+        "memory:review",
         "tenant:admin",
     },
     "ADMIN": {
@@ -57,6 +62,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "tools:read",
         "ebms:read",
         "trace:read",
+        "memory:read",
+        "memory:review",
     },
     "MANAGER": {
         "registry:read",
@@ -75,6 +82,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "tools:read",
         "ebms:read",
         "trace:read",
+        "memory:read",
+        "memory:review",
     },
     "ANALYST": {
         "registry:read",
@@ -87,6 +96,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "tools:read",
         "ebms:read",
         "trace:read",
+        "memory:read",
     },
     "SERVICE": {
         "registry:read",
