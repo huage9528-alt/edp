@@ -4,6 +4,71 @@
  */
 
 export interface paths {
+    "/api/v1/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 行动列表（status/owner/case_id 过滤，简投影附 allowed_to）
+         * @description 游标分页（created_at DESC, action_id DESC tiebreak）；简投影。
+         */
+        get: operations["list_actions_api_v1_actions_get"];
+        put?: never;
+        /**
+         * 创建行动任务（→ PROPOSED）
+         * @description 创建行动；case_id 提供但不存在 → 400 VALIDATION_ERROR。
+         */
+        post: operations["create_action_api_v1_actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 行动详情（完整对象 + allowed_to）
+         * @description 详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。
+         */
+        get: operations["get_action_api_v1_actions__action_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/actions/{action_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 状态机转移（乐观锁 from_status；Human-Only 边见 TRANSITIONS）
+         * @description 转移；非法 422（extra.allowed_to）/ from 过期 409 / Human-Only 边
+         *     非 HUMAN 403 GUARD_POLICY_DENIED（GUARD_DENIED 审计由 service 落）。
+         */
+        patch: operations["transition_action_api_v1_actions__action_id__status_patch"];
+        trace?: never;
+    };
     "/api/v1/admin/adapters": {
         parameters: {
             query?: never;
@@ -64,6 +129,54 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 审计策略列表（status 过滤 + 游标分页）
+         * @description 游标分页（created_at DESC, policy_id DESC tiebreak）。
+         */
+        get: operations["list_policies_api_v1_admin_audit_policies_get"];
+        put?: never;
+        /**
+         * 创建审计策略（三维匹配数组缺省 [] = 通配）
+         * @description 创建策略 → 201（status=ACTIVE）；租户内重名 → 409 CONFLICT。
+         */
+        post: operations["create_policy_api_v1_admin_audit_policies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-policies/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * 删除审计策略
+         * @description 删除 → 204；不存在/跨租户统一 404。
+         */
+        delete: operations["delete_policy_api_v1_admin_audit_policies__policy_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * 局部更新审计策略（name 不可改；启停经 status）
+         * @description 局部更新 → 200 完整对象；不存在/跨租户统一 404。
+         */
+        patch: operations["update_policy_api_v1_admin_audit_policies__policy_id__patch"];
         trace?: never;
     };
     "/api/v1/audit-logs": {
@@ -208,7 +321,8 @@ export interface paths {
         put?: never;
         /**
          * 创建决策案例（case_no 日序号 + 证据链）
-         * @description 创建案例；source_id 事件/evidence_ids 证据不存在 → 400 VALIDATION_ERROR。
+         * @description 创建案例；source_id 事件/evidence_ids 证据不存在 → 400
+         *     VALIDATION_ERROR；source_id 已建案例 → 409 CONFLICT（0012 唯一索引）。
          */
         post: operations["create_case_api_v1_decisions_cases_post"];
         delete?: never;
@@ -225,8 +339,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 决策案例详情（含证据引用与决策记录）
-         * @description 详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。
+         * 决策案例详情（闭环聚合：证据引用/决策记录/event/steps/actions/证据链）
+         * @description 详情（B.5 + W4 EDP-028 闭环聚合）：event/steps/actions/evidence_chain
+         *     为可选字段（无源事件等场景缺省）；不存在/跨租户统一 404 NOT_FOUND
+         *     （不泄露存在性）。
          */
         get: operations["get_case_api_v1_decisions_cases__case_id__get"];
         put?: never;
@@ -257,6 +373,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ebms/decisions/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 待决案例（TOP DECISION）
+         * @description OPEN cases 按 risk（P0 最先）+ created_at 排序前 limit 条；
+         *     total_pending 为 OPEN 全量计数（B.9）。
+         */
+        get: operations["list_pending_decisions_api_v1_ebms_decisions_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ebms/exceptions": {
         parameters: {
             query?: never;
@@ -269,6 +406,69 @@ export interface paths {
          * @description 风险事件列表（occurred_at DESC）；case_id 为案例关联派生（B.9）。
          */
         get: operations["list_exceptions_api_v1_ebms_exceptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ebms/objectives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 经营目标列表
+         * @description 经营目标完整列表（同 reports/summary.objectives 全量版，无 period
+         *     过滤，B.9）。
+         */
+        get: operations["list_objectives_api_v1_ebms_objectives_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ebms/reports/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 经营简报（目标 + KPI + 最新风险动态）
+         * @description B.9 reports/summary：objectives（period 匹配）/ kpis（每 code 最近值）/
+         *     recent_changes_summary（风险事件最近 5 条）。
+         */
+        get: operations["report_summary_api_v1_ebms_reports_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ebms/todos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 待办聚合（决策 + 行动 + 异常确认）
+         * @description B.9 todos：pending_decisions（OPEN top 5）/ pending_actions（非终态，
+         *     due_date 升序空值在后）/ exceptions_to_confirm（无关联案例的风险事件）。
+         */
+        get: operations["list_todos_api_v1_ebms_todos_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -939,6 +1139,157 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActionCreateRequest
+         * @description POST /actions 请求（B.5）；case_id 提供但不存在 → 400。
+         */
+        ActionCreateRequest: {
+            /** Action Type */
+            action_type: string;
+            /** Case Id */
+            case_id?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Due Date */
+            due_date?: string | null;
+            /** Owner */
+            owner?: string | null;
+            /** Owner Role */
+            owner_role?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ActionCreatedResponse
+         * @description POST /actions 响应（201）。
+         */
+        ActionCreatedResponse: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Status */
+            status: string;
+        };
+        /**
+         * ActionDetailResponse
+         * @description GET /actions/{action_id} 响应：完整行动对象 + allowed_to。
+         */
+        ActionDetailResponse: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Action Type */
+            action_type: string;
+            /** Allowed To */
+            allowed_to?: components["schemas"]["TransitionItem"][];
+            /** Case Id */
+            case_id: string | null;
+            /** Completion Time */
+            completion_time: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Owner */
+            owner: string | null;
+            /** Owner Role */
+            owner_role: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Verified At */
+            verified_at: string | null;
+            /** Verified By */
+            verified_by: string | null;
+        };
+        /**
+         * ActionListItem
+         * @description GET /actions 列表项（B.5 简投影 + allowed_to）。
+         */
+        ActionListItem: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Allowed To */
+            allowed_to: components["schemas"]["TransitionItem"][];
+            /** Due Date */
+            due_date: string | null;
+            /** Owner */
+            owner: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ActionTransitionRef
+         * @description 行动允许转移引用（形状对齐 actions.TransitionItem；模块间仅可依赖
+         *     service，故本地重声明）。
+         */
+        ActionTransitionRef: {
+            /** Human Only */
+            human_only: boolean;
+            /** To Status */
+            to_status: string;
+        };
+        /**
+         * ActionTransitionRequest
+         * @description PATCH /actions/{action_id}/status 请求（B.5；乐观锁 from_status）。
+         */
+        ActionTransitionRequest: {
+            /** Comment */
+            comment?: string | null;
+            /**
+             * From Status
+             * @enum {string}
+             */
+            from_status: "PROPOSED" | "ASSIGNED" | "ACCEPTED" | "APPROVED" | "EXECUTING" | "COMPLETED" | "VERIFIED" | "CANCELLED" | "REJECTED";
+            /**
+             * To Status
+             * @enum {string}
+             */
+            to_status: "PROPOSED" | "ASSIGNED" | "ACCEPTED" | "APPROVED" | "EXECUTING" | "COMPLETED" | "VERIFIED" | "CANCELLED" | "REJECTED";
+        };
+        /**
+         * ActionTransitionResponse
+         * @description PATCH /actions/{action_id}/status 响应（200）。
+         */
+        ActionTransitionResponse: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * AdapterListItem
          * @description GET /admin/adapters 清单行（status/health 文案对齐 13.6 数据故事）。
          */
@@ -956,11 +1307,16 @@ export interface components {
         };
         /**
          * AdapterListResponse
-         * @description GET /admin/adapters 响应。
+         * @description GET /admin/adapters 响应（W3-24 收口：形状对齐 B.0 分页 envelope）。
+         *
+         *     next_cursor 恒 None——4 适配器固定清单无分页；不用 Page 泛型避免
+         *     total 例外（B.0 声明形态，前端按可选消费）。
          */
         AdapterListResponse: {
             /** Items */
             items: components["schemas"]["AdapterListItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
         };
         /**
          * AdapterStatusResponse
@@ -1211,6 +1567,27 @@ export interface components {
             status?: ("DRAFT" | "ACTIVE" | "RETIRED") | null;
         };
         /**
+         * CaseActionItem
+         * @description 案例关联行动（W4 EDP-028）：status/owner/due_date/allowed_to。
+         */
+        CaseActionItem: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Allowed To */
+            allowed_to?: components["schemas"]["ActionTransitionRef"][];
+            /** Due Date */
+            due_date?: string | null;
+            /** Owner */
+            owner?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * CaseCreateRequest
          * @description POST /decisions/cases 请求（B.5）。
          */
@@ -1254,9 +1631,14 @@ export interface components {
         };
         /**
          * CaseDetailResponse
-         * @description GET /decisions/cases/{case_id} 响应（B.5）。
+         * @description GET /decisions/cases/{case_id} 响应（B.5 + W4 EDP-028 闭环聚合）。
+         *
+         *     既有字段（case_id~decisions）形状与路径不动；event/steps/actions/
+         *     evidence_chain 为向后兼容新增（`response_model_exclude_none` 下可选）。
          */
         CaseDetailResponse: {
+            /** Actions */
+            actions?: components["schemas"]["CaseActionItem"][];
             /**
              * Case Id
              * Format: uuid
@@ -1268,6 +1650,9 @@ export interface components {
             };
             /** Decisions */
             decisions?: components["schemas"]["DecisionItem"][];
+            event?: components["schemas"]["CaseEventSummary"] | null;
+            /** Evidence Chain */
+            evidence_chain?: components["schemas"]["EvidenceChainItem"][];
             /** Evidence Refs */
             evidence_refs?: components["schemas"]["EvidenceRefItem"][];
             /** Options */
@@ -1280,6 +1665,36 @@ export interface components {
             risk_level: string | null;
             /** Status */
             status: string;
+            /** Steps */
+            steps?: components["schemas"]["CaseStepItem"][];
+        };
+        /**
+         * CaseEventSummary
+         * @description source 事件摘要（W4 EDP-028）：按 cases.source_id join event.events。
+         *
+         *     summary 复用 ebms exceptions 的 coalesce 派生（data.summary →
+         *     data.reason → event_type）；source_id 为空/非 UUID/事件不可见（RLS）
+         *     时整个 event 字段缺省。
+         */
+        CaseEventSummary: {
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Result Type */
+            result_type?: string | null;
+            /** Risk Level */
+            risk_level?: string | null;
+            /** Summary */
+            summary: string;
         };
         /**
          * CaseListItem
@@ -1314,6 +1729,35 @@ export interface components {
             key: string;
             /** Label */
             label: string;
+        };
+        /**
+         * CaseStepItem
+         * @description 闭环步骤节点（W4 EDP-028，时间升序时间线）。
+         *
+         *     EVENT=source 事件 / CASE_CREATED=案例创建 / DECISION=决策记录
+         *     （human_only=True）/ ACTION=行动创建节点 + 当前状态快照节点（human_only
+         *     按当前 status 是否存在 Human-Only 出边标注——APPROVED/COMPLETED 为 True；
+         *     逐转移明细经审计页 ACTION_UPDATE 可查，最小版留痕）。
+         */
+        CaseStepItem: {
+            /** Actor */
+            actor: string;
+            /** Detail */
+            detail?: string | null;
+            /** Human Only */
+            human_only?: boolean | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Step Type
+             * @enum {string}
+             */
+            step_type: "EVENT" | "CASE_CREATED" | "DECISION" | "ACTION";
+            /** Title */
+            title: string;
         };
         /**
          * CustomerRef
@@ -1550,6 +1994,33 @@ export interface components {
              * Format: uuid
              */
             tenant_id: string;
+        };
+        /**
+         * EvidenceChainItem
+         * @description 证据链节点（W4 EDP-028，设计 7.6 逆向追溯四层）。
+         *
+         *     RESULT=回流结果证据（links ref RESULT，ref_id=source 事件）/
+         *     DECISION=决策记录证据（ref DECISION，ref_id=case）/ EVIDENCE=ref_type=CASE
+         *     证据集合 / SOURCE=各证据 (source_system, source_record_id) 投影去重
+         *     （无 evidence_id/checksum）；verify 由前端按 evidence_id 调既有
+         *     GET /evidence/{id}/verify。
+         */
+        EvidenceChainItem: {
+            /** Checksum */
+            checksum?: string | null;
+            /** Evidence Id */
+            evidence_id?: string | null;
+            /**
+             * Layer
+             * @enum {string}
+             */
+            layer: "RESULT" | "DECISION" | "EVIDENCE" | "SOURCE";
+            /** Source Record Id */
+            source_record_id?: string | null;
+            /** Source System */
+            source_system?: string | null;
+            /** Title */
+            title: string;
         };
         /**
          * EvidenceCreateRequest
@@ -1844,6 +2315,22 @@ export interface components {
             warehouses: components["schemas"]["WarehouseItem"][];
         };
         /**
+         * KpiItem
+         * @description KPI 项（kpi_definitions join kpi_values 的每 code 最近期值）。
+         */
+        KpiItem: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Period */
+            period: string;
+            /** Unit */
+            unit?: string | null;
+            /** Value */
+            value: number;
+        };
+        /**
          * LastSyncSummary
          * @description 最近一次同步任务（status 端点内嵌；RUNNING 中 finished_at/stats 为空）。
          */
@@ -2086,6 +2573,25 @@ export interface components {
             source_system: string;
         };
         /**
+         * ObjectiveItem
+         * @description 经营目标项（A.8 objectives 投影；summary 与 /objectives 共用）。
+         */
+        ObjectiveItem: {
+            /** Current Value */
+            current_value?: number | null;
+            /**
+             * Objective Id
+             * Format: uuid
+             */
+            objective_id: string;
+            /** Status */
+            status: string;
+            /** Target Value */
+            target_value: number;
+            /** Title */
+            title: string;
+        };
+        /**
          * OpsMetrics
          * @description 运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致）。
          */
@@ -2179,6 +2685,15 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** Page[ActionListItem] */
+        Page_ActionListItem_: {
+            /** Items */
+            items: components["schemas"]["ActionListItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Total */
+            total?: number | null;
+        };
         /** Page[AuditLogItem] */
         Page_AuditLogItem_: {
             /** Items */
@@ -2251,6 +2766,15 @@ export interface components {
             /** Total */
             total?: number | null;
         };
+        /** Page[PolicyItem] */
+        Page_PolicyItem_: {
+            /** Items */
+            items: components["schemas"]["PolicyItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Total */
+            total?: number | null;
+        };
         /** Page[SkillListItem] */
         Page_SkillListItem_: {
             /** Items */
@@ -2297,6 +2821,117 @@ export interface components {
             total?: number | null;
         };
         /**
+         * PendingDecisionItem
+         * @description 待决案例项（B.9 decisions/pending；options 为 JSONB 原样透传）。
+         */
+        PendingDecisionItem: {
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /** Case No */
+            case_no?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Options */
+            options?: {
+                [key: string]: unknown;
+            }[];
+            /** Question */
+            question: string;
+            /** Risk Level */
+            risk_level?: string | null;
+        };
+        /**
+         * PendingDecisionsResponse
+         * @description GET /ebms/decisions/pending 响应（items + OPEN 全量计数）。
+         */
+        PendingDecisionsResponse: {
+            /** Items */
+            items?: components["schemas"]["PendingDecisionItem"][];
+            /** Total Pending */
+            total_pending: number;
+        };
+        /**
+         * PolicyCreateRequest
+         * @description POST /admin/audit-policies 请求；三维匹配数组缺省 []（=通配）。
+         */
+        PolicyCreateRequest: {
+            /** Actions */
+            actions?: string[];
+            /** Actor Types */
+            actor_types?: ("HUMAN" | "AI" | "SERVICE")[];
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+            /** Notify Channel */
+            notify_channel?: string | null;
+            /** Resource Types */
+            resource_types?: string[];
+        };
+        /**
+         * PolicyItem
+         * @description 策略完整对象（创建 201 / PATCH 200 / 列表项同形）。
+         */
+        PolicyItem: {
+            /** Actions */
+            actions: string[];
+            /** Actor Types */
+            actor_types: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Description */
+            description: string | null;
+            /** Name */
+            name: string;
+            /** Notify Channel */
+            notify_channel: string | null;
+            /**
+             * Policy Id
+             * Format: uuid
+             */
+            policy_id: string;
+            /** Resource Types */
+            resource_types: string[];
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+        };
+        /**
+         * PolicyUpdateRequest
+         * @description PATCH /{policy_id} 请求（局部更新；name 不可改）。
+         */
+        PolicyUpdateRequest: {
+            /** Actions */
+            actions?: string[] | null;
+            /** Actor Types */
+            actor_types?: ("HUMAN" | "AI" | "SERVICE")[] | null;
+            /** Description */
+            description?: string | null;
+            /** Notify Channel */
+            notify_channel?: string | null;
+            /** Resource Types */
+            resource_types?: string[] | null;
+            /** Status */
+            status?: ("ACTIVE" | "DISABLED") | null;
+        };
+        /**
          * PurchaseOrderItem
          * @description 采购单行（B.8：po_no/supplier_code/quantity/expected_date/status）。
          */
@@ -2339,6 +2974,20 @@ export interface components {
             access_token: string;
             /** Expires In */
             expires_in: number;
+        };
+        /**
+         * ReportSummaryResponse
+         * @description GET /ebms/reports/summary 响应（B.9；period 缺省 = objectives 最大期）。
+         */
+        ReportSummaryResponse: {
+            /** Kpis */
+            kpis?: components["schemas"]["KpiItem"][];
+            /** Objectives */
+            objectives?: components["schemas"]["ObjectiveItem"][];
+            /** Period */
+            period?: string | null;
+            /** Recent Changes Summary */
+            recent_changes_summary?: string[];
         };
         /**
          * SkillCreateRequest
@@ -2721,6 +3370,66 @@ export interface components {
             /** Storage Used Gb */
             storage_used_gb?: number | null;
         };
+        /**
+         * TodoExceptionItem
+         * @description todos.exceptions_to_confirm 项（无关联案例的风险事件）。
+         */
+        TodoExceptionItem: {
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Risk Level */
+            risk_level: string;
+        };
+        /**
+         * TodoPendingActionItem
+         * @description todos.pending_actions 项（非终态行动，due_date 升序）。
+         */
+        TodoPendingActionItem: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /** Due Date */
+            due_date?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * TodoPendingDecisionItem
+         * @description todos.pending_decisions 项（OPEN cases top 5 简投影）。
+         */
+        TodoPendingDecisionItem: {
+            /**
+             * Case Id
+             * Format: uuid
+             */
+            case_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Risk Level */
+            risk_level?: string | null;
+        };
+        /**
+         * TodosResponse
+         * @description GET /ebms/todos 响应（三段聚合，B.9）。
+         */
+        TodosResponse: {
+            /** Exceptions To Confirm */
+            exceptions_to_confirm?: components["schemas"]["TodoExceptionItem"][];
+            /** Pending Actions */
+            pending_actions?: components["schemas"]["TodoPendingActionItem"][];
+            /** Pending Decisions */
+            pending_decisions?: components["schemas"]["TodoPendingDecisionItem"][];
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -2936,6 +3645,16 @@ export interface components {
             trace_id: string;
         };
         /**
+         * TransitionItem
+         * @description 当前状态允许的转移项：{to_status, human_only}（to_status 字典序稳定）。
+         */
+        TransitionItem: {
+            /** Human Only */
+            human_only: boolean;
+            /** To Status */
+            to_status: string;
+        };
+        /**
          * UsageItem
          * @description GET /tenants/{id}/usage 列表项（B.14 字段 + events_duplicated 超集）。
          */
@@ -3055,6 +3774,258 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_actions_api_v1_actions_get: {
+        parameters: {
+            query?: {
+                /** @description 行动状态过滤 */
+                status?: ("PROPOSED" | "ASSIGNED" | "ACCEPTED" | "APPROVED" | "EXECUTING" | "COMPLETED" | "VERIFIED" | "CANCELLED" | "REJECTED") | null;
+                owner?: string | null;
+                case_id?: string | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ActionListItem_"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_action_api_v1_actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionCreatedResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_action_api_v1_actions__action_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionDetailResponse"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_action_api_v1_actions__action_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionTransitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionTransitionResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常；GUARD_POLICY_DENIED：策略拒绝该操作 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT：版本冲突（响应附 current_revision） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description INVALID_TRANSITION：状态机非法转移 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_adapters_api_v1_admin_adapters_get: {
         parameters: {
             query?: never;
@@ -3204,6 +4175,254 @@ export interface operations {
             };
             /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_policies_api_v1_admin_audit_policies_get: {
+        parameters: {
+            query?: {
+                /** @description 策略状态过滤 */
+                status?: ("ACTIVE" | "DISABLED") | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PolicyItem_"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_policy_api_v1_admin_audit_policies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyItem"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT：版本冲突（响应附 current_revision） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_policy_api_v1_admin_audit_policies__policy_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT：版本冲突（响应附 current_revision） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_policy_api_v1_admin_audit_policies__policy_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyItem"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description CONFLICT：版本冲突（响应附 current_revision） */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3763,6 +4982,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description CONFLICT：版本冲突（响应附 current_revision） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3912,6 +5140,65 @@ export interface operations {
             };
         };
     };
+    list_pending_decisions_api_v1_ebms_decisions_pending_get: {
+        parameters: {
+            query?: {
+                /** @description 返回条数上限 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingDecisionsResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_exceptions_api_v1_ebms_exceptions_get: {
         parameters: {
             query?: {
@@ -3971,6 +5258,159 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_objectives_api_v1_ebms_objectives_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveItem"][];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    report_summary_api_v1_ebms_reports_summary_get: {
+        parameters: {
+            query?: {
+                /** @description 目标周期（YYYY-MM；缺省取数据中最大期） */
+                period?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportSummaryResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_todos_api_v1_ebms_todos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodosResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -5655,6 +7095,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     get_customer_api_v1_tools_customers__customer_code__get: {
@@ -5720,6 +7169,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -5790,6 +7248,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     list_orders_api_v1_tools_orders_get: {
@@ -5850,6 +7317,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -5919,6 +7395,15 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     list_purchase_orders_api_v1_tools_purchase_orders_get: {
@@ -5979,6 +7464,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -6047,6 +7541,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description RATE_LIMITED：请求超出租户限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

@@ -267,3 +267,19 @@ erp            ORDER        48      43       48      48        True
 57. **W3R-15 429 未逐端点声明**：租户域端点运行时可返回 429 `RATE_LIMITED` + `Retry-After` 头（EDP-025 应用层限流），冻结契约（W3 35 路径）未逐端点声明 429——SDK/前端按可选处理，W4 契约窗口评估补声明。
 
 > Minor 备忘：`memories.reviewed_by` / `decisions.decided_by` 落 user UUID（B.11 示例为用户名）——SDK 消费方按 UUID 口径处理。
+
+**W4 闭环集成轮（W4，2026-09-18；初稿——波 1 后端 T1~T8 契约冻结实测，53 路径，指纹前 8 位 `687b6cd7`；波 2 T13/T15 续记终稿）**
+
+58. **W4-01 闭环 steps 无逐转移史**：case detail 的 `steps[]` 中每个行动仅两个节点（创建 + 当前状态快照），无逐转移明细——转移历史经审计页按 `ACTION_UPDATE`（resource_id=action_id）查询；后续按需补 `action_transitions` 历史表（最小版留痕）。
+59. **W4-02 steps 的 ACTION 快照 human_only 语义**：快照节点 `human_only` =「当前 status 的**下一转移**是否存在 Human-Only 边」（仅 APPROVED/COMPLETED 为 true，对应 EXECUTING/VERIFIED 两条边），**非**「到达该状态的边」——前端应按「待人工动作」渲染（人形图标 + tooltip），而非「该步为人工完成」。
+60. **W4-03 进程内单副本语义三处同类**：adapters `_jobs`（W3-41/42）、限流令牌桶（W3R-01）、审计策略缓存（W4 新增 `audit_policies/service.py` 进程内 `dict[tenant_id, list]`，模块内写路径失效）均为进程内单副本——多副本部署前需外置，W5+ 评估 Redis。
+61. **W4-04 policy_hits 仅覆盖切面 ORM 写路径**：审计策略命中打标挂在 `audit/aspect.py` 切面（ORM flush 路径）上；`record_explicit` 显式补点的审计行（GUARD_DENIED/EVIDENCE_VERIFY_FAILED/ACTION 状态转移拒绝等独立会话审计）**不参与** policy_hits 匹配——策略命中统计按此口径读。
+62. **W4-05 recent_changes_summary 为派生文案**：`GET /ebms/reports/summary` 的 `recent_changes_summary` 按风险事件动态拼装（`"订单 {order_no} {summary}"`，B.9 示例风格），非常量文案——内容随 seed/事件数据变化，前端按动态列表渲染。
+63. **W4-06 B.9 网关复用路径未实现**：B.9 列出的 `/ebms/decisions/{case_id}`、`/ebms/evidence/{id}`（EBMS 前端复用网关路径）未实现——消费方直接复用 B.5/B.4 既有路径（`/decisions/cases/{id}`、`/evidence/{id}`）；按消费方需要再落地。
+64. **W4-07 适配器日志抽屉仅最近一次 sync**：`GET /admin/adapters/{name}/status` 只保留最近一次 sync 的 status/stats（`_jobs` 覆盖语义）；适配器页日志抽屉按单次呈现，完整任务日志 W5（EDP-030）。
+65. **W4-08 test_adapters_api._set_demo_anchor 对 NULL attributes 静默无效**：`_set_demo_anchor` 用 `jsonb_set(attributes, ...)` 更新 seed 锚，当行 `attributes IS NULL` 时 jsonb_set 返回 NULL、更新静默无效（既有测试基建缺陷，当前 seed 行恒有 attributes 故未触发）——建议改 `jsonb_set(coalesce(attributes,'{}'), ...)`；本轮契约冻结不动他人测试，留待后续。
+66. **W4-09 tools 组 429 已逐端点声明，其余租户域仍缺**：本轮契约冻结 tools 组 7 端点统一补 429 `RATE_LIMITED` 声明（B.8 明文统一行为，经 `error_responses` 仅影响 OpenAPI 文档、不改运行时）；其余租户域端点运行时可 429 但未逐端点声明（沿 W3R-15 口径）——SDK/前端按可选处理。
+67. **W4-10 决策记录不自动落 DECISION 证据**：`POST /decisions/cases/{id}/records` 只写 decision.records + 案例置 DECIDED，不自动创建 `ref_type=DECISION` 证据——案例详情 `evidence_chain` 的 DECISION 层需消费方补建（M4 演示脚本 ④ 与 `test_m4_acceptance` 均按「决策意见落证最小补建」口径先 `POST /evidence` 再读链）；后续在 submit_record 内同事务落证收口。
+68. **W4-11 Action ״̬ת�� PATCH ˫�죨���ⳬ B.5���� JWT���ھ���**��`PATCH /actions/{id}/status` ʵ��Ϊ JWT `action:execute` / API Key `write:action` ˫�졪��SERVICE Key ��ִ��**�� Human-Only** ת�ƣ��� ACCEPTED��APPROVED����Human-Only ��ת�ƣ�APPROVED��EXECUTING��COMPLETED��VERIFIED���Խ� HUMAN��Guard + �����Ự�����ã�������ĵ� B.5 ԭ��Ϊ���� JWT������Ϊ���ⳬ������ʾ��������ƽ��� HITL ���裩��W4 spec ��3 ����ͬ���ھ���������� JWT-only ������ `test_actions_api`/`test_m4_acceptance` ���ԡ�
+69. **W4-12 �˹������߱�ʶΪ user UUID �ھ�**��`action.actions.verified_by`��`memory.memories.reviewed_by`��`decision.records.decided_by` ���� principal.id��UUID����B.5/B.11 ʾ��Ϊ�û�����"manager1"������SDK/ǰ�˰� UUID ��дչʾ��m4-demo.md �����ۣ��˴��ձ�Ϊ��ʽ��Ŀ����
+70. **W4-13 ��ʽ��� resource_type ͳһ fullname**��ACTION_UPDATE ��ʽ����ԭд���� `actions`������ͳһΪ `action.actions`���� GUARD_DENIED һ�£���`audit.policies` ����ǰ׺����������� `POLICIES_{VERB}` ����Ϊ `POLICY_{VERB}`��aspect ACTION_PREFIXES ��ӳ�䣬ǰ�˴ʱ�ͬ������

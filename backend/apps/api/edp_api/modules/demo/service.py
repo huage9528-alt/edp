@@ -10,7 +10,9 @@ demo_seed.anchor）：resolve_anchor 命中复用，缺失则 now(UTC) 截整点
 - 回流段：稳定幂等键 seed-demo:results:v1 → 幂等键 TTL 内归档命中直接
   返回存档响应（本批 0 新增），过期后仍靠 event_id 收敛为 duplicated——
   两条路径的统计口径统一为「本次实际写入」；
-- 案例：按 (source_type, source_id=源结果事件 id) 已存在即跳过。
+- 案例：按 (source_type, source_id=源结果事件 id) 已存在即跳过；
+- management 段（W4）：行 id = uuid5(NIL, "seed-mgmt:...")，ON CONFLICT DO
+  NOTHING upsert——锚复用 → 同 period 同 id → 重跑 0 新增。
 
 复位（reset=True）：逆依赖序清本租户业务数据（不碰审计，spec §3.3）+
 重锚后重建。
@@ -34,7 +36,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from edp_adapters import DemoErpAdapter, DemoMesAdapter, DemoPlmAdapter
 from edp_adapters.base import SourceRecord
@@ -49,7 +51,14 @@ from edp_api.core.contextvars import current_principal
 from edp_api.core.db import bind_tenant
 from edp_api.modules.decisions import service as decisions_service
 from edp_api.modules.decisions.schemas import CaseCreateRequest, CaseOptionIn
-from edp_api.modules.demo.dataset import DEMO_CASE, RESULT_EVENTS, ResultEventSpec
+from edp_api.modules.demo.dataset import (
+    DEMO_CASE,
+    MGMT_KPI_DEFINITIONS,
+    MGMT_KPI_VALUES,
+    MGMT_OBJECTIVES,
+    RESULT_EVENTS,
+    ResultEventSpec,
+)
 from edp_api.modules.events import service as events_service
 from edp_api.modules.events.schemas import EventIn
 from edp_api.modules.events.uuidv5 import derive_event_id
@@ -61,6 +70,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TENANT_SLUG = "default"
 
+# NIL 命名空间（Python 3.12 的 uuid 模块尚无 NIL 常量）
+_NIL = UUID(int=0)
+
 # 回流段接口层幂等键（spec §3.3：稳定键，重放命中归档）
 DEMO_RESULTS_IDEM_KEY = "seed-demo:results:v1"
 # 案例来源类型（与 decisions 模块 T10 的 source_type 约定一致）
@@ -68,16 +80,23 @@ CASE_SOURCE_TYPE = "capability.result"
 # 接入耗时确定性回填区间（ms）：60~299
 LATENCY_FLOOR_MS = 60
 LATENCY_SPAN_MS = 240
+# management 段审计列（raw SQL 写不经 ORM 切面，显式置服务主体）
+MGMT_ACTOR_ID = "adapter:erp"
+# kpi_values.source 标记（演示 seed 来源）
+MGMT_VALUE_SOURCE = "seed-mgmt"
 
 
 @dataclass(slots=True)
 class SeedStats:
     """seed 计数：快照段 fetched/registered/duplicated/failed + 回流段
-    events_accepted/events_duplicated + case_created。
+    events_accepted/events_duplicated + case_created + management 段
+    mgmt_inserted。
 
     events_* 为「本次实际写入」口径：归档命中（24h TTL 内）时存档响应中的
     accepted 计入 duplicated（本批 0 新增），与 event_id 幂等路径
     （accepted=0, duplicated=9）数值一致——两条重放路径统计可互换。
+    mgmt_inserted 同理为本次实际插入行数（首跑 12 = 3 objectives + 3
+    definitions + 6 values；锚复用重跑 0）。
     """
 
     fetched: int = 0
@@ -87,6 +106,7 @@ class SeedStats:
     events_accepted: int = 0
     events_duplicated: int = 0
     case_created: bool = False
+    mgmt_inserted: int = 0
 
 
 def _truncate_to_hour(value: datetime) -> datetime:
@@ -127,12 +147,18 @@ def merged_snapshot_records(anchor: datetime) -> list[SourceRecord]:
     return [by_system[spec.source_system][spec.source_id] for spec in SNAPSHOT_RECORDS]
 
 
-# 逆依赖序清场（子表 → 父表）：decision/action → evidence → event → sales →
+# 逆依赖序清场（子表 → 父表）：management（W4 独立段——kpi_values →
+# kpi_definitions 先于 objectives 无 FK 关联，且 management 无 FK 到领域表，
+# 放最前自成一段）→ decision/action → evidence → event → sales →
 # delivery/rd/quality/finance/support（FK 指向 business_objects/customers 的
 # 其余域表一并清，防残留行阻断父表删除）→ master（bom_items/boms 先于
 # products）→ business_objects → systems/idempotency_keys。
 # 不含 audit_logs（仅追加）与 tenants 控制面（spec §3.3）。
 _PURGE_SQL: tuple[str, ...] = (
+    # management 段（W4）：RESET 后 KPI/目标不残留旧锚期数
+    "DELETE FROM management.kpi_values WHERE tenant_id = :t",
+    "DELETE FROM management.kpi_definitions WHERE tenant_id = :t",
+    "DELETE FROM management.objectives WHERE tenant_id = :t",
     "DELETE FROM decision.records WHERE tenant_id = :t",
     "DELETE FROM action.actions WHERE tenant_id = :t",
     "DELETE FROM decision.cases WHERE tenant_id = :t",
@@ -207,6 +233,7 @@ async def seed(
         await _run_snapshot(factory, tenant_id, records, stats)
         await _advance_watermarks(factory, tenant_id, records)
         await _run_result_events(factory, tenant_id, anchor, stats)
+        await _run_management_seed(factory, tenant_id, anchor, stats)
         await _apply_demo_latency(factory, tenant_id, anchor)
         return stats
     finally:
@@ -315,6 +342,124 @@ async def _build_result_events(
             continue
         events.append(_to_event_in(spec, object_id, anchor))
     return events
+
+
+# ---- management 段（W4，EDP-012 残余）----
+
+_INSERT_OBJECTIVE_SQL = text("""
+    INSERT INTO management.objectives
+        (objective_id, tenant_id, title, metric_type, target_value,
+         current_value, period, status, created_by, updated_by)
+    VALUES
+        (:objective_id, :t, :title, :metric_type, :target_value,
+         :current_value, :period, :status, :actor, :actor)
+    ON CONFLICT DO NOTHING
+""")
+
+_INSERT_KPI_DEFINITION_SQL = text("""
+    INSERT INTO management.kpi_definitions
+        (kpi_id, tenant_id, code, name, unit, created_by, updated_by)
+    VALUES
+        (:kpi_id, :t, :code, :name, :unit, :actor, :actor)
+    ON CONFLICT DO NOTHING
+""")
+
+_INSERT_KPI_VALUE_SQL = text("""
+    INSERT INTO management.kpi_values
+        (value_id, tenant_id, kpi_id, period, value, source,
+         created_by, updated_by)
+    VALUES
+        (:value_id, :t, :kpi_id, :period, :value, :source, :actor, :actor)
+    ON CONFLICT DO NOTHING
+""")
+
+
+def _month_period(anchor: datetime) -> str:
+    """锚当月（YYYY-MM；锚恒为 UTC 截整点）。"""
+    return f"{anchor.year:04d}-{anchor.month:02d}"
+
+
+def _iso_week_period(anchor: datetime, week_offset: int) -> str:
+    """锚 ± 偏移周的 ISO 周期（YYYY-Www，对齐 B.9 示例 2026-W36 风格）。"""
+    iso = (anchor + timedelta(weeks=week_offset)).isocalendar()
+    return f"{iso.year:04d}-W{iso.week:02d}"
+
+
+def _mgmt_objective_id(title: str) -> UUID:
+    """objectives 行幂等键（标题为自然键；与 period 解耦——RESET 已清旧行）。"""
+    return uuid5(_NIL, f"seed-mgmt:objective:{title}")
+
+
+def _mgmt_kpi_id(code: str) -> UUID:
+    """kpi_definitions 行幂等键（code 唯一索引 uq_kpi_code 同语义）。"""
+    return uuid5(_NIL, f"seed-mgmt:kpi:{code}")
+
+
+def _mgmt_value_id(code: str, period: str) -> UUID:
+    """kpi_values 行幂等键（code + period；计划卡指定命名）。"""
+    return uuid5(_NIL, f"seed-mgmt:{code}:{period}")
+
+
+async def _run_management_seed(
+    factory: async_sessionmaker[AsyncSession],
+    tenant_id: UUID,
+    anchor: datetime,
+    stats: SeedStats,
+) -> None:
+    """management 段：objectives + kpi_definitions + kpi_values 确定性 upsert。
+
+    幂等：行 id = uuid5(NIL, "seed-mgmt:...") + ON CONFLICT DO NOTHING——
+    锚复用 → 同 period 同 id → 重跑 0 新增（mgmt_inserted 统计本次实际
+    插入）。跨模块无 management service，故以 raw SQL 写（与 _PURGE_SQL
+    同口径；RLS 会话已 bind_tenant）。
+    """
+    params: dict[str, object] = {"t": tenant_id, "actor": MGMT_ACTOR_ID}
+    async with factory.begin() as sess:
+        await bind_tenant(sess, tenant_id)
+        inserted = 0
+        month = _month_period(anchor)
+        for spec in MGMT_OBJECTIVES:
+            result = await sess.execute(
+                _INSERT_OBJECTIVE_SQL,
+                {
+                    **params,
+                    "objective_id": _mgmt_objective_id(spec.title),
+                    "title": spec.title,
+                    "metric_type": spec.metric_type,
+                    "target_value": spec.target_value,
+                    "current_value": spec.current_value,
+                    "period": month,
+                    "status": spec.status,
+                },
+            )
+            inserted += max(result.rowcount, 0)
+        for spec in MGMT_KPI_DEFINITIONS:
+            result = await sess.execute(
+                _INSERT_KPI_DEFINITION_SQL,
+                {
+                    **params,
+                    "kpi_id": _mgmt_kpi_id(spec.code),
+                    "code": spec.code,
+                    "name": spec.name,
+                    "unit": spec.unit,
+                },
+            )
+            inserted += max(result.rowcount, 0)
+        for spec in MGMT_KPI_VALUES:
+            period = _iso_week_period(anchor, spec.week_offset)
+            result = await sess.execute(
+                _INSERT_KPI_VALUE_SQL,
+                {
+                    **params,
+                    "value_id": _mgmt_value_id(spec.code, period),
+                    "kpi_id": _mgmt_kpi_id(spec.code),
+                    "period": period,
+                    "value": spec.value,
+                    "source": MGMT_VALUE_SOURCE,
+                },
+            )
+            inserted += max(result.rowcount, 0)
+        stats.mgmt_inserted = inserted
 
 
 def _to_event_in(spec: ResultEventSpec, object_id: UUID, anchor: datetime) -> EventIn:

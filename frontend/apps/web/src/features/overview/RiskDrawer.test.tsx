@@ -69,8 +69,9 @@ describe("风险抽屉（T5：列表点击/Hero 入口 → 抽屉联动）", () 
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(within(drawer).getAllByText(`RSK-${EVT_ORDER_B_RISK.slice(0, 8)}`).length).toBeGreaterThan(0);
-    expect(within(drawer).getByText("ORDER_RISK")).toBeInTheDocument();
+    // W4 泛化（W3-31 收口）：短 ID 统一尾 8；result_type 随事件详情异步到达
+    expect(within(drawer).getAllByText(`RSK-${EVT_ORDER_B_RISK.slice(-8)}`).length).toBeGreaterThan(0);
+    await waitFor(() => expect(within(drawer).getByText("ORDER_RISK")).toBeInTheDocument());
 
     await waitFor(() => {
       expect(drawer.querySelector('[data-dom-id="risk-drawer-amount"]')?.textContent).toBe("120,000");
@@ -100,7 +101,7 @@ describe("风险抽屉（T5：列表点击/Hero 入口 → 抽屉联动）", () 
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(within(drawer).getAllByText(`RSK-${EVT_ORDER_B_RISK.slice(0, 8)}`).length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText(`RSK-${EVT_ORDER_B_RISK.slice(-8)}`).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(drawer.querySelector('[data-dom-id="risk-drawer-amount"]')?.textContent).toBe("120,000");
     });

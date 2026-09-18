@@ -1,6 +1,420 @@
 {
   "components": {
     "schemas": {
+      "ActionCreateRequest": {
+        "description": "POST /actions 请求（B.5）；case_id 提供但不存在 → 400。",
+        "properties": {
+          "action_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Action Type",
+            "type": "string"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "owner_role": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Role"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "action_type"
+        ],
+        "title": "ActionCreateRequest",
+        "type": "object"
+      },
+      "ActionCreatedResponse": {
+        "description": "POST /actions 响应（201）。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "status",
+          "created_at"
+        ],
+        "title": "ActionCreatedResponse",
+        "type": "object"
+      },
+      "ActionDetailResponse": {
+        "description": "GET /actions/{action_id} 响应：完整行动对象 + allowed_to。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "allowed_to": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionItem"
+            },
+            "title": "Allowed To",
+            "type": "array"
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "completion_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Time"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "owner_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Role"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
+          }
+        },
+        "required": [
+          "action_id",
+          "case_id",
+          "title",
+          "description",
+          "action_type",
+          "status",
+          "owner",
+          "owner_role",
+          "due_date",
+          "completion_time",
+          "verified_at",
+          "verified_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ActionDetailResponse",
+        "type": "object"
+      },
+      "ActionListItem": {
+        "description": "GET /actions 列表项（B.5 简投影 + allowed_to）。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "allowed_to": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionItem"
+            },
+            "title": "Allowed To",
+            "type": "array"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "title",
+          "status",
+          "owner",
+          "due_date",
+          "allowed_to"
+        ],
+        "title": "ActionListItem",
+        "type": "object"
+      },
+      "ActionTransitionRef": {
+        "description": "行动允许转移引用（形状对齐 actions.TransitionItem；模块间仅可依赖\nservice，故本地重声明）。",
+        "properties": {
+          "human_only": {
+            "title": "Human Only",
+            "type": "boolean"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_status",
+          "human_only"
+        ],
+        "title": "ActionTransitionRef",
+        "type": "object"
+      },
+      "ActionTransitionRequest": {
+        "description": "PATCH /actions/{action_id}/status 请求（B.5；乐观锁 from_status）。",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "from_status": {
+            "enum": [
+              "PROPOSED",
+              "ASSIGNED",
+              "ACCEPTED",
+              "APPROVED",
+              "EXECUTING",
+              "COMPLETED",
+              "VERIFIED",
+              "CANCELLED",
+              "REJECTED"
+            ],
+            "title": "From Status",
+            "type": "string"
+          },
+          "to_status": {
+            "enum": [
+              "PROPOSED",
+              "ASSIGNED",
+              "ACCEPTED",
+              "APPROVED",
+              "EXECUTING",
+              "COMPLETED",
+              "VERIFIED",
+              "CANCELLED",
+              "REJECTED"
+            ],
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_status",
+          "to_status"
+        ],
+        "title": "ActionTransitionRequest",
+        "type": "object"
+      },
+      "ActionTransitionResponse": {
+        "description": "PATCH /actions/{action_id}/status 响应（200）。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "status",
+          "updated_at"
+        ],
+        "title": "ActionTransitionResponse",
+        "type": "object"
+      },
       "AdapterListItem": {
         "description": "GET /admin/adapters 清单行（status/health 文案对齐 13.6 数据故事）。",
         "properties": {
@@ -43,7 +457,7 @@
         "type": "object"
       },
       "AdapterListResponse": {
-        "description": "GET /admin/adapters 响应。",
+        "description": "GET /admin/adapters 响应（W3-24 收口：形状对齐 B.0 分页 envelope）。\n\nnext_cursor 恒 None——4 适配器固定清单无分页；不用 Page 泛型避免\ntotal 例外（B.0 声明形态，前端按可选消费）。",
         "properties": {
           "items": {
             "items": {
@@ -51,6 +465,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "required": [
@@ -630,6 +1055,61 @@
         "title": "CapabilityUpdateRequest",
         "type": "object"
       },
+      "CaseActionItem": {
+        "description": "案例关联行动（W4 EDP-028）：status/owner/due_date/allowed_to。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "allowed_to": {
+            "items": {
+              "$ref": "#/components/schemas/ActionTransitionRef"
+            },
+            "title": "Allowed To",
+            "type": "array"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "title",
+          "status"
+        ],
+        "title": "CaseActionItem",
+        "type": "object"
+      },
       "CaseCreateRequest": {
         "description": "POST /decisions/cases 请求（B.5）。",
         "properties": {
@@ -741,8 +1221,15 @@
         "type": "object"
       },
       "CaseDetailResponse": {
-        "description": "GET /decisions/cases/{case_id} 响应（B.5）。",
+        "description": "GET /decisions/cases/{case_id} 响应（B.5 + W4 EDP-028 闭环聚合）。\n\n既有字段（case_id~decisions）形状与路径不动；event/steps/actions/\nevidence_chain 为向后兼容新增（`response_model_exclude_none` 下可选）。",
         "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/CaseActionItem"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "case_id": {
             "format": "uuid",
             "title": "Case Id",
@@ -758,6 +1245,23 @@
               "$ref": "#/components/schemas/DecisionItem"
             },
             "title": "Decisions",
+            "type": "array"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseEventSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_chain": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceChainItem"
+            },
+            "title": "Evidence Chain",
             "type": "array"
           },
           "evidence_refs": {
@@ -793,6 +1297,13 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/CaseStepItem"
+            },
+            "title": "Steps",
+            "type": "array"
           }
         },
         "required": [
@@ -804,6 +1315,59 @@
           "status"
         ],
         "title": "CaseDetailResponse",
+        "type": "object"
+      },
+      "CaseEventSummary": {
+        "description": "source 事件摘要（W4 EDP-028）：按 cases.source_id join event.events。\n\nsummary 复用 ebms exceptions 的 coalesce 派生（data.summary →\ndata.reason → event_type）；source_id 为空/非 UUID/事件不可见（RLS）\n时整个 event 字段缺省。",
+        "properties": {
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Type"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "summary",
+          "occurred_at"
+        ],
+        "title": "CaseEventSummary",
         "type": "object"
       },
       "CaseListItem": {
@@ -882,6 +1446,64 @@
           "label"
         ],
         "title": "CaseOptionIn",
+        "type": "object"
+      },
+      "CaseStepItem": {
+        "description": "闭环步骤节点（W4 EDP-028，时间升序时间线）。\n\nEVENT=source 事件 / CASE_CREATED=案例创建 / DECISION=决策记录\n（human_only=True）/ ACTION=行动创建节点 + 当前状态快照节点（human_only\n按当前 status 是否存在 Human-Only 出边标注——APPROVED/COMPLETED 为 True；\n逐转移明细经审计页 ACTION_UPDATE 可查，最小版留痕）。",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "human_only": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Only"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "step_type": {
+            "enum": [
+              "EVENT",
+              "CASE_CREATED",
+              "DECISION",
+              "ACTION"
+            ],
+            "title": "Step Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_type",
+          "occurred_at",
+          "actor",
+          "title"
+        ],
+        "title": "CaseStepItem",
         "type": "object"
       },
       "CustomerRef": {
@@ -1433,6 +2055,76 @@
           "created_at"
         ],
         "title": "EventResponse",
+        "type": "object"
+      },
+      "EvidenceChainItem": {
+        "description": "证据链节点（W4 EDP-028，设计 7.6 逆向追溯四层）。\n\nRESULT=回流结果证据（links ref RESULT，ref_id=source 事件）/\nDECISION=决策记录证据（ref DECISION，ref_id=case）/ EVIDENCE=ref_type=CASE\n证据集合 / SOURCE=各证据 (source_system, source_record_id) 投影去重\n（无 evidence_id/checksum）；verify 由前端按 evidence_id 调既有\nGET /evidence/{id}/verify。",
+        "properties": {
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "layer": {
+            "enum": [
+              "RESULT",
+              "DECISION",
+              "EVIDENCE",
+              "SOURCE"
+            ],
+            "title": "Layer",
+            "type": "string"
+          },
+          "source_record_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Record Id"
+          },
+          "source_system": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source System"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "layer",
+          "title"
+        ],
+        "title": "EvidenceChainItem",
         "type": "object"
       },
       "EvidenceCreateRequest": {
@@ -2015,6 +2707,46 @@
         "title": "InventoryResponse",
         "type": "object"
       },
+      "KpiItem": {
+        "description": "KPI 项（kpi_definitions join kpi_values 的每 code 最近期值）。",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "value",
+          "period"
+        ],
+        "title": "KpiItem",
+        "type": "object"
+      },
       "LastSyncSummary": {
         "description": "最近一次同步任务（status 端点内嵌；RUNNING 中 finished_at/stats 为空）。",
         "properties": {
@@ -2550,6 +3282,47 @@
         "title": "ObjectUpsertRequest",
         "type": "object"
       },
+      "ObjectiveItem": {
+        "description": "经营目标项（A.8 objectives 投影；summary 与 /objectives 共用）。",
+        "properties": {
+          "current_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "objective_id": {
+            "format": "uuid",
+            "title": "Objective Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_value": {
+            "title": "Target Value",
+            "type": "number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective_id",
+          "title",
+          "target_value",
+          "status"
+        ],
+        "title": "ObjectiveItem",
+        "type": "object"
+      },
       "OpsMetrics": {
         "description": "运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致）。",
         "properties": {
@@ -2832,6 +3605,44 @@
           "evidence_hint"
         ],
         "title": "OrderSummary",
+        "type": "object"
+      },
+      "Page_ActionListItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActionListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ActionListItem]",
         "type": "object"
       },
       "Page_AuditLogItem_": {
@@ -3138,6 +3949,44 @@
         "title": "Page[ObjectResponse]",
         "type": "object"
       },
+      "Page_PolicyItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[PolicyItem]",
+        "type": "object"
+      },
       "Page_SkillListItem_": {
         "properties": {
           "items": {
@@ -3328,6 +4177,357 @@
         "title": "Page[UsageItem]",
         "type": "object"
       },
+      "PendingDecisionItem": {
+        "description": "待决案例项（B.9 decisions/pending；options 为 JSONB 原样透传）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case No"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          }
+        },
+        "required": [
+          "case_id",
+          "question",
+          "created_at"
+        ],
+        "title": "PendingDecisionItem",
+        "type": "object"
+      },
+      "PendingDecisionsResponse": {
+        "description": "GET /ebms/decisions/pending 响应（items + OPEN 全量计数）。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingDecisionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_pending": {
+            "title": "Total Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_pending"
+        ],
+        "title": "PendingDecisionsResponse",
+        "type": "object"
+      },
+      "PolicyCreateRequest": {
+        "description": "POST /admin/audit-policies 请求；三维匹配数组缺省 []（=通配）。",
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Actions",
+            "type": "array"
+          },
+          "actor_types": {
+            "items": {
+              "enum": [
+                "HUMAN",
+                "AI",
+                "SERVICE"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Actor Types",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notify_channel": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Channel"
+          },
+          "resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Resource Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PolicyCreateRequest",
+        "type": "object"
+      },
+      "PolicyItem": {
+        "description": "策略完整对象（创建 201 / PATCH 200 / 列表项同形）。",
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "actor_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Types",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notify_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Channel"
+          },
+          "policy_id": {
+            "format": "uuid",
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Resource Types",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "policy_id",
+          "name",
+          "description",
+          "resource_types",
+          "actions",
+          "actor_types",
+          "notify_channel",
+          "status",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "PolicyItem",
+        "type": "object"
+      },
+      "PolicyUpdateRequest": {
+        "description": "PATCH /{policy_id} 请求（局部更新；name 不可改）。",
+        "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
+          "actor_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "HUMAN",
+                    "AI",
+                    "SERVICE"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Types"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "notify_channel": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Channel"
+          },
+          "resource_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Types"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ACTIVE",
+                  "DISABLED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "PolicyUpdateRequest",
+        "type": "object"
+      },
       "PurchaseOrderItem": {
         "description": "采购单行（B.8：po_no/supplier_code/quantity/expected_date/status）。",
         "properties": {
@@ -3449,6 +4649,45 @@
           "expires_in"
         ],
         "title": "RefreshResponse",
+        "type": "object"
+      },
+      "ReportSummaryResponse": {
+        "description": "GET /ebms/reports/summary 响应（B.9；period 缺省 = objectives 最大期）。",
+        "properties": {
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/KpiItem"
+            },
+            "title": "Kpis",
+            "type": "array"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectiveItem"
+            },
+            "title": "Objectives",
+            "type": "array"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "recent_changes_summary": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recent Changes Summary",
+            "type": "array"
+          }
+        },
+        "title": "ReportSummaryResponse",
         "type": "object"
       },
       "SkillCreateRequest": {
@@ -4166,6 +5405,123 @@
         "title": "TenantUsage",
         "type": "object"
       },
+      "TodoExceptionItem": {
+        "description": "todos.exceptions_to_confirm 项（无关联案例的风险事件）。",
+        "properties": {
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "risk_level"
+        ],
+        "title": "TodoExceptionItem",
+        "type": "object"
+      },
+      "TodoPendingActionItem": {
+        "description": "todos.pending_actions 项（非终态行动，due_date 升序）。",
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "title",
+          "status"
+        ],
+        "title": "TodoPendingActionItem",
+        "type": "object"
+      },
+      "TodoPendingDecisionItem": {
+        "description": "todos.pending_decisions 项（OPEN cases top 5 简投影）。",
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          }
+        },
+        "required": [
+          "case_id",
+          "created_at"
+        ],
+        "title": "TodoPendingDecisionItem",
+        "type": "object"
+      },
+      "TodosResponse": {
+        "description": "GET /ebms/todos 响应（三段聚合，B.9）。",
+        "properties": {
+          "exceptions_to_confirm": {
+            "items": {
+              "$ref": "#/components/schemas/TodoExceptionItem"
+            },
+            "title": "Exceptions To Confirm",
+            "type": "array"
+          },
+          "pending_actions": {
+            "items": {
+              "$ref": "#/components/schemas/TodoPendingActionItem"
+            },
+            "title": "Pending Actions",
+            "type": "array"
+          },
+          "pending_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/TodoPendingDecisionItem"
+            },
+            "title": "Pending Decisions",
+            "type": "array"
+          }
+        },
+        "title": "TodosResponse",
+        "type": "object"
+      },
       "TokenResponse": {
         "properties": {
           "access_token": {
@@ -4738,6 +6094,25 @@
         "title": "TraceListItem",
         "type": "object"
       },
+      "TransitionItem": {
+        "description": "当前状态允许的转移项：{to_status, human_only}（to_status 字典序稳定）。",
+        "properties": {
+          "human_only": {
+            "title": "Human Only",
+            "type": "boolean"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_status",
+          "human_only"
+        ],
+        "title": "TransitionItem",
+        "type": "object"
+      },
       "UsageItem": {
         "description": "GET /tenants/{id}/usage 列表项（B.14 字段 + events_duplicated 超集）。",
         "properties": {
@@ -4980,6 +6355,399 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/actions": {
+      "get": {
+        "description": "游标分页（created_at DESC, action_id DESC tiebreak）；简投影。",
+        "operationId": "list_actions_api_v1_actions_get",
+        "parameters": [
+          {
+            "description": "行动状态过滤",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "PROPOSED",
+                    "ASSIGNED",
+                    "ACCEPTED",
+                    "APPROVED",
+                    "EXECUTING",
+                    "COMPLETED",
+                    "VERIFIED",
+                    "CANCELLED",
+                    "REJECTED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "行动状态过滤",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner"
+            }
+          },
+          {
+            "in": "query",
+            "name": "case_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Case Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ActionListItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "行动列表（status/owner/case_id 过滤，简投影附 allowed_to）",
+        "tags": [
+          "actions"
+        ]
+      },
+      "post": {
+        "description": "创建行动；case_id 提供但不存在 → 400 VALIDATION_ERROR。",
+        "operationId": "create_action_api_v1_actions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "创建行动任务（→ PROPOSED）",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
+    "/api/v1/actions/{action_id}": {
+      "get": {
+        "description": "详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。",
+        "operationId": "get_action_api_v1_actions__action_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "行动详情（完整对象 + allowed_to）",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
+    "/api/v1/actions/{action_id}/status": {
+      "patch": {
+        "description": "转移；非法 422（extra.allowed_to）/ from 过期 409 / Human-Only 边\n非 HUMAN 403 GUARD_POLICY_DENIED（GUARD_DENIED 审计由 service 落）。",
+        "operationId": "transition_action_api_v1_actions__action_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionTransitionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常；GUARD_POLICY_DENIED：策略拒绝该操作"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "INVALID_TRANSITION：状态机非法转移"
+          }
+        },
+        "summary": "状态机转移（乐观锁 from_status；Human-Only 边见 TRANSITIONS）",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
     "/api/v1/admin/adapters": {
       "get": {
         "description": "注册表适配器清单（mode/运行状态/探活/水位时间）。",
@@ -5185,6 +6953,349 @@
         "summary": "触发适配器同步（异步执行）",
         "tags": [
           "adapters"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-policies": {
+      "get": {
+        "description": "游标分页（created_at DESC, policy_id DESC tiebreak）。",
+        "operationId": "list_policies_api_v1_admin_audit_policies_get",
+        "parameters": [
+          {
+            "description": "策略状态过滤",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACTIVE",
+                    "DISABLED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "策略状态过滤",
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PolicyItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "审计策略列表（status 过滤 + 游标分页）",
+        "tags": [
+          "audit-policies"
+        ]
+      },
+      "post": {
+        "description": "创建策略 → 201（status=ACTIVE）；租户内重名 → 409 CONFLICT。",
+        "operationId": "create_policy_api_v1_admin_audit_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "创建审计策略（三维匹配数组缺省 [] = 通配）",
+        "tags": [
+          "audit-policies"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-policies/{policy_id}": {
+      "delete": {
+        "description": "删除 → 204；不存在/跨租户统一 404。",
+        "operationId": "delete_policy_api_v1_admin_audit_policies__policy_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "删除审计策略",
+        "tags": [
+          "audit-policies"
+        ]
+      },
+      "patch": {
+        "description": "局部更新 → 200 完整对象；不存在/跨租户统一 404。",
+        "operationId": "update_policy_api_v1_admin_audit_policies__policy_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性）"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "局部更新审计策略（name 不可改；启停经 status）",
+        "tags": [
+          "audit-policies"
         ]
       }
     },
@@ -6005,7 +8116,7 @@
         ]
       },
       "post": {
-        "description": "创建案例；source_id 事件/evidence_ids 证据不存在 → 400 VALIDATION_ERROR。",
+        "description": "创建案例；source_id 事件/evidence_ids 证据不存在 → 400\nVALIDATION_ERROR；source_id 已建案例 → 409 CONFLICT（0012 唯一索引）。",
         "operationId": "create_case_api_v1_decisions_cases_post",
         "requestBody": {
           "content": {
@@ -6058,6 +8169,16 @@
             },
             "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CONFLICT：版本冲突（响应附 current_revision）"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -6077,7 +8198,7 @@
     },
     "/api/v1/decisions/cases/{case_id}": {
       "get": {
-        "description": "详情；不存在/跨租户统一 404 NOT_FOUND（不泄露存在性）。",
+        "description": "详情（B.5 + W4 EDP-028 闭环聚合）：event/steps/actions/evidence_chain\n为可选字段（无源事件等场景缺省）；不存在/跨租户统一 404 NOT_FOUND\n（不泄露存在性）。",
         "operationId": "get_case_api_v1_decisions_cases__case_id__get",
         "parameters": [
           {
@@ -6143,7 +8264,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "决策案例详情（含证据引用与决策记录）",
+        "summary": "决策案例详情（闭环聚合：证据引用/决策记录/event/steps/actions/证据链）",
         "tags": [
           "decisions"
         ]
@@ -6250,6 +8371,84 @@
         "summary": "提交决策记录（Human-Only）",
         "tags": [
           "decisions"
+        ]
+      }
+    },
+    "/api/v1/ebms/decisions/pending": {
+      "get": {
+        "description": "OPEN cases 按 risk（P0 最先）+ created_at 排序前 limit 条；\ntotal_pending 为 OPEN 全量计数（B.9）。",
+        "operationId": "list_pending_decisions_api_v1_ebms_decisions_pending_get",
+        "parameters": [
+          {
+            "description": "返回条数上限",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "返回条数上限",
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingDecisionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "待决案例（TOP DECISION）",
+        "tags": [
+          "ebms"
         ]
       }
     },
@@ -6380,6 +8579,196 @@
           }
         },
         "summary": "风险事件列表（EBMS 异常视图）",
+        "tags": [
+          "ebms"
+        ]
+      }
+    },
+    "/api/v1/ebms/objectives": {
+      "get": {
+        "description": "经营目标完整列表（同 reports/summary.objectives 全量版，无 period\n过滤，B.9）。",
+        "operationId": "list_objectives_api_v1_ebms_objectives_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ObjectiveItem"
+                  },
+                  "title": "Response List Objectives Api V1 Ebms Objectives Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          }
+        },
+        "summary": "经营目标列表",
+        "tags": [
+          "ebms"
+        ]
+      }
+    },
+    "/api/v1/ebms/reports/summary": {
+      "get": {
+        "description": "B.9 reports/summary：objectives（period 匹配）/ kpis（每 code 最近值）/\nrecent_changes_summary（风险事件最近 5 条）。",
+        "operationId": "report_summary_api_v1_ebms_reports_summary_get",
+        "parameters": [
+          {
+            "description": "目标周期（YYYY-MM；缺省取数据中最大期）",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "目标周期（YYYY-MM；缺省取数据中最大期）",
+              "title": "Period"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "经营简报（目标 + KPI + 最新风险动态）",
+        "tags": [
+          "ebms"
+        ]
+      }
+    },
+    "/api/v1/ebms/todos": {
+      "get": {
+        "description": "B.9 todos：pending_decisions（OPEN top 5）/ pending_actions（非终态，\ndue_date 升序空值在后）/ exceptions_to_confirm（无关联案例的风险事件）。",
+        "operationId": "list_todos_api_v1_ebms_todos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodosResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          }
+        },
+        "summary": "待办聚合（决策 + 行动 + 异常确认）",
         "tags": [
           "ebms"
         ]
@@ -9022,6 +11411,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "产品 BOM（ACTIVE 版本 + 用量行）",
@@ -9105,6 +11504,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "客户主数据（name/level/attributes）",
@@ -9190,6 +11599,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "物料库存（仓库粒度 + 合计可用量）",
@@ -9302,6 +11721,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "订单摘要列表（customer/status 过滤）",
@@ -9385,6 +11814,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "订单详情（含行明细与客户）",
@@ -9497,6 +11936,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "采购单列表（material_code/status 过滤）",
@@ -9582,6 +12031,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "RATE_LIMITED：请求超出租户限流"
           }
         },
         "summary": "供应商交期（物料粒度）",

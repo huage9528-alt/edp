@@ -366,7 +366,10 @@ async def test_list_adapters_analyst_200(client: httpx.AsyncClient) -> None:
     headers = await _login(client, "analyst1")
     resp = await client.get(ADAPTERS, headers=headers)
     assert resp.status_code == 200, resp.text
-    items = resp.json()["items"]
+    body = resp.json()
+    assert body["next_cursor"] is None  # 固定清单无分页（W3-24 收口，B.0 envelope）
+    items = body["items"]
+    assert len(items) == 4
     assert [item["adapter"] for item in items] == [
         "erp",
         "erp-demo",

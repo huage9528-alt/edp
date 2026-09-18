@@ -22,7 +22,10 @@ from edp_api.core.security.principal import Principal
 # 角色持有 trace:write）；
 # memory:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、memory:review →
 # PLATFORM_ADMIN/ADMIN/MANAGER（0011；SERVICE 走 readonly / write:memory
-# scope 轨道，不入本矩阵）。
+# scope 轨道，不入本矩阵）；
+# 0012 新增 audit:policy_read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、
+# audit:policy_write → PLATFORM_ADMIN/ADMIN（审计策略管理轨道，EDP-032；
+# 策略仅人工管理，无 SERVICE scope 轨道）。
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -36,6 +39,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "audit:policy_read",
+        "audit:policy_write",
         "adapters:read",
         "adapters:write",
         "tools:read",
@@ -57,6 +62,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "audit:policy_read",
+        "audit:policy_write",
         "adapters:read",
         "adapters:write",
         "tools:read",
@@ -72,6 +79,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "audit:policy_read",
         "adapters:read",
         "decision:decide",
         "action:execute",
@@ -92,6 +100,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "audit:policy_read",
         "adapters:read",
         "tools:read",
         "ebms:read",

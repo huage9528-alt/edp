@@ -62,6 +62,11 @@ class AdapterListItem(BaseModel):
 
 
 class AdapterListResponse(BaseModel):
-    """GET /admin/adapters 响应。"""
+    """GET /admin/adapters 响应（W3-24 收口：形状对齐 B.0 分页 envelope）。
+
+    next_cursor 恒 None——4 适配器固定清单无分页；不用 Page 泛型避免
+    total 例外（B.0 声明形态，前端按可选消费）。
+    """
 
     items: list[AdapterListItem]
+    next_cursor: str | None = None

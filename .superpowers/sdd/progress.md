@@ -160,3 +160,42 @@ Branch: feat/w3-remaining（自 master 4a1715c 切出）
 **评审债务（限额期间内联实施，待补独立评审）**：T4（memories）、T5（mes/产能）、T6（限流）、T7（usage API）、T8（证据 q+契约）、T9（证据库页）、T10（质量页）、T11（健康页）、T12（收口）——共 9 项任务评审 + 整分支终审未做（T1~T3 已评）。限额恢复后补做；发现问题的修复以新提交落 master。已内联验证证据：各任务定向测试 + 全量 439/259 绿 + lint/import-linter + 契约指纹 + migrate-check 容器等价。
 
 **合并记录（2026-09-17）**：按用户决策「先合并，评审债务后补」合并 `feat/w3-remaining` → master（分支保留，无 remote）；合并后复跑契约指纹与后端 lint。
+
+---
+
+# SDD Progress Ledger — EDP W4（M4 闭环集成 + W3 遗漏收编）
+
+Plan: docs/superpowers/plans/2026-09-17-edp-w4.md
+Spec: docs/superpowers/specs/2026-09-17-edp-w4-design.md（ff84165 + 权限码修订 673fe4f）
+Branch: feat/w4（自 master 673fe4f 切出；T1 后 rebase 吸收评审修复 f33ed13/a0d188f）
+
+## 并行线：W3R 评审债务补评（开工即派发，先于 W4 主线闭环）
+
+| 项 | 结论 | 处置 |
+|---|---|---|
+| 后端 T4~T8 五项 + 终审 | Approved with conditions（4 Important：capacity 审计排除/nginx 样例缺失/429 未声明/缺口漏录） | 修复批次 master f33ed13 |
+| 前端 T9~T12 四项 + 终审 | Approved with conditions（5 Important：chips 全清/Derived 判定/KPI 全量/重校验刷新/m3-demo 变量） | 修复批次 master a0d188f |
+
+## 主线任务表（子代理逐任务实施 + 主线抽查）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | 5f10373 | 0012 迁移（audit.policies + cases 唯一索引 W3-23 + audit:policy 两码 + write:action scope）；56 测试；容器 upgrade→downgrade→upgrade 全周期；RLS 键按仓库惯例 app.tenant_id |
+| T2 | DONE | d0252f1 | 9 态转移表单点/422 extra.allowed_to/rowcount 409/Human-Only 独立会话审计/comment 落证据（object_id 经 case.source_id→event 解析，无源跳过留痕）；+108 测试（全量 552）；发现 test_adapters_api _set_demo_anchor NULL attributes 缺陷（W4-08） |
+| T3 | DONE | b092c86 | B.9 四端点（summary/pending/todos/objectives）+ management seed 幂等；+6（558）；limit 越界 400 非 422 留痕 |
+| T4 | DONE | 1de8038 | audit_policies 四端点 + 三维匹配打标（进程内缓存单副本 W4-03）；require_permission 直用（权限码非 resource:mode 形态）；+8（566）；record_explicit 路径不打标（W4-04） |
+| T5 | DONE | dc49b18 | case detail 扩展（event/steps/actions/evidence_chain 向后兼容）+ ebms 标量子查询 + source 重复 409；+5（571）；steps ACTION 快照 human_only=下一转移语义（W4-02） |
+| T6 | DONE | ba03e99 | 越权矩阵 41 用例（跨租户 16+3/角色 8/Key 轨 9/RLS 直查 5）进 CI 常驻；/tenants/{A} 为 403 非 404（授权先于存在性，留痕）；+41（612） |
+| T7 | DONE | eca7848 | AdapterListResponse 补 next_cursor 恒 null（W3-24） |
+| T8 | DONE | f0c4ad0 | 契约 44→53 路径（12 新操作）+ tools 7 端点 429 声明（B.8/W4-09）+ SDK regen；指纹 09f2dae7→687b6cd7；缺口 W4-01~09 初稿 |
+| T9 | DONE | 09324ff | /cases 列表+详情四区（问题卡/证据链横向图 verify 联动/Steps 人形图标/行动卡）+ RiskDrawer 泛化提升 shared（尾 8 收口 W3-31）；web 141→148 |
+| T10 | DONE | 02abdef | /decisions 待决+Human-Only 表单、/actions 9 态状态轴+allowed_to 按钮+409 逐字文案；422 重渲染经详情重拉（SDK 不透传 extra，W4 留痕）；148→160 |
+| T11 | DONE | 1153fb2 | 7 列/五参筛选/chips 按键清除/导出 CSV（1000 上限+BOM）/策略 tab CRUD/GUARD 高亮/词表（W3R-03/13/14 收口）；160→174 |
+| T12 | DONE | f0dc25b | 适配器页三弹窗+可回退向导+日志抽屉（W5 提示）+W3-37 useAdapterOptions 门控；fixtures 实为 5 适配器沿既有集；174→184 |
+| T13 | DONE | c972e40 | m4-demo.md 七段实测读数（compose --build + RESET）+ test_m4_acceptance 6 用例（真·并发 409）+ 彩排清单（W3-38）+ W4-10；+6（618） |
+| T14 | DONE | 97665ef | staging 双节点（etcd×1+patroni×2 自建镜像+pgbackrest）双向 switchover 2/2、/healthz 40/40、lag 3.2ms、全量备份 32.3MB、rollback 实测；单写入口不自动跟随（W5 HAProxy）；EDP_JWT_SECRET 弱密钥留 W5 |
+| T15 | DONE | 38bf833+（本行随收口 commit） | verify-all：backend-lint/test（make 顺序证绿）/frontend 302（184+22+96，Makefile 防抖参数固化）/contract 687b6cd7/migrate-check 一次性容器 15433 exit 0；终审 Approved with conditions 两项闭环（W4-11~13 + spec 同步） |
+
+终审（整分支）：**Approved with conditions→已闭环**——16 节逐节核对（终审代理报告）：范围零越界（无关文件零混入）、契约三处指纹一致、波 2 零 contracts/ 改动、四页与 SDK 类型对齐、越权矩阵/演示读数/staging 演练全实证。条件项：① I-1 PATCH 双轨超 B.5「仅 JWT」→ 保留有意行为，W4-11 + spec §3 同步；② T15 收口 → 本行 + verify-all 全绿。Minor 顺手闭环：POLICY 审计前缀、ACTION_UPDATE resource fullname 统一（W4-13）；其余 Minor（422 extra 透传/词表预留前缀/notify_channel 演示文案/JWT 弱密钥）留 W5。
+
+收口记录（2026-09-18）：feat/w4 15 任务 + 并行评审线全部闭环；测试基线 439/259 → 618/302；缺口清单 W4-01~13 终稿落 docs/demo/m2-demo.md；M4 出口三条：7 分钟脚本（m4-demo.md 实测读数）+ 越权矩阵 0 泄露进 CI（test_security_matrix.py 41 用例）+ 彩排 ≥2 次中 1 次仓库内可复现（浏览器级 5 步清单人工执行）——三方彩排与 PM/Tech Lead 签认线下补。

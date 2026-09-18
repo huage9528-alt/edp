@@ -8,10 +8,14 @@
   由服务端自动落结果证据（T9）；
 - DEMO_CASE → decisions 服务创建（OPEN；source_event_ref 指向场景 2 结果
   事件的对象自然键，evidence_source_refs 自然键 seed 时解析为源快照证据
-  id）。
+  id）；
+- MGMT_OBJECTIVES / MGMT_KPI_DEFINITIONS / MGMT_KPI_VALUES → management 段
+  （W4，EDP-012 残余）：objectives period = 锚当月（YYYY-MM）、kpi_values
+  period = 锚 ISO 周（YYYY-Www）± 偏移。
 
 确定性：无随机数、无 now()；值对齐 frontend MSW data/events.ts 逐字段与
-data/ebms.ts 的 summary/order_no 文案逐字；重放幂等键 seed-demo:results:v1。
+data/ebms.ts 的 summary/order_no 文案逐字；重放幂等键 seed-demo:results:v1；
+management 行 id = uuid5(NIL, "seed-mgmt:...")（重跑 0 新增）。
 """
 
 from __future__ import annotations
@@ -53,6 +57,35 @@ class DemoCaseSpec:
     risk_level: str
     source_event_ref: tuple[str, str]  # 源结果事件的对象自然键
     evidence_source_refs: tuple[tuple[str, str], ...]  # 证据来源对象自然键
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectiveSpec:
+    """经营目标（A.8 management.objectives；period 由 seed 锚派生当月）。"""
+
+    title: str
+    metric_type: str
+    target_value: float
+    current_value: float
+    status: str = "ACTIVE"
+
+
+@dataclass(frozen=True, slots=True)
+class KpiDefinitionSpec:
+    """KPI 定义（A.8 management.kpi_definitions）。"""
+
+    code: str
+    name: str
+    unit: str
+
+
+@dataclass(frozen=True, slots=True)
+class KpiValueSpec:
+    """KPI 数值（A.8 management.kpi_values；period = seed 锚 ISO 周 + 偏移）。"""
+
+    code: str
+    week_offset: int  # 0 = 锚当周、-1 = 前一周
+    value: float
 
 
 RESULT_EVENTS: tuple[ResultEventSpec, ...] = (
@@ -240,4 +273,29 @@ DEMO_CASE = DemoCaseSpec(
         ("MATERIAL", "X-100"),
         ("PURCHASE_ORDER", "PO-2026-00771"),
     ),
+)
+
+
+# W4 management 段（EDP-012 残余）：objectives/kpi_definitions/kpi_values 值
+# 对齐 B.9 示例（on_time_delivery 91.2% / 2026-W36 风格）；period 由 seed 锚
+# 派生（objectives = 锚当月 YYYY-MM、kpi_values = 锚 ISO 周 ± 偏移）。
+MGMT_OBJECTIVES: tuple[ObjectiveSpec, ...] = (
+    ObjectiveSpec("Q4 准时交付率", "on_time_delivery", 95.0, 91.2),
+    ObjectiveSpec("库存周转率", "inventory_turnover", 8.0, 7.2),
+    ObjectiveSpec("新品按时量产率", "product_readiness", 90.0, 86.5),
+)
+
+MGMT_KPI_DEFINITIONS: tuple[KpiDefinitionSpec, ...] = (
+    KpiDefinitionSpec("on_time_delivery", "准时交付率", "%"),
+    KpiDefinitionSpec("inventory_turnover", "库存周转率", "次/月"),
+    KpiDefinitionSpec("risk_closure_rate", "风险闭环率", "%"),
+)
+
+MGMT_KPI_VALUES: tuple[KpiValueSpec, ...] = (
+    KpiValueSpec("on_time_delivery", 0, 91.2),
+    KpiValueSpec("on_time_delivery", -1, 90.8),
+    KpiValueSpec("inventory_turnover", 0, 7.2),
+    KpiValueSpec("inventory_turnover", -1, 7.0),
+    KpiValueSpec("risk_closure_rate", 0, 85.0),
+    KpiValueSpec("risk_closure_rate", -1, 82.5),
 )

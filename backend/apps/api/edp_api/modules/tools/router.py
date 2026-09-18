@@ -44,6 +44,7 @@ _READ_ERRORS = (
     ErrorCode.FORBIDDEN,
     ErrorCode.TENANT_SUSPENDED,
     ErrorCode.METHOD_NOT_ALLOWED,
+    ErrorCode.RATE_LIMITED,
 )
 _READ_ERRORS_NOT_FOUND = (*_READ_ERRORS, ErrorCode.NOT_FOUND)
 

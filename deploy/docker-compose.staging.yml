@@ -1,0 +1,155 @@
+name: edp-staging
+
+# EDP staging 最小 HA 拓扑（T14 / EDP-021）：etcd×1 + patroni×2（PG16 主从）+ pgbackrest
+# + 应用层（api/worker/web 复用 dev compose 的 build 上下文与 env 形态）。
+#
+# 端口（避开 dev 5432/15432、8000/18000、5173/9080）：
+#   api 18010 / web 9090 / patroni restapi 8008(patroni1)、8009(patroni2)
+#
+# 单写入口约定（最小版不做自动跟随）：DATABASE_URL 固定指向 patroni1:5432；
+# 主从切换（switchover）后若 leader 变为 staging-pg2，应用层需人工/脚本改指
+# patroni2:5432 并 `docker compose -f deploy/docker-compose.staging.yml up -d api worker`
+# ——W5 引入 HAProxy/Pgbouncer 统一读写入口后消除（缺口已记 docs/demo/staging-drill.md）。
+#
+# 用法（部署/回滚/演练统一走脚本）：
+#   powershell -File deploy/scripts/deploy-staging.ps1 -Action deploy|rollback|drill
+
+x-patroni-build: &patroni-build
+  # 官方 zalando/patroni 镜像本机网络不可拉取 → deploy/patroni/Dockerfile 自建（PG16 等价）
+  context: ./patroni
+
+services:
+  # ---- HA 基础设施 ----
+  etcd:
+    # distroless 镜像（无 shell）：healthcheck 用 exec 直跑 etcdctl；QUOTA 4GB 经 CLI 下发
+    image: quay.io/coreos/etcd:v3.5.16
+    command:
+      - /usr/local/bin/etcd
+      - -name
+      - etcd0
+      - -data-dir
+      - /etcd-data
+      - -listen-client-urls
+      - http://0.0.0.0:2379
+      - -advertise-client-urls
+      - http://etcd:2379
+      - -listen-peer-urls
+      - http://0.0.0.0:2380
+      - -initial-advertise-peer-urls
+      - http://etcd:2380
+      - -initial-cluster
+      - etcd0=http://etcd:2380
+      - -quota-backend-bytes=4294967296  # QUOTA_BACKEND_GB=4
+    volumes:
+      - etcd:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  patroni1:
+    build: *patroni-build
+    image: edp-staging/patroni:pg16
+    user: postgres
+    command: ["patroni", "/etc/patroni.yml"]
+    depends_on:
+      etcd:
+        condition: service_healthy
+    environment:
+      ETCD_HOSTS: etcd:2379
+    ports:
+      - "8008:8008"
+    volumes:
+      - patroni1:/var/lib/postgresql/data
+      - ./patroni/patroni1.yml:/etc/patroni.yml:ro
+      # pg-init（账号 SQL）供部署脚本 psql -f 执行；pgbackrest 本地备份模式所需挂载
+      - ./pg-init:/docker-entrypoint-initdb.d:ro
+      - ./pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - backups:/pgbackrest
+    healthcheck:
+      # /patroni 对任何活着的节点（主/从）都返回 200；/health 仅对 leader 200
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8008/patroni || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  patroni2:
+    build: *patroni-build
+    image: edp-staging/patroni:pg16
+    user: postgres
+    command: ["patroni", "/etc/patroni.yml"]
+    depends_on:
+      etcd:
+        condition: service_healthy
+    environment:
+      ETCD_HOSTS: etcd:2379
+    ports:
+      - "8009:8008"
+    volumes:
+      - patroni2:/var/lib/postgresql/data
+      - ./patroni/patroni2.yml:/etc/patroni.yml:ro
+      - ./pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - backups:/pgbackrest
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8008/patroni || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # pgbackrest：repo keeper（持有备份卷 + 配置；备份命令经 patroni1 exec 本地执行，
+  # 首次全量备份命令见 deploy/pgbackrest/pgbackrest.conf 头部注释）
+  pgbackrest:
+    build: *patroni-build
+    image: edp-staging/patroni:pg16
+    entrypoint: ["sleep", "infinity"]
+    depends_on:
+      - patroni1
+    volumes:
+      - ./pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - backups:/pgbackrest
+
+  # ---- 应用层（build/env 复用 docker-compose.dev.yml 形态）----
+  api:
+    build:
+      context: ../backend
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      patroni1:
+        condition: service_healthy
+    environment:
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
+      EDP_JWT_SECRET: staging-secret
+    command: ["uvicorn", "edp_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "18010:8000"
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: apps/worker/Dockerfile
+    depends_on:
+      patroni1:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
+      EDP_JWT_SECRET: staging-secret
+
+  # 前端：nginx 托管 SPA + /api 反代到 api 服务（VITE_API_BASE 构建期置空 = 同源相对路径）
+  web:
+    build:
+      context: ../frontend
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE: ""
+    depends_on:
+      - api
+    ports:
+      - "9090:80"
+
+volumes:
+  etcd:
+  patroni1:
+  patroni2:
+  backups:

@@ -42,7 +42,7 @@ pytestmark = pytest.mark.filterwarnings(
 
 # 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码 + 0010 新增
 # tools:read、ebms:read（T11 EBMS 落地同步）+ 0011 新增 trace:read、
-# memory:read、memory:review
+# memory:read、memory:review + 0012 新增 audit:policy_read、audit:policy_write
 ALL_CODES = {
     "registry:read",
     "registry:write",
@@ -55,6 +55,8 @@ ALL_CODES = {
     "action:read",
     "action:execute",
     "audit:read",
+    "audit:policy_read",
+    "audit:policy_write",
     "adapters:read",
     "adapters:write",
     "tools:read",
@@ -65,7 +67,9 @@ ALL_CODES = {
     "tenant:admin",
 }
 
-READS = {code for code in ALL_CODES if code.endswith(":read")}
+# 读层 = `:read` 后缀码 + audit:policy_read（0012；`_read` 后缀入读层，
+# 四角色 ANALYST 一类全持）
+READS = {code for code in ALL_CODES if code.endswith(":read")} | {"audit:policy_read"}
 
 
 def _principal(
@@ -239,9 +243,9 @@ def test_role_permissions_matrix_matches_seed() -> None:
     }
 
 
-def test_all_permissions_covers_nineteen_codes() -> None:
+def test_all_permissions_covers_twenty_one_codes() -> None:
     assert ALL_PERMISSIONS == ALL_CODES
-    assert len(ALL_PERMISSIONS) == 19
+    assert len(ALL_PERMISSIONS) == 21
 
 
 def test_permission_codes_platform_admin_wildcard_all_codes() -> None:

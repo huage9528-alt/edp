@@ -1,4 +1,10 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
+import { ActionsPage } from "../features/decisions_actions/ActionsPage";
+import { DecisionsPage } from "../features/decisions_actions/DecisionsPage";
+import { AdaptersPage } from "../features/adapters/AdaptersPage";
+import { AuditPage } from "../features/audit/AuditPage";
+import { CasesPage } from "../features/cases/CasesPage";
+import { CaseDetailPage } from "../features/cases/CaseDetailPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { EventsPage } from "../features/events/EventsPage";
 import { EvidencePage } from "../features/evidence/EvidencePage";
@@ -68,8 +74,16 @@ export const routes: RouteObject[] = [
         element: <QualityPage />,
         handle: { title: "数据质量" } satisfies RouteHandle,
       },
-      { path: "admin/audit", ...withTitle("审计日志") },
-      { path: "admin/adapters", ...withTitle("适配器管理") },
+      {
+        path: "admin/audit",
+        element: <AuditPage />,
+        handle: { title: "审计日志" } satisfies RouteHandle,
+      },
+      {
+        path: "admin/adapters",
+        element: <AdaptersPage />,
+        handle: { title: "适配器管理" } satisfies RouteHandle,
+      },
       {
         path: "admin/systems",
         element: <HealthPage />,
@@ -77,10 +91,26 @@ export const routes: RouteObject[] = [
       },
       { path: "tenants", ...withTitle("租户管理") },
       { path: "tenants/:tenant_id", ...withTitle("租户详情") },
-      { path: "cases", ...withTitle("闭环案例") },
-      { path: "cases/:case_id", ...withTitle("案例详情") },
-      { path: "decisions", ...withTitle("决策") },
-      { path: "actions", ...withTitle("行动") },
+      {
+        path: "cases",
+        element: <CasesPage />,
+        handle: { title: "闭环案例" } satisfies RouteHandle,
+      },
+      {
+        path: "cases/:case_id",
+        element: <CaseDetailPage />,
+        handle: { title: "案例详情" } satisfies RouteHandle,
+      },
+      {
+        path: "decisions",
+        element: <DecisionsPage />,
+        handle: { title: "决策" } satisfies RouteHandle,
+      },
+      {
+        path: "actions",
+        element: <ActionsPage />,
+        handle: { title: "行动" } satisfies RouteHandle,
+      },
       { path: "admin/tools", ...withTitle("Agent 工具") },
       { path: "admin/traces", ...withTitle("Trace 检索") },
       { path: "admin/memory", ...withTitle("候选记忆") },

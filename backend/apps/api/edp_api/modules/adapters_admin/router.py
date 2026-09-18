@@ -102,4 +102,4 @@ async def list_adapters(
 ) -> AdapterListResponse:
     """注册表适配器清单（mode/运行状态/探活/水位时间）。"""
     items = await adapters_service.list_adapters(sess, principal.tenant_id)
-    return AdapterListResponse(items=items)
+    return AdapterListResponse(items=items, next_cursor=None)

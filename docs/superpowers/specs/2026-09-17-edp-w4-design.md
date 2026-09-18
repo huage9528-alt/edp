@@ -51,7 +51,7 @@ B.5 逐字段；六文件模块模式。
 | POST `/actions` | JWT `action:execute` / API Key `write:action` | 请求 `{case_id, title, action_type, owner?, owner_role?, due_date?, description?}`；case_id 不存在 → 400（可选关联）；201 `{action_id, status:"PROPOSED", created_at}` |
 | GET `/actions?status=&owner=&case_id=&limit=` | JWT `action:read` / readonly | 游标分页（created_at DESC）；简投影含 `allowed_to[]` |
 | GET `/actions/{action_id}` | 同上 | 完整对象 + `allowed_to[]`；跨租户 404 |
-| PATCH `/actions/{action_id}/status` | JWT `action:execute`（**Human-Only 转移额外 Guard**） | 请求 `{from_status, to_status, comment?}`；200 `{action_id, status, updated_at}` |
+| PATCH `/actions/{action_id}/status` | JWT `action:execute` / API Key `write:action`（**Human-Only 转移额外 Guard**；双轨为有意超 B.5「仅 JWT」口径，见缺口 W4-11） | 请求 `{from_status, to_status, comment?}`；200 `{action_id, status, updated_at}` |
 
 **状态机（9 态，集中定义转移表）**：
 
