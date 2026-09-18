@@ -2,13 +2,15 @@
  * 审计词表（EDP-401）：action / resource_type → 中文展示的纯函数单点。
  * 事实来源（后端实测枚举，禁止凭空扩词）：
  * - `modules/audit/aspect.py`：ACTION_PREFIXES（OBJECT/EVENT/EVIDENCE/DECISION/
- *   CASE/ACTION + 裸名回退）与 ORM 动词 CREATE/UPDATE/DELETE（`{PREFIX}_{VERB}`）；
+ *   CASE/ACTION/POLICY + 裸名回退）与 ORM 动词 CREATE/UPDATE/DELETE
+ *   （`{PREFIX}_{VERB}`）；
  * - 显式补点常量：ratelimit.py `RATE_LIMITED`/`RATE_LIMIT_WARNING`、
  *   decisions/actions/memories/tools `GUARD_DENIED`、evidence
  *   `EVIDENCE_VERIFY_FAILED`、traces `TRACE_CREATE`、events/ingest `EVENT_CREATE`；
  * - resource_type 裸名 → schema 全名歧义（W3-13/W3R-03）：aspect 按表裸名存
  *   resource_type，`records` 裸名同指 evidence.records / decision.records，
- *   依 action 前缀 EVIDENCE_* / DECISION_*|CASE_* 消歧（裸名回退 EVIDENCE）。
+ *   依 action 前缀 EVIDENCE_* / DECISION_*|CASE_* 消歧（裸名回退 EVIDENCE）；
+ * - ADAPTER/TOKEN/EXPORT 为预留前缀（后端暂无对应审计枚举，W5+ 端点启用）。
  */
 
 /** 显式常量全集（record_explicit 实测枚举 + 登录会话演示动作）。 */
@@ -30,6 +32,7 @@ export const ACTION_PREFIX_LABELS: Record<string, string> = {
   DECISION: "决策",
   CASE: "案例",
   ACTION: "行动",
+  POLICY: "策略",
   ADAPTER: "适配器",
   TOKEN: "令牌",
   EXPORT: "导出",

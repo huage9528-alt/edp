@@ -76,7 +76,7 @@ async def _clean_policy_rows(db_session: AsyncSession) -> None:
         text(
             """
             DELETE FROM platform.audit_logs WHERE
-                action LIKE 'POLICIES_%'
+                action LIKE 'POLICY_%'
                 OR detail->'policy_hits' IS NOT NULL
                 OR resource_id IN (
                     SELECT case_id::text FROM decision.cases

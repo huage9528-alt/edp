@@ -23,6 +23,8 @@ describe("审计词表：显式常量全集（aspect.py 实测 + ratelimit 两�
     expect(deriveActionLabel("EVIDENCE_UPDATE")).toBe("证据更新");
     expect(deriveActionLabel("OBJECT_DELETE")).toBe("对象删除");
     expect(deriveActionLabel("ACTION_UPDATE")).toBe("行动更新");
+    expect(deriveActionLabel("POLICY_CREATE")).toBe("策略创建");
+    expect(deriveActionLabel("POLICY_UPDATE")).toBe("策略更新");
     expect(deriveActionLabel("OBJECT_UPSERT")).toBe("对象写入");
     // 裸动词变体（CASE_CREATED）与复合动词（SYNC_FAILED）同归一词
     expect(deriveActionLabel("CASE_CREATED")).toBe("案例创建");

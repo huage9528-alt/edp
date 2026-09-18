@@ -84,6 +84,7 @@ ACTION_PREFIXES = {
     "decision.records": "DECISION",
     "decision.cases": "CASE",
     "action.actions": "ACTION",
+    "audit.policies": "POLICY",
     # 裸表名回退（无 schema 前缀的表形态）
     "business_objects": "OBJECT",
     "events": "EVENT",

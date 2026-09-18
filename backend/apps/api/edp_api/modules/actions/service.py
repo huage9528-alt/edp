@@ -309,11 +309,11 @@ async def transition_action(
 
     await sess.refresh(action)  # 载入 UPDATE 后行值（status/updated_at/回填列）
     # SQL UPDATE 不经 ORM 状态（切面不可见）——显式补审计 ACTION_UPDATE
-    # （registry 乐观锁同一模式；resource_type 对齐切面裸表名）
+    # （registry 乐观锁同一模式；resource_type 用 fullname，与 GUARD_DENIED 一致）
     await audit_service.record_explicit(
         sess,
         action="ACTION_UPDATE",
-        resource_type="actions",
+        resource_type="action.actions",
         resource_id=str(action_id),
         detail={
             "before": {"status": req.from_status},

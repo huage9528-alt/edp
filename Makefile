@@ -27,7 +27,9 @@ frontend-lint:
 	cd frontend && pnpm -r lint
 
 frontend-test:
-	cd frontend && pnpm -r test
+	# --maxWorkers=2 --testTimeout=60000：宿主满载（Docker Desktop + 多 uvicorn）下
+	# 默认 15s 超时随机 flake（W3/W4 收口两轮复现），代码同版本两参复跑恒绿（W3-134 惯例固化）
+	cd frontend && pnpm --filter web test -- --maxWorkers=2 --testTimeout=60000 && pnpm --filter @edp/api-sdk test && pnpm --filter @edp/shared test
 
 verify-all: backend-lint backend-test frontend-lint frontend-test backend-migrate-check contract-export contract-gate
 
