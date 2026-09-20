@@ -14,7 +14,7 @@
 
 会话形态：应用引擎 = conftest.app_role_engine（edp_app，FORCE RLS）；断言以
 migrator db_session 直查（绕 RLS）。清场：purge_tenant_business_data（逆依赖序，
-与 seed 复位同一实现）+ 本模块审计行/临时 Key/进程内任务注册表。
+与 seed 复位同一实现）+ 本模块审计行/临时 Key/adapter_sync 任务行。
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ import pytest
 from edp_api.core import db as core_db
 from edp_api.core.security.apikey import hash_key
 from edp_api.main import create_app
-from edp_api.modules.adapters_admin import service as adapters_service
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.demo import service as demo_service
 from sqlalchemy import text
@@ -107,7 +106,7 @@ def _install_aspect() -> None:
 
 
 async def _purge(db_session: AsyncSession, tenant_id: UUID) -> None:
-    """逆依赖序清 default 业务行 + 本模块审计行/临时 Key/任务注册表。"""
+    """逆依赖序清 default 业务行 + 本模块审计行/临时 Key/adapter_sync 任务行。"""
     await demo_service.purge_tenant_business_data(db_session, tenant_id)
     await db_session.execute(
         text(
@@ -128,8 +127,18 @@ async def _purge(db_session: AsyncSession, tenant_id: UUID) -> None:
         text("DELETE FROM platform.api_keys WHERE principal_id = :p"),
         {"p": NO_READONLY_PRINCIPAL},
     )
+    # 任务落库（W5 T5）：sync 任务行及其 TASK 审计行（清场后 jobs/status 空）
+    await db_session.execute(
+        text(
+            "DELETE FROM platform.audit_logs"
+            " WHERE action LIKE 'TASK_%' AND resource_id IN ("
+            "  SELECT task_id::text FROM ops.tasks WHERE task_type = 'adapter_sync')"
+        )
+    )
+    await db_session.execute(
+        text("DELETE FROM ops.tasks WHERE task_type = 'adapter_sync'")
+    )
     await db_session.commit()
-    adapters_service._jobs.clear()
 
 
 @pytest.fixture(autouse=True)

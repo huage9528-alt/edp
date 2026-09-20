@@ -1,14 +1,14 @@
-"""adapters_admin 路由（附录 B.12 最小版）：触发同步 / 状态查询 / 清单。
+"""adapters_admin 路由（附录 B.12 最小版）：触发同步 / 状态查询 / 任务历史 / 清单。
 
 router 级挂 tenant_scoped（认证 → 租户状态 → bind_tenant → RLS）；写 =
 adapters:write（JWT）或 write:adapters scope，读 = adapters:read 或
-readonly scope（双轨判定见 dependencies.py）。同步为 202 异步执行——后台
-任务自建 engine 会话（不占用请求会话），状态查询读进程内任务注册表。
+readonly scope（双轨判定见 dependencies.py）。同步为 202 异步执行——任务
+登记于 ops.tasks（W5 T5），状态查询/历史读任务行（请求会话，受 RLS）。
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
@@ -17,6 +17,7 @@ from edp_api.core.security.principal import Principal
 from edp_api.modules.adapters_admin import service as adapters_service
 from edp_api.modules.adapters_admin.dependencies import require_read, require_write
 from edp_api.modules.adapters_admin.schemas import (
+    AdapterJobsResponse,
     AdapterListResponse,
     AdapterStatusResponse,
     AdapterSyncResponse,
@@ -50,19 +51,25 @@ async def trigger_sync(
     adapter_name: str,
     payload: SyncTriggerRequest,
     principal: Annotated[Principal, Depends(require_write("adapters"))],
+    sess: DbSession,
 ) -> AdapterSyncResponse:
-    """202 登记后台任务（run_sync_per_record 逐记录独立事务）；未注册 404。
-
-    mode=replay 全量重放（UUIDv5 幂等 → duplicated）；since 仅 replay 消费。
+    """202 登记 ops.tasks 任务行（RUNNING）后异步执行（run_sync_per_record
+    逐记录独立事务）；未注册 404。mode=replay 全量重放（UUIDv5 幂等 →
+    duplicated）；since 仅 replay 消费。
     """
     try:
-        job = adapters_service.trigger_sync(
-            principal.tenant_id, adapter_name, payload.mode, payload.since
+        task = await adapters_service.trigger_sync(
+            sess,
+            principal.tenant_id,
+            adapter_name,
+            payload.mode,
+            payload.since,
+            actor=principal.id,
         )
     except LookupError:
         raise EdpError.not_found("适配器不存在") from None
     return AdapterSyncResponse(
-        sync_id=job.sync_id, status=job.status, started_at=job.started_at
+        sync_id=str(task.task_id), status=task.status, started_at=task.started_at
     )
 
 
@@ -80,12 +87,44 @@ async def trigger_sync(
 async def adapter_status(
     adapter_name: str,
     principal: Annotated[Principal, Depends(require_read("adapters"))],
+    sess: DbSession,
 ) -> AdapterStatusResponse:
     """最近任务（RUNNING/SUCCEEDED/FAILED + stats）；未跑过 last_sync=null。"""
     try:
-        return await adapters_service.adapter_status(adapter_name)
+        return await adapters_service.adapter_status(sess, adapter_name)
     except LookupError:
         raise EdpError.not_found("适配器不存在") from None
+
+
+@router.get(
+    "/{adapter_name}/jobs",
+    response_model=AdapterJobsResponse,
+    summary="适配器同步任务历史（ops.tasks 落库，游标分页）",
+    responses=error_responses(
+        ErrorCode.UNAUTHENTICATED,
+        ErrorCode.FORBIDDEN,
+        ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.NOT_FOUND,
+    ),
+)
+async def adapter_jobs(
+    adapter_name: str,
+    principal: Annotated[Principal, Depends(require_read("adapters"))],
+    sess: DbSession,
+    limit: Annotated[int, Query(ge=1, le=adapters_service.MAX_JOBS_LIMIT)] = (
+        adapters_service.DEFAULT_JOBS_LIMIT
+    ),
+    cursor: Annotated[str | None, Query()] = None,
+) -> AdapterJobsResponse:
+    """该适配器历史 sync 任务（started_at DESC + task_id DESC tiebreak）；
+    未注册 404。"""
+    try:
+        items, next_cursor = await adapters_service.list_jobs(
+            sess, adapter_name, limit=limit, cursor=cursor
+        )
+    except LookupError:
+        raise EdpError.not_found("适配器不存在") from None
+    return AdapterJobsResponse(items=items, next_cursor=next_cursor)
 
 
 @router.get(
