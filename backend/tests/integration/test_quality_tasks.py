@@ -1,6 +1,8 @@
 """T4 质量任务轨道集成测试（EDP-030 下半）：rechecks 202 异步 → tasks 轮询
 终态 / scope 段选择 / FAILED 路径与质量事件 / 跨租户 404 / 鉴权（ADMIN
-触发、ANALYST 403 无 quality:run）/ 审计 TASK_CREATE 派生。
+触发、ANALYST 403 无 quality:run）/ 审计 TASK_CREATE 派生 / T4 评审修复
+回归（后台先于请求 commit 启动的可见性有界重试 / 回滚 deadline 语义 /
+完成事件移出终态事务——事件通道异常不改判 FAILED）。
 
 造数：demo_service.seed（同 test_quality_api，确定性数据集——P0/P1 结果
 证据 4 条）；断言经 migrator db_session 直查。后台执行体走独立会话
@@ -12,18 +14,22 @@
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from edp_api.core import db as core_db
 from edp_api.core.security.password import hash_password
+from edp_api.core.security.principal import Principal
 from edp_api.main import create_app
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.demo import service as demo_service
 from edp_api.modules.quality import service as quality_service
+from edp_api.modules.quality.models import OpsTask
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -408,6 +414,175 @@ async def test_analyst_cannot_trigger_recheck(
             db_session,
             default_tenant_id,
             "SELECT count(*) FROM ops.tasks WHERE tenant_id = :t",
+        )
+        == 0
+    )
+
+
+# ---- 6. T4 评审 Important-1 回归：后台先于请求 commit 启动的可见性竞态 ----
+
+
+def _race_principal(tenant_id: UUID) -> Principal:
+    """竞态用例合成主体（后台执行体仅用作 actor 留痕，不经鉴权链路）。"""
+    return Principal(id="user:race-test", kind="HUMAN", tenant_id=tenant_id)
+
+
+async def test_background_before_request_commit_retries_until_visible(
+    app_role_engine: AsyncEngine,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """竞态模拟：任务行 INSERT 未 commit 时后台执行体先启动——READ
+    COMMITTED 下行不可见且 FOR UPDATE 不等待，修复前首探即空被误诊
+    「请求事务已回滚」静默退出 → 202 已返回而任务永久 RUNNING（孤儿）；
+    修复后有界重试至请求事务 commit 后行可见才执行，终态照常落库。"""
+    await core_db.dispose_engine()
+    monkeypatch.setattr(core_db, "get_engine", lambda: app_role_engine)
+    try:
+        factory = core_db.get_session_local()
+        principal = _race_principal(default_tenant_id)
+        task_id = uuid4()
+        started_at = datetime.now(UTC)
+
+        # 「请求事务」等价路径：INSERT + flush 但不 commit（行对后台不可见）
+        async with factory() as request_sess:
+            await core_db.bind_tenant(request_sess, default_tenant_id)
+            request_sess.add(
+                OpsTask(
+                    task_id=task_id,
+                    tenant_id=default_tenant_id,
+                    task_type=quality_service.RECHECK_TASK_TYPE,
+                    status="RUNNING",
+                    scope="ORPHAN",
+                    started_at=started_at,
+                    created_by=principal.id,
+                )
+            )
+            await request_sess.flush()
+
+            # 后台执行体先于请求 commit 启动（等价 start_recheck 的派发时序）
+            background = asyncio.create_task(
+                quality_service._run_recheck(
+                    task_id=task_id,
+                    tenant_id=default_tenant_id,
+                    principal=principal,
+                    scope="ORPHAN",
+                    started_at=started_at,
+                )
+            )
+            quality_service._recheck_tasks.add(background)
+            background.add_done_callback(quality_service._recheck_tasks.discard)
+
+            # 未提交窗口内让出事件循环：后台首次探测读空 → 进入重试等待
+            # （修复前此处即静默退出——本断言在旧代码下即失败）
+            await asyncio.sleep(0.3)
+            assert not background.done(), "后台不应在未提交窗口内退出（误诊已回滚）"
+
+            await request_sess.commit()  # 请求事务提交——行对后台可见
+        await background  # 经有界重试看到行后照常执行到终态
+
+        status = (
+            await db_session.execute(
+                text("SELECT status FROM ops.tasks WHERE task_id = :id"),
+                {"id": task_id},
+            )
+        ).scalar_one()
+        assert status == "SUCCEEDED"
+    finally:
+        await core_db.dispose_engine()  # 重置绑定到测试引擎的会话工厂
+
+
+async def test_background_exits_after_deadline_when_request_rolled_back(
+    app_role_engine: AsyncEngine,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """deadline 语义：请求事务回滚（行永不存在）→ 有界重试耗尽后退出
+    并区分告警「已回滚」——不无限轮询；重试期间逐次留「未提交」信息。"""
+    await core_db.dispose_engine()
+    monkeypatch.setattr(core_db, "get_engine", lambda: app_role_engine)
+    try:
+        factory = core_db.get_session_local()
+        principal = _race_principal(default_tenant_id)
+        task_id = uuid4()
+
+        async with factory() as request_sess:
+            await core_db.bind_tenant(request_sess, default_tenant_id)
+            request_sess.add(
+                OpsTask(
+                    task_id=task_id,
+                    tenant_id=default_tenant_id,
+                    task_type=quality_service.RECHECK_TASK_TYPE,
+                    status="RUNNING",
+                    scope="ORPHAN",
+                    started_at=datetime.now(UTC),
+                    created_by=principal.id,
+                )
+            )
+            await request_sess.flush()
+            await request_sess.rollback()  # 请求事务回滚——行不存在
+
+        with caplog.at_level(
+            logging.INFO, logger="edp_api.modules.quality.service"
+        ):
+            await quality_service._run_recheck(
+                task_id=task_id,
+                tenant_id=default_tenant_id,
+                principal=principal,
+                scope="ORPHAN",
+                started_at=datetime.now(UTC),
+            )
+        messages = [record.getMessage() for record in caplog.records]
+        # 重试中文案（未提交）与终判文案（已回滚）区分留痕
+        assert any("未提交" in m and "重试" in m for m in messages)
+        assert any("已回滚" in m for m in messages)
+        assert (
+            await _count(
+                db_session,
+                default_tenant_id,
+                "SELECT count(*) FROM ops.tasks WHERE tenant_id = :t",
+            )
+            == 0
+        )
+    finally:
+        await core_db.dispose_engine()
+
+
+# ---- 7. T4 评审 Minor 回归：完成事件移出终态事务 ----
+
+
+async def test_succeeded_survives_completion_event_failure(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    seeded: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """完成事件通道抛错仅告警：SUCCEEDED 终态先行 commit 不被回滚改判
+    FAILED（修复前事件与终态同事务——ingest 异常会把成功计算改判
+    FAILED）。"""
+
+    async def _event_channel_down(sess, principal, **kwargs):
+        raise RuntimeError("event channel down")
+
+    monkeypatch.setattr(quality_service, "_record_recheck_event", _event_channel_down)
+
+    admin = await _login(client, "admin")
+    task_id = await _trigger(client, admin, "CHECKSUM")
+    task = await _poll_terminal(client, admin, task_id)
+    await _drain_background()
+
+    assert task["status"] == "SUCCEEDED"  # 终态不被事件失败回滚
+    assert task["stats"]["checksum"] == {"sampled": 4, "failed": 0}
+    assert (
+        await _count(
+            db_session,
+            default_tenant_id,
+            "SELECT count(*) FROM event.events WHERE tenant_id = :t"
+            " AND event_type LIKE 'quality.recheck%'",
         )
         == 0
     )

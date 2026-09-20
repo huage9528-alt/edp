@@ -1,6 +1,7 @@
 """T3 质量报告集成测试（EDP-030 上半）：四段形状与精确值 / checksum 篡改
 落事件与幂等 / coverage 同形 / 鉴权矩阵（MANAGER/ANALYST 200、SERVICE
-readonly Key 403、匿名 401）。
+readonly Key 403、匿名 401）/ 抽样排序专项（>120 条 P0/P1 证据钉住
+captured_at DESC 新证据优先，T4 评审 Minor）。
 
 造数：demo_service.seed（make seed-demo 等价，确定性数据集）——快照
 43 对象/事件、回流 10 风险事件（P0×1+P1×3+P2×3+P3×2、场景 10 P2）、
@@ -11,7 +12,9 @@ P0/P1 结果证据 4 条（场景 2/5/7/9）；断言经 migrator db_session 直
 actor 与 quality 事件写入）+ 临时 readonly Key。
 """
 
+import json
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
@@ -21,6 +24,7 @@ from edp_api.core.security.apikey import hash_key
 from edp_api.main import create_app
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.demo import service as demo_service
+from edp_api.modules.evidence.service import compute_checksum
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -375,3 +379,101 @@ async def test_auth_matrix(
 
     # 匿名 → 401
     assert (await client.get(REPORTS)).status_code == 401
+
+
+# ---- 5. 抽样排序专项（T4 评审 Minor）：captured_at DESC 新证据优先 ----
+
+
+_INSERT_SORT_EVIDENCE_SQL = text("""
+    INSERT INTO evidence.records
+        (evidence_id, tenant_id, source_system, source_record_id,
+         object_id, event_id, checksum, snapshot, captured_at,
+         created_by, updated_by)
+    VALUES (:evidence_id, :t, 'edp-quality-test', :source_record_id,
+            :object_id, :event_id, :checksum, CAST(:snapshot AS jsonb),
+            :captured_at, 'test:sampling-sort', 'test:sampling-sort')
+""")
+
+_P0P1_POOL_MAX_SQL = text("""
+    SELECT max(r.captured_at) FROM evidence.records r
+    WHERE r.tenant_id = :t
+      AND (r.event_id IN (SELECT e.event_id FROM event.events e
+                           WHERE e.tenant_id = :t
+                             AND e.risk_level IN ('P0', 'P1'))
+           OR r.evidence_id IN (
+               SELECT l.evidence_id FROM evidence.links l
+               JOIN event.events e ON e.event_id = l.ref_id
+                AND e.tenant_id = :t AND e.risk_level IN ('P0', 'P1')
+               WHERE l.ref_type = 'RESULT' AND l.tenant_id = :t))
+""")
+
+
+async def test_checksum_sampling_prefers_newest_evidence_beyond_limit(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    default_tenant_id: UUID,
+    seeded: None,
+) -> None:
+    """合成 130 条 P0 结果证据（captured_at 严格递增、全部早于 seed 证据）
+    + 仅篡改最旧 10 条——池 4+130=134 > 上限 120。降序抽样取最新 120
+    （seed 4 + 合成最新 116+……即合成 i=14..129 与 seed 4 条），最旧
+    篡改行被挤出样本：sampled=120、failed=0、不落 checksum_failed 事件；
+    若退化为升序（最旧恒占满限额）则篡改行入样 failed=10——钉住
+    captured_at DESC「新证据优先入样」性质（防抽样面被最旧证据冻结）。"""
+    base: datetime = (
+        await db_session.execute(_P0P1_POOL_MAX_SQL, {"t": default_tenant_id})
+    ).scalar_one()
+    assert base is not None, "seed P0/P1 证据就位"
+    p0 = (
+        await db_session.execute(
+            text(
+                "SELECT e.event_id, e.object_id FROM event.events e"
+                " WHERE e.tenant_id = :t AND e.risk_level = 'P0' LIMIT 1"
+            ),
+            {"t": default_tenant_id},
+        )
+    ).one()
+
+    synthetic_n = 130
+    # i=0 最旧（base-2000min）→ i=129 最新（base-710min），全严格早于 base
+    params = [
+        {
+            "evidence_id": uuid4(),
+            "t": default_tenant_id,
+            "source_record_id": f"sampling-sort:{i}",
+            "object_id": p0.object_id,
+            "event_id": p0.event_id,
+            "checksum": compute_checksum({"seq": i}),
+            "snapshot": json.dumps({"seq": i}),
+            "captured_at": base - timedelta(minutes=2000 - i * 10),
+        }
+        for i in range(synthetic_n)
+    ]
+    await db_session.execute(_INSERT_SORT_EVIDENCE_SQL, params)
+    # 篡改最旧 10 条（i=0..9：captured_at <= base-1910min）——snapshot 与
+    # 落库 checksum 失配，若入样必 failed+1 并落数
+    await db_session.execute(
+        text(
+            "UPDATE evidence.records r"
+            " SET snapshot = r.snapshot || jsonb_build_object('tampered', true)"
+            " WHERE r.tenant_id = :t AND r.created_by = 'test:sampling-sort'"
+            "   AND r.captured_at <= :boundary"
+        ),
+        {"t": default_tenant_id, "boundary": base - timedelta(minutes=1910)},
+    )
+    await db_session.commit()
+
+    manager = await _login(client, "manager1")
+    resp = await client.get(REPORTS, headers=manager)
+    assert resp.status_code == 200, resp.text
+    # 池 134 > 120：降序取最新 120，最旧 10 条（含全部篡改行）被挤出
+    assert resp.json()["checksum_sampling"] == {"sampled": 120, "failed": 0}
+    assert (
+        await _count(
+            db_session,
+            default_tenant_id,
+            "SELECT count(*) FROM event.events"
+            " WHERE tenant_id = :t AND event_type = 'quality.checksum_failed'",
+        )
+        == 0
+    )

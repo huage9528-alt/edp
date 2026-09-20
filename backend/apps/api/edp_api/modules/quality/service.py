@@ -71,13 +71,18 @@ events.ingest_batch——同 T3 checksum_failed 写通道：UUIDv5 幂等
 occurred_at=任务 started_at、幂等键 quality-recheck:{task_id}；事件
 object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1），ingest 通道
 校验 object 存在性，空注册表跳过事件——结果已由任务行 stats/logs
-留痕）。**单副本执行
-语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）多副本安全；
-执行互斥不保证——多副本并发同租户 recheck 可并行执行（分布式锁
+留痕）。完成事件**移出终态事务**：终态先行 commit 落库，事件随后经
+独立事务尽力写入——事件通道异常仅告警，不把已成功的计算回滚改判
+FAILED。**单副本执行
+语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）
+多副本安全；执行互斥不保证——多副本并发同租户 recheck 可并行执行（分布式锁
 Redis 方案评估 T17 覆盖）。后台会话独立于请求会话（get_session_local），
-bind_tenant 事务级 → 每段独立事务；首段前 SELECT ... FOR UPDATE 等待
-请求事务提交（任务行 INSERT 未提交时对后台不可见，行锁等待插入事务
-结束——避免后台先于 commit 读空行；请求回滚则行不存在，提前退出）。
+bind_tenant 事务级 → 每段独立事务；首段前可见性**有界重试**
+（``_wait_task_visible``）：READ COMMITTED 下请求事务未提交的 INSERT
+行对后台不可见，且 SELECT ... FOR UPDATE 对不可见（不存在）的行不
+阻塞、立即返回空——后台可能先于请求 commit 启动，首次探测读空属
+正常，按固定间隔重试至行可见再执行；deadline 后仍不可见 = 请求事务
+已回滚（行确不存在），提前退出。
 """
 
 from __future__ import annotations
@@ -92,7 +97,7 @@ from uuid import UUID, uuid4
 
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from edp_api.core import db as core_db
 from edp_api.core.security.principal import Principal
@@ -129,6 +134,13 @@ RECHECK_FAILED_EVENT_TYPE = "quality.recheck_failed"
 # 完成事件来源三件套与 T3 checksum_failed 事件同口径（同一 edp-quality 写通道）
 RECHECK_EVENT_SOURCE_SYSTEM = CHECKSUM_FAILED_SOURCE_SYSTEM
 RECHECK_EVENT_ACTOR_ID = CHECKSUM_FAILED_ACTOR_ID
+
+# 任务行可见性有界重试（T4 评审 Important-1）：READ COMMITTED 下请求
+# 事务未提交的 INSERT 行不可见且 FOR UPDATE 不等待——后台执行体先于
+# 请求 commit 启动时首次探测读空属正常，重试至行可见；10 次 × 100ms
+# ≈ 1s deadline 后仍不可见才判「请求事务已回滚」
+TASK_VISIBILITY_ATTEMPTS = 10
+TASK_VISIBILITY_INTERVAL_S = 0.1
 
 # scope → 有序执行段（段名与 stats 键一致；coverage 无独立 scope——仅 ALL 覆盖）
 _SCOPE_SEGMENTS: dict[str, tuple[str, ...]] = {
@@ -544,30 +556,30 @@ async def _run_recheck(
 
     会话与事务：不复用请求会话（随请求关闭）——经 get_session_local 开
     独立会话；bind_tenant 事务级（set_config is_local）→ 每段独立事务
-    （段间 commit 落进度，段前重绑）。首段前 SELECT ... FOR UPDATE 等待
-    请求事务提交：任务行 INSERT 未提交时对后台不可见，行锁等待插入
-    事务结束（请求回滚则行不存在 → 提前退出，无处回写终态）。
+    （段间 commit 落进度，段前重绑）。首段前可见性有界重试
+    （``_wait_task_visible``）：READ COMMITTED 下请求事务未提交的
+    INSERT 行不可见且 FOR UPDATE 对不存在的行不等待——后台先于请求
+    commit 启动时首次探测读空属正常，重试至行可见再执行；deadline 后
+    仍不可见 = 请求事务已回滚（行不存在 → 提前退出，无处回写终态）。
 
     失败语义：任一段异常 → 整任务 FAILED（已完成段的进度已逐段落库，
-    失败段不落 stats）；FAILED 回写 + quality.recheck_failed 事件经
-    独立事务尽力落库（回写自身异常仅告警）。
+    失败段不落 stats）；FAILED 回写经独立事务尽力落库（回写自身异常仅
+    告警）。完成事件（succeeded/failed）移出终态事务：终态先行 commit，
+    事件随后独立事务尽力写入（事件失败仅告警——成功计算不因事件通道
+    异常改判 FAILED）。
     """
     factory = core_db.get_session_local()
     stats: dict[str, dict] = {}
     logs: list[dict] = [_log_line("INFO", f"任务启动：scope={scope}")]
     try:
         async with factory() as sess:
-            await core_db.bind_tenant(sess, tenant_id)
-            visible = (
-                await sess.execute(
-                    select(OpsTask.task_id)
-                    .where(OpsTask.task_id == task_id)
-                    .with_for_update()
+            if not await _wait_task_visible(sess, tenant_id, task_id):
+                logger.warning(
+                    "recheck 任务行 %d 次探测均不可见（deadline 后仍不可见，"
+                    "请求事务已回滚）：%s",
+                    TASK_VISIBILITY_ATTEMPTS,
+                    task_id,
                 )
-            ).scalar_one_or_none()
-            await sess.commit()  # 释放行锁——本事务仅做可见性等待
-            if visible is None:
-                logger.warning("recheck 任务行不可见（请求事务已回滚）：%s", task_id)
                 return
             for segment in _SCOPE_SEGMENTS[scope]:
                 await core_db.bind_tenant(sess, tenant_id)
@@ -592,16 +604,17 @@ async def _run_recheck(
                 status="SUCCEEDED",
                 finished_at=finished_at,
             )
-            await _record_recheck_event(
-                sess,
-                principal,
-                task_id=task_id,
-                scope=scope,
-                started_at=started_at,
-                event_type=RECHECK_SUCCEEDED_EVENT_TYPE,
-                stats=stats,
-            )
-            await sess.commit()
+            await sess.commit()  # 终态先行落库——完成事件失败不回滚成功计算
+        await _record_completion_event(
+            factory,
+            tenant_id,
+            principal,
+            task_id=task_id,
+            scope=scope,
+            started_at=started_at,
+            event_type=RECHECK_SUCCEEDED_EVENT_TYPE,
+            stats=stats,
+        )
     except Exception as exc:
         logger.error("质量重校验任务失败：%s（scope=%s）", task_id, scope, exc_info=True)
         try:
@@ -618,19 +631,93 @@ async def _run_recheck(
                     status="FAILED",
                     finished_at=datetime.now(UTC),
                 )
-                await _record_recheck_event(
-                    sess,
-                    principal,
-                    task_id=task_id,
-                    scope=scope,
-                    started_at=started_at,
-                    event_type=RECHECK_FAILED_EVENT_TYPE,
-                    stats=stats,
-                    error=error,
-                )
-                await sess.commit()
+                await sess.commit()  # FAILED 终态先行落库
+            await _record_completion_event(
+                factory,
+                tenant_id,
+                principal,
+                task_id=task_id,
+                scope=scope,
+                started_at=started_at,
+                event_type=RECHECK_FAILED_EVENT_TYPE,
+                stats=stats,
+                error=error,
+            )
         except Exception:
             logger.error("recheck FAILED 终态回写失败：%s", task_id, exc_info=True)
+
+
+async def _wait_task_visible(
+    sess: AsyncSession, tenant_id: UUID, task_id: UUID
+) -> bool:
+    """任务行可见性有界重试（T4 评审 Important-1 修正）。
+
+    READ COMMITTED 下请求事务**未提交**的 ops.tasks INSERT 行对本会话
+    不可见，且 ``SELECT ... FOR UPDATE`` 对不可见（尚不存在）的行不
+    阻塞、立即返回空——时序上后台执行体可能先于请求事务 commit 启动，
+    首次探测读空属正常，不构成「请求事务已回滚」的证据。故按
+    ``TASK_VISIBILITY_INTERVAL_S`` 间隔重试探测直至行可见（此时请求
+    事务已提交）再放行执行；仅当 ``TASK_VISIBILITY_ATTEMPTS`` 次
+    （deadline ≈1s）探测后仍不可见才判定请求事务已回滚——此时行确不
+    存在，诊断成立。
+
+    bind_tenant 事务级（set_config is_local）→ 每次探测独立事务、逐次
+    重绑（探测为只读 SELECT，commit 即结束探测事务）。
+    """
+    for attempt in range(1, TASK_VISIBILITY_ATTEMPTS + 1):
+        await core_db.bind_tenant(sess, tenant_id)
+        visible = (
+            await sess.execute(
+                select(OpsTask.task_id).where(OpsTask.task_id == task_id)
+            )
+        ).scalar_one_or_none()
+        await sess.commit()
+        if visible is not None:
+            return True
+        if attempt < TASK_VISIBILITY_ATTEMPTS:
+            logger.info(
+                "recheck 任务行暂不可见（请求事务未提交，重试 %d/%d）：%s",
+                attempt,
+                TASK_VISIBILITY_ATTEMPTS,
+                task_id,
+            )
+            await asyncio.sleep(TASK_VISIBILITY_INTERVAL_S)
+    return False
+
+
+async def _record_completion_event(
+    factory: async_sessionmaker[AsyncSession],
+    tenant_id: UUID,
+    principal: Principal,
+    *,
+    task_id: UUID,
+    scope: str,
+    started_at: datetime,
+    event_type: str,
+    stats: dict,
+    error: str | None = None,
+) -> None:
+    """完成事件移出终态事务（T4 评审 Minor）：终态已先行 commit，事件
+    经独立会话/事务尽力写入——ingest 抛错仅告警不回滚，已落的终态
+    （如 SUCCEEDED）不因事件通道异常改判 FAILED。"""
+    try:
+        async with factory() as sess:
+            await core_db.bind_tenant(sess, tenant_id)
+            await _record_recheck_event(
+                sess,
+                principal,
+                task_id=task_id,
+                scope=scope,
+                started_at=started_at,
+                event_type=event_type,
+                stats=stats,
+                error=error,
+            )
+            await sess.commit()
+    except Exception:
+        logger.error(
+            "recheck 完成事件写入失败（终态已落库，仅告警）：%s", task_id, exc_info=True
+        )
 
 
 async def _run_segment(
@@ -712,7 +799,8 @@ async def _record_recheck_event(
     """完成事件（复用 events.ingest_batch——同 T3 checksum_failed 写通道）：
     UUIDv5 幂等（occurred_at=任务 started_at → 同任务重放恒同 event_id；
     幂等键 quality-recheck:{task_id}）；ingest 的计量/审计/outbox 为既有
-    副作用，随后台事务提交。
+    副作用，随本事务提交（调用方 ``_record_completion_event`` 开独立
+    尽力事务——终态已先行落库，本写失败仅告警不回滚）。
 
     事件 object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1——PG 无
     min(uuid) 聚合；ingest 通道校验 object 存在性——质量完成事件无自然
