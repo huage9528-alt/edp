@@ -130,12 +130,13 @@ async def test_me_admin_roles_and_wildcard_permissions(
     assert body["roles"] == ["ADMIN"]
     assert body["is_platform_admin"] is True
     assert body["org_id"] is None
-    # admin 是平台管理员：权限码通配展开为全部 21 项
+    # admin 是平台管理员：权限码通配展开为全部 23 项
     # （0005 基线 + 0008 adapters 两码 + 0010 tools:read/ebms:read
     #  + 0011 trace:read/memory:read/memory:review
-    #  + 0012 audit:policy_read/audit:policy_write）
+    #  + 0012 audit:policy_read/audit:policy_write
+    #  + 0013 quality:read/quality:run）
     assert set(body["permissions"]) == ALL_PERMISSIONS
-    assert len(body["permissions"]) == 21
+    assert len(body["permissions"]) == 23
 
 
 async def test_me_manager_roles_and_permissions(client: httpx.AsyncClient) -> None:

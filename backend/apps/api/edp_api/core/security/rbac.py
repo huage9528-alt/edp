@@ -25,7 +25,10 @@ from edp_api.core.security.principal import Principal
 # scope 轨道，不入本矩阵）；
 # 0012 新增 audit:policy_read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、
 # audit:policy_write → PLATFORM_ADMIN/ADMIN（审计策略管理轨道，EDP-032；
-# 策略仅人工管理，无 SERVICE scope 轨道）。
+# 策略仅人工管理，无 SERVICE scope 轨道）；
+# 0013 新增 quality:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、
+# quality:run → PLATFORM_ADMIN/ADMIN（质量查询/重跑管理轨道，W5 基线；
+# 任务执行走 ops.tasks 登记，无 SERVICE scope 轨道）。
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -48,6 +51,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "trace:read",
         "memory:read",
         "memory:review",
+        "quality:read",
+        "quality:run",
         "tenant:admin",
     },
     "ADMIN": {
@@ -71,6 +76,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "trace:read",
         "memory:read",
         "memory:review",
+        "quality:read",
+        "quality:run",
     },
     "MANAGER": {
         "registry:read",
@@ -92,6 +99,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "trace:read",
         "memory:read",
         "memory:review",
+        "quality:read",
     },
     "ANALYST": {
         "registry:read",
@@ -106,6 +114,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "ebms:read",
         "trace:read",
         "memory:read",
+        "quality:read",
     },
     "SERVICE": {
         "registry:read",
