@@ -90,14 +90,18 @@ READ COMMITTED 下请求事务未提交的 INSERT
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -112,6 +116,7 @@ from edp_api.modules.quality.schemas import (
     CoverageByType,
     CoverageReport,
     DimensionScore,
+    DrillRecord,
     OrphansReport,
     QualityKpi,
     QualityReport,
@@ -851,3 +856,40 @@ async def _record_recheck_event(
 def _log_line(level: str, message: str) -> dict:
     """log 行（形状对齐 mocks/types.ts QualityTask.logs：{ts, level, message}）。"""
     return {"ts": datetime.now(UTC).isoformat(), "level": level, "message": message}
+
+
+# ---- 演练记录只读归档（EDP-502 后端 / W5 T7）----
+
+# 默认仓库相对路径（相对 cwd 解析——开发/CLI 场景 cwd=仓库根）；容器内
+# 该路径不存在，经卷挂载 + EDP_DRILLS_FILE 指向挂载点（staging compose
+# 注释 T14 处理）；测试以 monkeypatch setenv 指向 tmp_path 临时文件
+DRILLS_FILE_ENV = "EDP_DRILLS_FILE"
+DEFAULT_DRILLS_FILE = "deploy/drills/drill-records.json"
+
+
+def list_drills() -> list[DrillRecord]:
+    """读 drill-records.json → DrillRecord 列表（演练线唯一写者，API 只读）。
+
+    每请求直读不做 mtime 缓存：文件 KB 级、读开销可忽略，免缓存失效
+    复杂度，T14~T16 回填后新值即时可见。
+
+    容错（只读归档面不 500，前端空态）：文件缺失/不可读/坏 JSON/顶层
+    结构不符 → []；单项 schema 不符 → 跳过该项（手工回填防误伤全列表）。
+    """
+    path = Path(os.environ.get(DRILLS_FILE_ENV, DEFAULT_DRILLS_FILE))
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("演练记录文件不可读（缺失/坏 JSON → 空列表）：%s", path)
+        return []
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, list):
+        logger.warning("演练记录顶层结构不符（缺 items 数组 → 空列表）：%s", path)
+        return []
+    records: list[DrillRecord] = []
+    for item in items:
+        try:
+            records.append(DrillRecord.model_validate(item))
+        except ValidationError:
+            logger.warning("演练记录单项不符 schema，跳过：%r", item)
+    return records

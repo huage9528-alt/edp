@@ -30,6 +30,7 @@ from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.health.router import router as health_router
 from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
+from edp_api.modules.quality.router import drills_router as quality_drills_router
 from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
@@ -111,6 +112,9 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(health_router)
     # quality 路由（B.13 上半）：质量报告/覆盖率（EDP-030；rechecks/tasks T4 起）
     app.include_router(quality_router)
+    # quality drills 路由（EDP-502 / W5 T7）：/admin/drills 演练记录只读归档
+    # （drill-records.json；复用 quality:read 口径，无 DB 访问）
+    app.include_router(quality_drills_router)
     for router in extra_routers:
         app.include_router(router)
 

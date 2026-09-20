@@ -9,7 +9,10 @@
 - GET /admin/quality/tasks/{task_id}（T4）：QualityTaskOut——mocks
   QualityTask（task_id/task_type/status/started_at/logs）的超集，scope/
   ref_name/stats/finished_at 为 mock 缺的可选补齐（前端结构类型按子集
-  消费，字段名与 mock 实测对齐）。
+  消费，字段名与 mock 实测对齐）；
+- GET /admin/drills（T7，EDP-502 后端）：DrillRecord/DrillRecordsOut——
+  W5 三项演练（switchover/pitr/tenant_restore）只读归档，executed_at
+  null 透传（未执行 PLANNED 态）。
 """
 
 from datetime import datetime
@@ -128,3 +131,27 @@ class QualityTaskOut(BaseModel):
     logs: list[TaskLogLine] = Field(default_factory=list)
     started_at: datetime
     finished_at: datetime | None = None
+
+
+class DrillRecord(BaseModel):
+    """W5 演练记录单项（drill-records.json；演练线手工回填）。
+
+    executed_at 为 null = 未执行（result=PLANNED，T14~T16 实测回填）；
+    readings 为自由键值表（读数归档，前端 mono 键值表直渲染）。
+    """
+
+    drill_type: str
+    executed_at: datetime | None = None
+    topology: str
+    rto_seconds: float | None = None
+    rpo_seconds: float | None = None
+    result: str
+    readings: dict[str, Any] = Field(default_factory=dict)
+    manual_url: str
+
+
+class DrillRecordsOut(BaseModel):
+    """GET /admin/drills 响应：{items: [...]}；文件缺失/坏 JSON → 空列表
+    （只读归档面不报错，前端空态）。"""
+
+    items: list[DrillRecord] = Field(default_factory=list)

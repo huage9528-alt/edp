@@ -12,6 +12,10 @@
 - GET ``/tasks/{task_id}``（quality:read，T4）→ 任务详情（status/stats/
   logs 轮询；RLS——跨租户行不可见统一 404）。
 
+drills 路由（EDP-502 后端 / W5 T7）：GET ``/api/v1/admin/drills``
+（quality:read）→ W5 三项演练只读归档（drill-records.json；口径见
+service docstring）。
+
 router 级挂 tenant_scoped（认证 → 租户状态 → bind_tenant → RLS）；无
 SERVICE scope 轨道（鉴权口径见 dependencies 模块 docstring）。
 """
@@ -30,6 +34,7 @@ from edp_api.modules.quality import service as quality_service
 from edp_api.modules.quality.dependencies import require_quality_read, require_quality_run
 from edp_api.modules.quality.schemas import (
     CoverageReport,
+    DrillRecordsOut,
     QualityReport,
     QualityTaskOut,
     RecheckAccepted,
@@ -40,6 +45,12 @@ from edp_api.modules.tenantmgmt.dependencies import tenant_scoped
 router = APIRouter(
     prefix="/api/v1/admin/quality",
     tags=["quality"],
+    dependencies=[Depends(tenant_scoped)],
+)
+
+drills_router = APIRouter(
+    prefix="/api/v1/admin/drills",
+    tags=["drills"],
     dependencies=[Depends(tenant_scoped)],
 )
 
@@ -135,3 +146,19 @@ async def quality_task(
     if task is None:
         raise EdpError.not_found("任务不存在")
     return QualityTaskOut.model_validate(task)
+
+
+@drills_router.get(
+    "",
+    response_model=DrillRecordsOut,
+    summary="演练记录（W5 三项：HA 切换/PITR/租户级恢复——只读归档）",
+    responses=error_responses(*_READ_ERRORS),
+)
+async def drill_records(
+    principal: Annotated[Principal, Depends(require_quality_read())],
+) -> DrillRecordsOut:
+    """quality:read：读 drill-records.json（默认仓库相对路径，相对 cwd
+    解析；EDP_DRILLS_FILE 可覆盖——容器内经卷挂载 + env 指向，staging
+    compose 注释 T14 处理）→ {items}；文件缺失/坏 JSON → {items: []}
+    （不报错，前端空态）。executed_at null = 未执行（PLANNED）。"""
+    return DrillRecordsOut(items=quality_service.list_drills())
