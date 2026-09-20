@@ -3,12 +3,18 @@
 任务状态自 T5 起持久化于 ops.tasks（W4-07 收口，W3-41/42 jobs 语义）：
 trigger_sync 在请求事务内登记 RUNNING 行（task_type=adapter_sync、
 ref_name=适配器名、scope=mode）→ 202；后台执行体先按 T4 模式等行可见
-（``_wait_task_visible`` 有界重试——与 quality.service 同名实现互为复制件，
-docstring 互引），再复用 ingest.run_sync_per_record（engine + 每记录独立
+（有界重试 ``quality.service.wait_task_visible``——T5 评审移交、T6 收口的
+公共单一实现，本模块原复制件已删除，语义与改动记录见其 docstring），
+再复用 ingest.run_sync_per_record（engine + 每记录独立
 事务）执行；stats（fetched/registered/duplicated/failed 四计数语义不变）
 与起止/错误 logs 落任务行，完成置终态 + finished_at（终态回写经独立会话/
 事务尽力落库，回写失败仅告警）。ORM 映射 OpsTask 经 quality.service 引用
 （import-linter 跨模块仅准 service 路径）。
+
+**同一适配器并发触发 = 两行 RUNNING 并发执行、无互斥（单副本执行语义，
+留痕）**：任务行各自登记、终态各自回写互不干扰；执行互斥不保证——
+并发全量同步可重复拉取（registry 幂等去重兜底），分布式锁 Redis 方案
+评估 T17 覆盖（同 quality recheck / evidence reindex 口径）。
 
 执行策略/RLS/水位：engine 经 core_db.get_engine() 取 API 进程全局引擎
 （模块属性引用，便于测试 monkeypatch），RLS 依赖 bind_tenant 在
@@ -47,8 +53,13 @@ from edp_api.modules.adapters_admin.schemas import (
 )
 from edp_api.modules.ingest import service as ingest_service
 
-# 跨模块仅准 service（import-linter）——OpsTask 映射经 quality.service 透出
-from edp_api.modules.quality.service import OpsTask
+# 跨模块仅准 service（import-linter）——OpsTask 映射经 quality.service 透出；
+# wait_task_visible 为 T5 评审移交、T6 收口的公共单一实现（原本地复制件已删）
+from edp_api.modules.quality.service import (
+    TASK_VISIBILITY_ATTEMPTS,
+    OpsTask,
+    wait_task_visible,
+)
 
 if TYPE_CHECKING:
     from edp_adapters.base import SourceAdapter
@@ -61,10 +72,6 @@ logger = logging.getLogger(__name__)
 ERROR_MAX_LEN = 500
 ADAPTER_MODE_MOCK = "mock"
 ADAPTER_TASK_TYPE = "adapter_sync"
-
-# 任务行可见性有界重试（T4 模式，同 quality.service）：10 次 × 100ms ≈ 1s
-TASK_VISIBILITY_ATTEMPTS = 10
-TASK_VISIBILITY_INTERVAL_S = 0.1
 
 # jobs 历史（W3-41/42 语义收口）：游标分页 limit 上下界
 DEFAULT_JOBS_LIMIT = 20
@@ -160,8 +167,9 @@ async def _run(
 ) -> None:
     """后台执行体：等行可见 → 逐记录独立事务同步 → 终态回写。
 
-    行可见性按 T4 模式有界重试（``_wait_task_visible``）：READ COMMITTED
-    下请求事务未提交的 INSERT 行不可见，deadline 后仍不可见 = 请求事务已
+    行可见性按 T4 模式有界重试（``quality.service.wait_task_visible``
+    公共单一实现）：READ COMMITTED 下请求事务未提交的 INSERT 行不可见，
+    deadline 后仍不可见 = 请求事务已
     回滚（行不存在 → 提前退出，无处回写终态）。单条记录失败由
     run_sync_per_record 逐条隔离（failed+1），仅整批级异常才置 FAILED
     （错误信息落 ERROR 日志行——任务行无独立 error 列，status 端点从
@@ -170,7 +178,7 @@ async def _run(
     factory = core_db.get_session_local()
     logs = [_log_line("INFO", f"任务启动：mode={mode}")]
     async with factory() as sess:
-        if not await _wait_task_visible(sess, tenant_id, task_id):
+        if not await wait_task_visible(sess, tenant_id, task_id):
             logger.warning(
                 "同步任务行 %d 次探测均不可见（deadline 后仍不可见，"
                 "请求事务已回滚）：%s",
@@ -238,41 +246,6 @@ async def _finish_task(
             await sess.commit()
     except Exception:
         logger.error("同步任务终态回写失败：%s", task_id, exc_info=True)
-
-
-async def _wait_task_visible(
-    sess: AsyncSession, tenant_id: UUID, task_id: UUID
-) -> bool:
-    """任务行可见性有界重试（T4 模式的复制件，语义与
-    ``quality.service._wait_task_visible`` 一致——docstring 互引，改动需
-    双向同步）。
-
-    READ COMMITTED 下请求事务**未提交**的 ops.tasks INSERT 行对本会话
-    不可见，后台执行体可能先于请求 commit 启动——按
-    ``TASK_VISIBILITY_INTERVAL_S`` 间隔重试探测直至行可见再放行执行；
-    仅当 ``TASK_VISIBILITY_ATTEMPTS`` 次（deadline ≈1s）探测后仍不可见
-    才判定请求事务已回滚。bind_tenant 事务级 → 每次探测独立事务、逐次
-    重绑（探测为只读 SELECT，commit 即结束探测事务）。
-    """
-    for attempt in range(1, TASK_VISIBILITY_ATTEMPTS + 1):
-        await core_db.bind_tenant(sess, tenant_id)
-        visible = (
-            await sess.execute(
-                select(OpsTask.task_id).where(OpsTask.task_id == task_id)
-            )
-        ).scalar_one_or_none()
-        await sess.commit()
-        if visible is not None:
-            return True
-        if attempt < TASK_VISIBILITY_ATTEMPTS:
-            logger.info(
-                "同步任务行暂不可见（请求事务未提交，重试 %d/%d）：%s",
-                attempt,
-                TASK_VISIBILITY_ATTEMPTS,
-                task_id,
-            )
-            await asyncio.sleep(TASK_VISIBILITY_INTERVAL_S)
-    return False
 
 
 def _log_line(level: str, message: str) -> dict:

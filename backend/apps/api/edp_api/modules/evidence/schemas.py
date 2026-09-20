@@ -96,3 +96,17 @@ class VerifyResponse(BaseModel):
     evidence_id: UUID
     valid: bool
     verified_at: datetime
+
+
+class ReindexRequest(BaseModel):
+    """POST /admin/evidence/reindex 请求体（scope 缺省 ALL，当前仅全量）。"""
+
+    scope: Literal["ALL"] = "ALL"
+
+
+class ReindexAccepted(BaseModel):
+    """202 响应：重索引任务已登记（后台异步执行，经 GET /admin/quality/
+    tasks/{task_id} 轮询——quality:read，不新开任务查询端点）。"""
+
+    task_id: UUID
+    status: str

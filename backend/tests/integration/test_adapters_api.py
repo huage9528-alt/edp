@@ -36,6 +36,7 @@ from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from edp_api.core import db as core_db
 from edp_api.main import create_app
 from edp_api.modules.demo import service as demo_service
+from edp_api.modules.ingest import service as ingest_service
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -615,3 +616,46 @@ async def test_jobs_history_desc_with_cursor_pagination(
         "duplicated": 0,
         "failed": 0,
     }
+
+
+# ---- 11. FAILED 路径（T5 评审移交）：整批异常 → FAILED 终态 + error 提取 ----
+
+
+async def test_sync_batch_failure_marks_failed_with_error(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_sync_per_record 整批级异常 → 任务 FAILED：error 自末条 ERROR 日志
+    行提取（任务行无独立 error 列）、stats 空 → None（对齐「完成前 stats 为
+    空」语义）、DB 行 FAILED + finished_at。"""
+
+    async def _boom(engine, tenant_id, adapter, mode, since=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ingest_service, "run_sync_per_record", _boom)
+
+    headers = await _login(client, "admin")
+    sync_id = await _trigger(client, headers, "full")
+    last_sync = await _poll_finished(client, headers, sync_id)
+    await _drain_background()
+
+    assert last_sync["status"] == "FAILED"
+    assert last_sync["error"] is not None and "boom" in last_sync["error"]
+    assert last_sync["finished_at"] is not None
+    assert last_sync["stats"] is None  # FAILED 路径 stats={} → None
+
+    # DB 断言：任务行 FAILED 终态 + finished_at + ERROR 日志行落库
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT status, finished_at, logs FROM ops.tasks"
+                " WHERE task_type = 'adapter_sync' AND task_id = :id"
+            ),
+            {"id": UUID(sync_id)},
+        )
+    ).one()
+    assert row.status == "FAILED"
+    assert row.finished_at is not None
+    error_lines = [line for line in row.logs if line.get("level") == "ERROR"]
+    assert error_lines and "boom" in error_lines[-1]["message"]

@@ -25,6 +25,7 @@ from edp_api.modules.catalog.router import router as catalog_router
 from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
+from edp_api.modules.evidence.router import admin_router as evidence_admin_router
 from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.health.router import router as health_router
 from edp_api.modules.memories.router import router as memories_router
@@ -87,6 +88,9 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(audit_policies_router)
     # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(evidence_router)
+    # evidence 管理路由（W3-04 收口）：/admin/evidence/reindex（quality:run
+    # 复用口径，任务轨道复用 quality tasks 端点）
+    app.include_router(evidence_admin_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
     app.include_router(adapters_admin_router)
     # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）

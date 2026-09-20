@@ -78,7 +78,9 @@ FAILED。**单副本执行
 多副本安全；执行互斥不保证——多副本并发同租户 recheck 可并行执行（分布式锁
 Redis 方案评估 T17 覆盖）。后台会话独立于请求会话（get_session_local），
 bind_tenant 事务级 → 每段独立事务；首段前可见性**有界重试**
-（``_wait_task_visible``）：READ COMMITTED 下请求事务未提交的 INSERT
+（``wait_task_visible``——T5 评审移交的公共 helper，单一实现供
+adapters_admin.service / evidence.service 后台执行体复用，防复制漂移）：
+READ COMMITTED 下请求事务未提交的 INSERT
 行对后台不可见，且 SELECT ... FOR UPDATE 对不可见（不存在）的行不
 阻塞、立即返回空——后台可能先于请求 commit 启动，首次探测读空属
 正常，按固定间隔重试至行可见再执行；deadline 后仍不可见 = 请求事务
@@ -557,7 +559,7 @@ async def _run_recheck(
     会话与事务：不复用请求会话（随请求关闭）——经 get_session_local 开
     独立会话；bind_tenant 事务级（set_config is_local）→ 每段独立事务
     （段间 commit 落进度，段前重绑）。首段前可见性有界重试
-    （``_wait_task_visible``）：READ COMMITTED 下请求事务未提交的
+    （``wait_task_visible`` 公共 helper）：READ COMMITTED 下请求事务未提交的
     INSERT 行不可见且 FOR UPDATE 对不存在的行不等待——后台先于请求
     commit 启动时首次探测读空属正常，重试至行可见再执行；deadline 后
     仍不可见 = 请求事务已回滚（行不存在 → 提前退出，无处回写终态）。
@@ -573,7 +575,7 @@ async def _run_recheck(
     logs: list[dict] = [_log_line("INFO", f"任务启动：scope={scope}")]
     try:
         async with factory() as sess:
-            if not await _wait_task_visible(sess, tenant_id, task_id):
+            if not await wait_task_visible(sess, tenant_id, task_id):
                 logger.warning(
                     "recheck 任务行 %d 次探测均不可见（deadline 后仍不可见，"
                     "请求事务已回滚）：%s",
@@ -647,10 +649,10 @@ async def _run_recheck(
             logger.error("recheck FAILED 终态回写失败：%s", task_id, exc_info=True)
 
 
-async def _wait_task_visible(
+async def wait_task_visible(
     sess: AsyncSession, tenant_id: UUID, task_id: UUID
 ) -> bool:
-    """任务行可见性有界重试（T4 评审 Important-1 修正）。
+    """任务行可见性有界重试（T4 评审 Important-1 修正；**单一公共实现**）。
 
     READ COMMITTED 下请求事务**未提交**的 ops.tasks INSERT 行对本会话
     不可见，且 ``SELECT ... FOR UPDATE`` 对不可见（尚不存在）的行不
@@ -663,6 +665,14 @@ async def _wait_task_visible(
 
     bind_tenant 事务级（set_config is_local）→ 每次探测独立事务、逐次
     重绑（探测为只读 SELECT，commit 即结束探测事务）。
+
+    **放置点留痕（W5 T5 评审移交，T6 收口）**：T4/T5 各留一份私有复制
+    （quality.service / adapters_admin.service），T6 evidence reindex 将
+    出现第三处消费——故抽为公开单一实现于本模块（ops.tasks ORM 映射
+    亦在本模块 family 内，adapters_admin 已循 ``service→service`` 路径
+    引 OpsTask），adapters_admin.service / evidence.service 改为 import
+    本函数；不再新增 modules/ops 小模块（OpsTask 映射仍在 quality.models，
+    拆小模块会造成 quality↔ops 新循环且无独立演进诉求）。
     """
     for attempt in range(1, TASK_VISIBILITY_ATTEMPTS + 1):
         await core_db.bind_tenant(sess, tenant_id)
@@ -676,7 +686,7 @@ async def _wait_task_visible(
             return True
         if attempt < TASK_VISIBILITY_ATTEMPTS:
             logger.info(
-                "recheck 任务行暂不可见（请求事务未提交，重试 %d/%d）：%s",
+                "任务行暂不可见（请求事务未提交，重试 %d/%d）：%s",
                 attempt,
                 TASK_VISIBILITY_ATTEMPTS,
                 task_id,
