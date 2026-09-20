@@ -1,4 +1,4 @@
-"""quality 服务（EDP-030 上半，T3）：质量报告四段实时聚合 + kpi/dimensions 派生。
+"""quality 服务（EDP-030：T3 质量报告四段实时聚合 + T4 任务轨道）。
 
 四段口径（B.13 + W5 spec §4.1；写死于本 docstring，单测/集成测试断言同口径）：
 
@@ -20,7 +20,10 @@
   evidence.records 悬挂计数（object_id 无对应注册对象）；
 - **checksum 抽检 checksum_sampling**：P0/P1 证据（evidence.records 经
   ``event_id`` 列或 links(ref_type='RESULT') 关联事件 risk_level IN
-  ('P0','P1')）按 evidence_id 升序抽样上限 120（或全量取小），重算
+  ('P0','P1')）按 captured_at 降序抽样上限 120（或全量取小；抽样策略
+  留痕：新证据优先入样——若按 evidence_id 升序，最旧证据恒占满限额，
+  抽检样本将被永久冻结；降序保证抽检面随新证据滚动，evidence_id 降序
+  作并列确定性 tie-break），重算
   canonical checksum（复用 evidence.service.compute_checksum 单一实现，
   杜绝两套序列化）比对；**仅失配行**经 events.service.ingest_batch 写
   ``quality.checksum_failed`` 事件（UUIDv5 幂等：occurred_at 取证据
@@ -53,23 +56,50 @@ SQL 读——模块间仅可 import 对方 service，ORM 不可直接引用）�
 已 bind_tenant，跨租户行不可见。
 
 事务边界：本层只 flush 不 commit——请求级提交由 core.db.get_db 统一执行
-（checksum 失配事件的 ingest 同事务）。
+（checksum 失配事件的 ingest 同事务）；例外：后台执行体（任务轨道，下述）
+自开独立会话、自管逐段事务。
+
+任务轨道（EDP-030 下半，T4）：``start_recheck`` 建 ops.tasks 行
+（task_type=quality_recheck，scope ∈ RECONCILE|ORPHAN|CHECKSUM|ALL）→
+202 后 ``asyncio.create_task`` 派发后台执行（同 adapters_admin 的派发
+模式：强引用防 GC）——复用上方各段计算函数（scope 单段 / ALL 四段，
+stats 无独立 scope——仅 ALL 覆盖 coverage 段）→ stats（段名 → 结果
+摘要 dict）+ logs（``[{ts, level, message}]``，每段起止/关键计数）逐段
+落库、终态回写 SUCCEEDED/FAILED + finished_at；完成写
+``quality.recheck_succeeded`` / ``quality.recheck_failed`` 事件（复用
+events.ingest_batch——同 T3 checksum_failed 写通道：UUIDv5 幂等
+occurred_at=任务 started_at、幂等键 quality-recheck:{task_id}；事件
+object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1），ingest 通道
+校验 object 存在性，空注册表跳过事件——结果已由任务行 stats/logs
+留痕）。**单副本执行
+语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）多副本安全；
+执行互斥不保证——多副本并发同租户 recheck 可并行执行（分布式锁
+Redis 方案评估 T17 覆盖）。后台会话独立于请求会话（get_session_local），
+bind_tenant 事务级 → 每段独立事务；首段前 SELECT ... FOR UPDATE 等待
+请求事务提交（任务行 INSERT 未提交时对后台不可见，行锁等待插入事务
+结束——避免后台先于 commit 读空行；请求回滚则行不存在，提前退出）。
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from edp_api.core import db as core_db
 from edp_api.core.security.principal import Principal
 from edp_api.modules.events import service as events_service
 from edp_api.modules.events.schemas import EventIn
 from edp_api.modules.evidence import service as evidence_service
+from edp_api.modules.quality.models import OpsTask
 from edp_api.modules.quality.schemas import (
     ChecksumSampling,
     CoverageByType,
@@ -81,6 +111,8 @@ from edp_api.modules.quality.schemas import (
     ReconciliationRow,
 )
 
+logger = logging.getLogger(__name__)
+
 # 对账阈值：四舍五入后的 deviation_pct > 2.0 即 ok=false（2.0 边界 ok=true）
 DEVIATION_THRESHOLD_PCT = 2.0
 # checksum 抽样每日上限（或 P0/P1 证据全量取小）
@@ -88,6 +120,32 @@ CHECKSUM_SAMPLE_LIMIT = 120
 CHECKSUM_FAILED_EVENT_TYPE = "quality.checksum_failed"
 CHECKSUM_FAILED_SOURCE_SYSTEM = "edp-quality"
 CHECKSUM_FAILED_ACTOR_ID = "service:quality"
+
+# ---- 任务轨道（EDP-030 下半，T4）----
+
+RECHECK_TASK_TYPE = "quality_recheck"
+RECHECK_SUCCEEDED_EVENT_TYPE = "quality.recheck_succeeded"
+RECHECK_FAILED_EVENT_TYPE = "quality.recheck_failed"
+# 完成事件来源三件套与 T3 checksum_failed 事件同口径（同一 edp-quality 写通道）
+RECHECK_EVENT_SOURCE_SYSTEM = CHECKSUM_FAILED_SOURCE_SYSTEM
+RECHECK_EVENT_ACTOR_ID = CHECKSUM_FAILED_ACTOR_ID
+
+# scope → 有序执行段（段名与 stats 键一致；coverage 无独立 scope——仅 ALL 覆盖）
+_SCOPE_SEGMENTS: dict[str, tuple[str, ...]] = {
+    "RECONCILE": ("reconciliation",),
+    "ORPHAN": ("orphans",),
+    "CHECKSUM": ("checksum",),
+    "ALL": ("reconciliation", "coverage", "orphans", "checksum"),
+}
+_SEGMENT_LABELS = {
+    "reconciliation": "对账",
+    "coverage": "覆盖率",
+    "orphans": "孤儿",
+    "checksum": "抽检",
+}
+
+# create_task 强引用防 GC（官方建议模式，同 adapters_admin；完成回调自清理）
+_recheck_tasks: set[asyncio.Task[None]] = set()
 
 _EDP_COUNT_SQL = text("""
     SELECT source_system, object_type, count(*) AS n
@@ -135,7 +193,7 @@ _CHECKSUM_SAMPLE_SQL = text("""
            JOIN event.events e ON e.event_id = l.ref_id
             AND e.risk_level IN ('P0', 'P1')
            WHERE l.ref_type = 'RESULT')
-    ORDER BY r.evidence_id
+    ORDER BY r.captured_at DESC, r.evidence_id DESC
     LIMIT :limit
 """)
 
@@ -425,3 +483,273 @@ async def build_report(
         kpi=kpi,
         dimensions=dimensions,
     )
+
+
+# ---- 任务轨道（EDP-030 下半，T4）----
+
+
+async def start_recheck(
+    sess: AsyncSession, principal: Principal, *, scope: str
+) -> OpsTask:
+    """登记 quality_recheck 任务行并派发后台执行（路由层 202 语义）。
+
+    **单副本执行语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）
+    多副本安全；执行互斥不保证——多副本并发同租户 recheck 可并行执行
+    （分布式锁 Redis 方案评估 T17 覆盖）。任务行可见性由请求级 commit
+    兜底，后台执行体先等行可见再执行（见 ``_run_recheck`` docstring）。
+    """
+    started_at = datetime.now(UTC)
+    task = OpsTask(
+        task_id=uuid4(),
+        tenant_id=principal.tenant_id,
+        task_type=RECHECK_TASK_TYPE,
+        status="RUNNING",
+        scope=scope,
+        started_at=started_at,
+        created_by=principal.id,
+    )
+    sess.add(task)
+    await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
+    background = asyncio.create_task(
+        _run_recheck(
+            task_id=task.task_id,
+            tenant_id=principal.tenant_id,
+            principal=principal,
+            scope=scope,
+            started_at=started_at,
+        )
+    )
+    _recheck_tasks.add(background)
+    background.add_done_callback(_recheck_tasks.discard)
+    return task
+
+
+async def get_task(sess: AsyncSession, task_id: UUID) -> OpsTask | None:
+    """任务行查询（RLS 会话——跨租户行不可见 → None → 路由层 404）。"""
+    return (
+        await sess.execute(select(OpsTask).where(OpsTask.task_id == task_id))
+    ).scalar_one_or_none()
+
+
+async def _run_recheck(
+    *,
+    task_id: UUID,
+    tenant_id: UUID,
+    principal: Principal,
+    scope: str,
+    started_at: datetime,
+) -> None:
+    """后台执行体：独立会话逐段执行 T3 聚合 → stats/logs 落 ops.tasks →
+    终态 + 完成事件。
+
+    会话与事务：不复用请求会话（随请求关闭）——经 get_session_local 开
+    独立会话；bind_tenant 事务级（set_config is_local）→ 每段独立事务
+    （段间 commit 落进度，段前重绑）。首段前 SELECT ... FOR UPDATE 等待
+    请求事务提交：任务行 INSERT 未提交时对后台不可见，行锁等待插入
+    事务结束（请求回滚则行不存在 → 提前退出，无处回写终态）。
+
+    失败语义：任一段异常 → 整任务 FAILED（已完成段的进度已逐段落库，
+    失败段不落 stats）；FAILED 回写 + quality.recheck_failed 事件经
+    独立事务尽力落库（回写自身异常仅告警）。
+    """
+    factory = core_db.get_session_local()
+    stats: dict[str, dict] = {}
+    logs: list[dict] = [_log_line("INFO", f"任务启动：scope={scope}")]
+    try:
+        async with factory() as sess:
+            await core_db.bind_tenant(sess, tenant_id)
+            visible = (
+                await sess.execute(
+                    select(OpsTask.task_id)
+                    .where(OpsTask.task_id == task_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            await sess.commit()  # 释放行锁——本事务仅做可见性等待
+            if visible is None:
+                logger.warning("recheck 任务行不可见（请求事务已回滚）：%s", task_id)
+                return
+            for segment in _SCOPE_SEGMENTS[scope]:
+                await core_db.bind_tenant(sess, tenant_id)
+                await _run_segment(sess, principal, segment, stats, logs)
+                await _apply_task(
+                    sess,
+                    task_id,
+                    stats=dict(stats),
+                    logs=list(logs),
+                    actor=principal.id,
+                )
+                await sess.commit()
+            await core_db.bind_tenant(sess, tenant_id)
+            finished_at = datetime.now(UTC)
+            logs.append(_log_line("INFO", "任务完成：SUCCEEDED"))
+            await _apply_task(
+                sess,
+                task_id,
+                stats=dict(stats),
+                logs=list(logs),
+                actor=principal.id,
+                status="SUCCEEDED",
+                finished_at=finished_at,
+            )
+            await _record_recheck_event(
+                sess,
+                principal,
+                task_id=task_id,
+                scope=scope,
+                started_at=started_at,
+                event_type=RECHECK_SUCCEEDED_EVENT_TYPE,
+                stats=stats,
+            )
+            await sess.commit()
+    except Exception as exc:
+        logger.error("质量重校验任务失败：%s（scope=%s）", task_id, scope, exc_info=True)
+        try:
+            async with factory() as sess:
+                await core_db.bind_tenant(sess, tenant_id)
+                error = str(exc)[:500]
+                logs.append(_log_line("ERROR", f"任务失败：{exc!r}"))
+                await _apply_task(
+                    sess,
+                    task_id,
+                    stats=dict(stats),
+                    logs=list(logs),
+                    actor=principal.id,
+                    status="FAILED",
+                    finished_at=datetime.now(UTC),
+                )
+                await _record_recheck_event(
+                    sess,
+                    principal,
+                    task_id=task_id,
+                    scope=scope,
+                    started_at=started_at,
+                    event_type=RECHECK_FAILED_EVENT_TYPE,
+                    stats=stats,
+                    error=error,
+                )
+                await sess.commit()
+        except Exception:
+            logger.error("recheck FAILED 终态回写失败：%s", task_id, exc_info=True)
+
+
+async def _run_segment(
+    sess: AsyncSession,
+    principal: Principal,
+    segment: str,
+    stats: dict[str, dict],
+    logs: list[dict],
+) -> None:
+    """执行单段（复用 T3 聚合函数）→ stats 结果摘要 + logs 起止/关键计数。
+
+    段函数按模块全局名直调——测试 monkeypatch 段函数即可构造 FAILED 路径。
+    """
+    label = _SEGMENT_LABELS[segment]
+    logs.append(_log_line("INFO", f"{label}段开始"))
+    if segment == "reconciliation":
+        rows = await _reconciliation_rows(sess)
+        bad = sum(1 for row in rows if row.source_count is not None and not row.ok)
+        stats[segment] = {"groups": len(rows), "bad_groups": bad}
+        done = f"{label}段完成：组数 {len(rows)}，超差组 {bad}"
+    elif segment == "coverage":
+        coverage = await build_coverage(sess)
+        stats[segment] = {"overall_pct": coverage.overall_pct}
+        done = f"{label}段完成：overall {coverage.overall_pct}%"
+    elif segment == "orphans":
+        counts = await _orphan_counts(sess)
+        stats[segment] = {
+            "event_orphans": counts.event_orphans,
+            "evidence_orphans": counts.evidence_orphans,
+        }
+        done = (
+            f"{label}段完成：事件悬挂 {counts.event_orphans}，"
+            f"证据悬挂 {counts.evidence_orphans}"
+        )
+    else:
+        sampling = await _checksum_sampling(sess, principal)
+        stats[segment] = {"sampled": sampling.sampled, "failed": sampling.failed}
+        done = f"{label}段完成：抽样 {sampling.sampled}，失配 {sampling.failed}"
+    logs.append(_log_line("INFO", done))
+
+
+async def _apply_task(
+    sess: AsyncSession,
+    task_id: UUID,
+    *,
+    stats: dict,
+    logs: list[dict],
+    actor: str,
+    status: str | None = None,
+    finished_at: datetime | None = None,
+) -> None:
+    """ops.tasks 回写（不 commit——事务边界在调用方）。stats/logs 整行
+    重赋值（JSONB 原位修改对 ORM 变更检测不可见）；行不存在（请求事务
+    回滚）静默跳过——审计 TASK_UPDATE 随调用方事务落库。"""
+    task = (
+        await sess.execute(select(OpsTask).where(OpsTask.task_id == task_id))
+    ).scalar_one_or_none()
+    if task is None:
+        return
+    task.stats = stats
+    task.logs = logs
+    task.updated_by = actor
+    if status is not None:
+        task.status = status
+        task.finished_at = finished_at
+
+
+async def _record_recheck_event(
+    sess: AsyncSession,
+    principal: Principal,
+    *,
+    task_id: UUID,
+    scope: str,
+    started_at: datetime,
+    event_type: str,
+    stats: dict,
+    error: str | None = None,
+) -> None:
+    """完成事件（复用 events.ingest_batch——同 T3 checksum_failed 写通道）：
+    UUIDv5 幂等（occurred_at=任务 started_at → 同任务重放恒同 event_id；
+    幂等键 quality-recheck:{task_id}）；ingest 的计量/审计/outbox 为既有
+    副作用，随后台事务提交。
+
+    事件 object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1——PG 无
+    min(uuid) 聚合；ingest 通道校验 object 存在性——质量完成事件无自然
+    业务对象，取租户内确定性锚点；空注册表 → 跳过事件，结果已由任务行
+    stats/logs 留痕）。
+    """
+    anchor = (
+        await sess.execute(
+            text(
+                "SELECT object_id FROM master.business_objects"
+                " ORDER BY object_id LIMIT 1"
+            )
+        )
+    ).scalar()
+    if anchor is None:
+        return
+    data: dict = {"task_id": str(task_id), "scope": scope, "stats": stats}
+    if error is not None:
+        data["error"] = error
+    await events_service.ingest_batch(
+        sess,
+        principal,
+        f"quality-recheck:{task_id}",
+        [
+            EventIn(
+                event_type=event_type,
+                object_id=anchor,
+                source_system=RECHECK_EVENT_SOURCE_SYSTEM,
+                occurred_at=started_at,
+                actor_type="SERVICE",
+                actor_id=RECHECK_EVENT_ACTOR_ID,
+                data=data,
+            )
+        ],
+    )
+
+
+def _log_line(level: str, message: str) -> dict:
+    """log 行（形状对齐 mocks/types.ts QualityTask.logs：{ts, level, message}）。"""
+    return {"ts": datetime.now(UTC).isoformat(), "level": level, "message": message}

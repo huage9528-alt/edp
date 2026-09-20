@@ -1,13 +1,22 @@
-"""quality 请求/响应模型（EDP-030，B.13 + MSW 扩展 kpi/dimensions）。
+"""quality 请求/响应模型（EDP-030，B.13 + MSW 扩展 kpi/dimensions + T4 任务轨道）。
 
 - GET /admin/quality/reports?date=：四段聚合 + kpi/dimensions——形状对齐
   frontend ``mocks/types.ts`` 的 QualityReport（kpi 五字段 / dimensions
   {domain,label,score_pct}[]）；source_count 在真实口径下可空（real/无
   水位降级行），mock 数据全量非空；
-- GET /admin/quality/coverage：reports 的 coverage 字段同形。
+- GET /admin/quality/coverage：reports 的 coverage 字段同形；
+- POST /admin/quality/rechecks（T4）：{scope} → 202 {task_id, status}；
+- GET /admin/quality/tasks/{task_id}（T4）：QualityTaskOut——mocks
+  QualityTask（task_id/task_type/status/started_at/logs）的超集，scope/
+  ref_name/stats/finished_at 为 mock 缺的可选补齐（前端结构类型按子集
+  消费，字段名与 mock 实测对齐）。
 """
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReconciliationRow(BaseModel):
@@ -81,3 +90,41 @@ class QualityReport(BaseModel):
     checksum_sampling: ChecksumSampling
     kpi: QualityKpi
     dimensions: list[DimensionScore]
+
+
+class RecheckRequest(BaseModel):
+    """POST /admin/quality/rechecks 请求体（scope 缺省 ALL）。"""
+
+    scope: Literal["RECONCILE", "ORPHAN", "CHECKSUM", "ALL"] = "ALL"
+
+
+class RecheckAccepted(BaseModel):
+    """202 响应：任务已登记（后台异步执行，经 GET tasks/{id} 轮询终态）。"""
+
+    task_id: UUID
+    status: str
+
+
+class TaskLogLine(BaseModel):
+    """任务日志行（形状对齐 mocks/types.ts QualityTask.logs）。"""
+
+    ts: datetime
+    level: Literal["INFO", "WARN", "ERROR"]
+    message: str
+
+
+class QualityTaskOut(BaseModel):
+    """GET /admin/quality/tasks/{task_id} 响应（mocks QualityTask 超集，
+    详见模块 docstring）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    task_id: UUID
+    task_type: str
+    status: str
+    scope: str | None = None
+    ref_name: str | None = None
+    stats: dict[str, Any] = Field(default_factory=dict)
+    logs: list[TaskLogLine] = Field(default_factory=list)
+    started_at: datetime
+    finished_at: datetime | None = None

@@ -85,6 +85,9 @@ ACTION_PREFIXES = {
     "decision.cases": "CASE",
     "action.actions": "ACTION",
     "audit.policies": "POLICY",
+    # ops.tasks（W5 T4 任务轨道）：行写即 TASK_CREATE/TASK_UPDATE/
+    # TASK_DELETE 派生（quality recheck / evidence reindex / adapter sync）
+    "ops.tasks": "TASK",
     # 裸表名回退（无 schema 前缀的表形态）
     "business_objects": "OBJECT",
     "events": "EVENT",
