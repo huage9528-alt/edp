@@ -29,6 +29,7 @@ from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.health.router import router as health_router
 from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
+from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
@@ -104,6 +105,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(memories_router)
     # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
     app.include_router(health_router)
+    # quality 路由（B.13 上半）：质量报告/覆盖率（EDP-030；rechecks/tasks T4 起）
+    app.include_router(quality_router)
     for router in extra_routers:
         app.include_router(router)
 
