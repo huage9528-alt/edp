@@ -10,7 +10,12 @@
  * - resource_type 裸名 → schema 全名歧义（W3-13/W3R-03）：aspect 按表裸名存
  *   resource_type，`records` 裸名同指 evidence.records / decision.records，
  *   依 action 前缀 EVIDENCE_* / DECISION_*|CASE_* 消歧（裸名回退 EVIDENCE）；
- * - ADAPTER/TOKEN/EXPORT 为预留前缀（后端暂无对应审计枚举，W5+ 端点启用）。
+ * - ADAPTER/TOKEN/EXPORT 为预留前缀（后端暂无对应审计枚举，W5+ 端点启用）；
+ * - QUALITY 亦为预留前缀（W4 终审 Minor）：复合动词对齐后端质量事件
+ *   event_type 实测常量（quality.service / evidence.service）——
+ *   quality.checksum_failed / recheck_succeeded / recheck_failed /
+ *   reindex_mismatch / reindex_succeeded / reindex_failed 的大写下划线
+ *   形态（后端现落事件表、未以 QUALITY_* 落审计 action，预留 W5+ 兜底）。
  */
 
 /** 显式常量全集（record_explicit 实测枚举 + 登录会话演示动作）。 */
@@ -36,6 +41,7 @@ export const ACTION_PREFIX_LABELS: Record<string, string> = {
   ADAPTER: "适配器",
   TOKEN: "令牌",
   EXPORT: "导出",
+  QUALITY: "质量",
 };
 
 /** 动词 / 复合动词字典（派生规则后半段，未命中走原文回退）。 */
@@ -51,6 +57,13 @@ export const ACTION_VERB_LABELS: Record<string, string> = {
   VERIFY: "校验",
   BATCH_INGEST: "批量写入",
   SYNC_FAILED: "同步失败",
+  // QUALITY_* 复合动词（后端质量事件 event_type 实测：quality.checksum_failed 等）
+  CHECKSUM_FAILED: "校验和失败",
+  RECHECK_SUCCEEDED: "复检成功",
+  RECHECK_FAILED: "复检失败",
+  REINDEX_MISMATCH: "重索引失配",
+  REINDEX_SUCCEEDED: "重索引成功",
+  REINDEX_FAILED: "重索引失败",
 };
 
 /** action → 中文：显式常量优先，其次前缀+动词派生，未命中回退原文。 */

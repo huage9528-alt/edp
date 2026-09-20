@@ -12,6 +12,7 @@ import {
 } from "../../mocks/data/audit";
 import { resetAuditMock } from "../../mocks/handlers/audit";
 import { server } from "../../mocks/server";
+import { deriveActionLabel } from "./vocab";
 
 function sessionOf(username: string, roles: string[]): AuthTokenResponse {
   return {
@@ -347,5 +348,22 @@ describe("AuditPage 策略 tab（EDP-032 CRUD）", () => {
     fireEvent.click(document.querySelector('[data-dom-id="danger-confirm"]')!);
     await waitFor(() => expect(deletedUrl).toContain(POLICY_DECISION_REVIEW));
     expect(await screen.findByText("策略「决策人工复核」已删除")).toBeInTheDocument();
+  });
+});
+
+describe("审计词表预留前缀（W4 终审 Minor：POLICY_*/QUALITY_* 中文映射兜底）", () => {
+  it("POLICY_*：前缀+动词派生已覆盖策略 CRUD（audit.policies 行写即派生）", () => {
+    expect(deriveActionLabel("POLICY_CREATE")).toBe("策略创建");
+    expect(deriveActionLabel("POLICY_UPDATE")).toBe("策略更新");
+    expect(deriveActionLabel("POLICY_DELETE")).toBe("策略删除");
+  });
+
+  it("QUALITY_*：预留前缀映射（词表键对齐后端质量事件 event_type 实测常量）", () => {
+    expect(deriveActionLabel("QUALITY_CHECKSUM_FAILED")).toBe("质量校验和失败");
+    expect(deriveActionLabel("QUALITY_RECHECK_SUCCEEDED")).toBe("质量复检成功");
+    expect(deriveActionLabel("QUALITY_RECHECK_FAILED")).toBe("质量复检失败");
+    expect(deriveActionLabel("QUALITY_REINDEX_MISMATCH")).toBe("质量重索引失配");
+    expect(deriveActionLabel("QUALITY_REINDEX_SUCCEEDED")).toBe("质量重索引成功");
+    expect(deriveActionLabel("QUALITY_REINDEX_FAILED")).toBe("质量重索引失败");
   });
 });

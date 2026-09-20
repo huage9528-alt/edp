@@ -32,14 +32,8 @@ const ACTOR_OPTIONS: { value: "HUMAN" | "AI" | "SERVICE"; label: string }[] = [
   { value: "SERVICE", label: "服务（SERVICE）" },
 ];
 
-/** 告警/通知渠道（原型「告警方式」选项逐字）。 */
-const NOTIFY_CHANNELS = [
-  "站内消息 + 邮件",
-  "仅站内消息",
-  "仅邮件",
-  "站内消息 + 短信",
-  "全部方式",
-] as const;
+/** 通知渠道（W4 终审 Minor：当前实现仅站内消息落地，email 预留——演示文案对齐真实现）。 */
+const NOTIFY_CHANNELS = ["站内消息（email 预留）"] as const;
 
 /** 多选 chip 组（输入添加 + 候选点选 + 已选移除）。 */
 function MultiSelectChips({

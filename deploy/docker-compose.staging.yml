@@ -119,7 +119,9 @@ services:
         condition: service_healthy
     environment:
       EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
-      EDP_JWT_SECRET: staging-secret
+      # 64 hex 随机演示密钥（W4-12 弱密钥修复，与 worker 同值）：
+      # 生产经 secret manager 注入，勿在 compose 内置真实密钥
+      EDP_JWT_SECRET: ***REMOVED_JWT_SECRET***
     command: ["uvicorn", "edp_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "18010:8000"
@@ -134,7 +136,8 @@ services:
     restart: unless-stopped
     environment:
       EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
-      EDP_JWT_SECRET: staging-secret
+      # 64 hex 随机演示密钥（与 api 同值）；生产经 secret manager 注入
+      EDP_JWT_SECRET: ***REMOVED_JWT_SECRET***
 
   # 前端：nginx 托管 SPA + /api 反代到 api 服务（VITE_API_BASE 构建期置空 = 同源相对路径）
   web:
