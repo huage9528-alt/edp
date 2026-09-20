@@ -1,9 +1,9 @@
 """W5 B.14 租户 API 补齐集成测试（EDP-501 后端，T2）。
 
 覆盖：PATCH 更新（plan 仅记录不调配额）/ context 切换（新 token RLS 落在
-目标租户 + SUSPENDED 403 + 审计行）/ members CRUD（重复 409 + 空角色 422 +
+目标租户 + SUSPENDED 403 + 审计行）/ members CRUD（重复 409 + 空角色 400 +
 最后 ACTIVE ADMIN 保护 400 + 租户 ADMIN 双轨：本租户 200 / 他租户 404）/
-quotas（GET 七字段 + PATCH 留痕 + reason 缺失 422）/ current/usage 双轨
+quotas（GET 七字段 + PATCH 留痕 + reason 缺失 400）/ current/usage 双轨
 （租户 ADMIN 200 / ANALYST 403）。
 
 组织方式沿 test_tenant_lifecycle：app_role_engine（edp_app，受 RLS）+
@@ -338,7 +338,7 @@ async def test_members_crud_and_rules(
     assert member2["display_name"] == "第二成员"
     assert member2["user_id"] == str(user2)
 
-    # 重复添加 → 409；member_roles 空数组 → 422；未知用户 → 404
+    # 重复添加 → 409；member_roles 空数组 → 400 VALIDATION_ERROR；未知用户 → 404
     duplicate = await client.post(
         f"{TENANTS}/{tenant_id}/members",
         json={"user_id": str(user2), "member_roles": ["MANAGER"]},
@@ -352,7 +352,8 @@ async def test_members_crud_and_rules(
         json={"user_id": str(user2), "member_roles": []},
         headers=admin,
     )
-    assert empty_roles.status_code == 422, empty_roles.text
+    assert empty_roles.status_code == 400, empty_roles.text
+    assert empty_roles.json()["error"]["code"] == "VALIDATION_ERROR"
 
     unknown_user = await client.post(
         f"{TENANTS}/{tenant_id}/members",
@@ -515,20 +516,22 @@ async def test_quotas_get_patch_and_reason(
     assert detail["reason"] == "月末对账高峰"
     assert detail["changes"]["api_rate_limit"] == {"before": 50, "after": 300}
 
-    # reason 缺失 / 空白 → 422；未知租户 → 404；非平台管理员 → 403
+    # reason 缺失 / 空白 → 400 VALIDATION_ERROR；未知租户 → 404；非平台管理员 → 403
     no_reason = await client.patch(
         f"{TENANTS}/{tenant_id}/quotas",
         json={"api_rate_limit": 400},
         headers=admin,
     )
-    assert no_reason.status_code == 422, no_reason.text
+    assert no_reason.status_code == 400, no_reason.text
+    assert no_reason.json()["error"]["code"] == "VALIDATION_ERROR"
 
     blank_reason = await client.patch(
         f"{TENANTS}/{tenant_id}/quotas",
         json={"api_rate_limit": 400, "reason": "  "},
         headers=admin,
     )
-    assert blank_reason.status_code == 422, blank_reason.text
+    assert blank_reason.status_code == 400, blank_reason.text
+    assert blank_reason.json()["error"]["code"] == "VALIDATION_ERROR"
 
     missing_tenant = await client.patch(
         f"{TENANTS}/{uuid4()}/quotas",

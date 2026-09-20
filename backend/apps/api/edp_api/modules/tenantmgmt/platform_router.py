@@ -316,7 +316,8 @@ async def add_tenant_member(
     principal: PlatformAdmin,
 ) -> TenantMemberItem:
     """{user_id, member_roles}：user_id 须为目标租户内 ACTIVE 用户（否则
-    404）；已在册 → 409；member_roles 空数组 → 422；201 成员对象。"""
+    404）；已在册 → 409；member_roles 空数组 → 400 VALIDATION_ERROR；
+    201 成员对象。"""
     return await tenantmgmt_service.add_member(
         sess, tenant_id, payload, actor_id=principal.id
     )
@@ -381,9 +382,9 @@ async def update_tenant_quotas(
     principal: PlatformAdmin,
 ) -> TenantQuotaDetail:
     """{api_rate_limit?, storage_gb?, events_per_month?, reason}——仅三字段
-    可调；reason 必填非空（缺失/空白 → 422）；审计留痕（切面
-    TENANT_QUOTAS_UPDATE diff + TENANT_QUOTAS_ADJUST 携 reason）→ 200
-    更新后完整配额对象。"""
+    可调；reason 必填非空（缺失/空白 → 400 VALIDATION_ERROR）；审计留痕
+    （切面 TENANT_QUOTAS_UPDATE diff + TENANT_QUOTAS_ADJUST 携 reason）
+    → 200 更新后完整配额对象。"""
     return await tenantmgmt_service.update_quota(
         sess, tenant_id, payload, actor_id=principal.id, principal=principal
     )

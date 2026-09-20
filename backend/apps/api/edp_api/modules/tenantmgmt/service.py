@@ -619,6 +619,8 @@ async def switch_tenant_context(
       is_platform_admin 原样保留；
     - 平台面审计行（record_explicit，action=TENANT_CONTEXT_SWITCH，
       detail 含 from_tenant/to_tenant，actor 归因平台 ADMIN 本人）；
+      from_tenant 记 `principal.effective_tenant_id`（act_tenant 优先）
+      ——已切换再切换场景下记当前执行租户，而非身份归属租户；
     - **token 经响应体返回是最小可行口径**（B.14 未定义通道）——前端
       TenantSwitchModal 持有后替换本地凭据并全站重拉（13.8）。
     """
@@ -640,7 +642,7 @@ async def switch_tenant_context(
         resource_type="tenants",
         resource_id=str(tenant.tenant_id),
         detail={
-            "from_tenant": str(principal.tenant_id),
+            "from_tenant": str(principal.effective_tenant_id),
             "to_tenant": str(tenant.tenant_id),
         },
         principal=principal,
@@ -721,8 +723,8 @@ async def add_member(
     """POST members：bind_tenant 后写 tenant_members（ORM → 切面
     TENANT_MEMBERS_CREATE 审计行）。
 
-    - 租户不存在 → 404；member_roles 空数组 → 422（INVALID_TRANSITION
-      承载——13 错误码体系中仅其映射 422，语义拒绝留 docstring）；
+    - 租户不存在 → 404；member_roles 空数组 → 400 VALIDATION_ERROR
+      （语义拒绝与请求体校验同口径，W5 评审裁定）；
     - user_id 须为目标租户内 ACTIVE 用户（users FORCE RLS，绑定后 0 行
       即 404，不泄露存在性）；已在册 → 409（uq_tenant_member 先查再插
       + IntegrityError 兜底）。
@@ -730,7 +732,7 @@ async def add_member(
     if await get_tenant(sess, tenant_id) is None:
         raise EdpError.not_found("租户不存在")
     if not req.member_roles:
-        raise EdpError.invalid_transition("member_roles 不能为空数组")
+        raise EdpError.validation_error("member_roles 不能为空数组")
     await bind_tenant(sess, tenant_id)
     user = await sess.get(UserRow, req.user_id)
     if user is None or user.status != "ACTIVE":
@@ -785,7 +787,8 @@ async def update_member(
     """PATCH member（改角色/禁用；ORM 赋值 → 切面 TENANT_MEMBERS_UPDATE）。
 
     - bind_tenant 后 RLS 天然收敛：跨租户/不存在 member_id 统一 404；
-    - member_roles 提供且为空数组 → 422（同 add_member 口径）；
+    - member_roles 提供且为空数组 → 400 VALIDATION_ERROR（同 add_member
+      口径，W5 评审裁定）；
     - 最后 ACTIVE ADMIN 保护：本次变更会使租户内 ACTIVE ADMIN 数归零
       （禁用该成员或移除其 ADMIN 角色，且无其他 ACTIVE ADMIN）→
       400 VALIDATION_ERROR。
@@ -793,7 +796,7 @@ async def update_member(
     if await get_tenant(sess, tenant_id) is None:
         raise EdpError.not_found("租户不存在")
     if req.member_roles is not None and not req.member_roles:
-        raise EdpError.invalid_transition("member_roles 不能为空数组")
+        raise EdpError.validation_error("member_roles 不能为空数组")
     await bind_tenant(sess, tenant_id)
     member = await sess.get(TenantMember, member_id)
     if member is None or member.tenant_id != tenant_id:
@@ -833,7 +836,12 @@ async def _ensure_last_active_admin_preserved(
 ) -> None:
     """禁用/降级守卫：变更成员原为 ACTIVE ADMIN、变更后不再是，且租户内
     无其他 ACTIVE ADMIN → 400 VALIDATION_ERROR（不可禁用最后一个
-    ACTIVE ADMIN）。非 ADMIN 成员的普通变更不受限。"""
+    ACTIVE ADMIN）。非 ADMIN 成员的普通变更不受限。
+
+    check-then-act 竞态窗口登记：count 查询与写回 flush 非原子，并发
+    变更两个 ADMIN 可能双双通过守卫——单副本部署语义可接受，分布式锁
+    （Redis）评估 T17 覆盖。
+    """
     was_admin = "ADMIN" in (member.member_roles or []) and member.status == "ACTIVE"
     still_admin = "ADMIN" in new_roles and new_status == "ACTIVE"
     if not was_admin or still_admin:
@@ -875,17 +883,20 @@ async def update_quota(
     events_per_month 三字段可调（batch_max_events / query_timeout_ms /
     pool_share 不在本端点口径内）。
 
-    - reason 必填非空 → 缺失/空白 422（INVALID_TRANSITION 承载，同
-      add_member 空数组口径——13 错误码体系仅其映射 422）；
+    - reason 必填非空 → 缺失/空白 400 VALIDATION_ERROR（W5 评审裁定，
+      与请求体校验同口径）；
     - 审计留痕双行：ORM 赋值触发切面 TENANT_QUOTAS_UPDATE（before/after
       diff）+ record_explicit 补 TENANT_QUOTAS_ADJUST（detail 携带
       reason 与变更清单——「临时提额留痕」的业务语义行）；
-    - 配额行缺失时以默认值实例补落库（健康租户不应出现，防御性口径）。
+    - 配额行缺失时以默认值实例补落库（健康租户不应出现，防御性口径）；
+    - check-then-act 竞态窗口登记：读配额行 → 属性赋值 → flush 非原子，
+      并发 PATCH 后写覆盖前写（丢失更新）——单副本部署语义可接受，
+      分布式锁（Redis）评估 T17 覆盖。
     """
     if await get_tenant(sess, tenant_id) is None:
         raise EdpError.not_found("租户不存在")
     if not (req.reason or "").strip():
-        raise EdpError.invalid_transition("调整配额必须填写 reason（临时提额留痕）")
+        raise EdpError.validation_error("调整配额必须填写 reason（临时提额留痕）")
     quota = await sess.get(TenantQuota, tenant_id)
     now = datetime.now(UTC)
     if quota is None:
