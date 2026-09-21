@@ -9,6 +9,7 @@ node_modules/
 dist/
 storybook-static/
 coverage/
+*.tsbuildinfo
 
 # Env & secrets
 .env
