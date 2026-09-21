@@ -2,6 +2,9 @@ import { Navigate, createBrowserRouter, type RouteObject } from "react-router-do
 import { ActionsPage } from "../features/decisions_actions/ActionsPage";
 import { DecisionsPage } from "../features/decisions_actions/DecisionsPage";
 import { DrillsPage } from "../features/drills/DrillsPage";
+import { MemoryPage } from "../features/memory/MemoryPage";
+import { ToolsPage } from "../features/tools/ToolsPage";
+import { TracesPage } from "../features/traces/TracesPage";
 import { AdaptersPage } from "../features/adapters/AdaptersPage";
 import { AuditPage } from "../features/audit/AuditPage";
 import { CasesPage } from "../features/cases/CasesPage";
@@ -13,7 +16,6 @@ import { HealthPage } from "../features/health/HealthPage";
 import {
   ForbiddenPage,
   NotFoundPage,
-  PlaceholderPage,
   SearchPlaceholderPage,
 } from "../features/placeholder/PlaceholderPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
@@ -27,11 +29,6 @@ import { RedirectIfAuthed, RequireAuth } from "./guards";
 export interface RouteHandle {
   title: string;
 }
-
-const withTitle = (title: string) => ({
-  element: <PlaceholderPage title={title} />,
-  handle: { title } satisfies RouteHandle,
-});
 
 /** 13.3 路由表全量：除 /login 外全部落在壳层布局内（W1 一律占位，后续周次逐页替换）。 */
 export const routes: RouteObject[] = [
@@ -122,9 +119,21 @@ export const routes: RouteObject[] = [
         element: <ActionsPage />,
         handle: { title: "行动" } satisfies RouteHandle,
       },
-      { path: "admin/tools", ...withTitle("Agent 工具") },
-      { path: "admin/traces", ...withTitle("Trace 检索") },
-      { path: "admin/memory", ...withTitle("候选记忆") },
+      {
+        path: "admin/tools",
+        element: <ToolsPage />,
+        handle: { title: "Agent 工具" } satisfies RouteHandle,
+      },
+      {
+        path: "admin/traces",
+        element: <TracesPage />,
+        handle: { title: "Trace 检索" } satisfies RouteHandle,
+      },
+      {
+        path: "admin/memory",
+        element: <MemoryPage />,
+        handle: { title: "候选记忆" } satisfies RouteHandle,
+      },
       {
         path: "admin/drills",
         element: <DrillsPage />,
