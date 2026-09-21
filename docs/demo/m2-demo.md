@@ -296,3 +296,16 @@ erp            ORDER        48      43       48      48        True
 78. **W5-08 quality:read 角色集宽于 B.13「ADMIN」原文**：0013 迁移将 `quality:read` 授 PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（对齐 audit:read 消费面口径）、`quality:run` 授 PLATFORM_ADMIN/ADMIN——B.13 原文仅 ADMIN，读面为有意超集（看板/报告消费宽于触发执行）；quality 面无 SERVICE scope 轨道（readonly API Key 恒 403，dependencies docstring 留痕）。
 79. **W5-09 checksum 抽检 ingest 计量副作用**：quality 抽检失配行经 `events.ingest_batch` 落 `quality.checksum_failed` 事件（UUIDv5 幂等：occurred_at 取证据 captured_at，同失配重复抽检恒同 event_id）——复用 ingest 写通道带既有副作用（api_calls 计量/审计/outbox）：质量抽检/对账自身产生租户计量计数（T3 评审裁定接受留痕）；内部来源豁免 W6 评估。
 80. **W5-10 evidence↔quality 双向 service 引用**：evidence.service 与 quality.service 互相引用（reindex 复用 quality 的 OpsTask 映射/`wait_task_visible` 公共 helper；quality 复用 evidence 的 `compute_checksum` 单一实现）——模块别名引用（运行时取属性）防部分初始化期名字导入竞态 + docstring 防线，无 import-linter no-cycles 契约（T6 评审裁定接受）；加 no-cycles 契约时重构拆公共模块。
+
+81. **W5-11 平台用户目录端点缺失（邀请成员 mock 扩展）**：租户页「邀请成员」用户下拉在 MSW 走 mock 扩展 `GET /api/v1/admin/users`（真模式 404 → 占位 option「用户目录暂不可用」，邀请功能受限）——后端无平台用户目录端点（B.14 未定义），W6 按需补契约。
+82. **W5-12 Bell 消息中心客户端前缀过滤**：最小消息中心取最近 50 条事件客户端过滤 `quality.` 前缀（`GET /events` 的 `event_type` 为精确匹配，契约冻结不改）——`FEED_WINDOW=50` 常量留痕；事件量增长超窗时最旧质量事件静默挤出，后续宜后端前缀过滤入契约（W6 评估）。
+83. **W5-13 Agent 三页 capability 清单硬编码**：tools/traces/memory 三页 capability 下拉/chips 为演示 fixture 常量（`CAPABILITY_LABELS` 等三处，label 重复维护）——`GET /capabilities` 契约已存在（W3R 注册中心），W6 接入收敛单点。
+84. **W5-14 operator_ticket UI 留痕不下发**：租户注销弹窗的 operator_ticket 字段仅 UI 留痕（B.14 cancel 契约仅 `confirm/reason`），测试锁定请求体形状；B.14 补字段后随契约接入。
+85. **W5-15 HAProxy staging 单点**：单写入口 HAProxy 为 staging 单实例（生产需双实例 + keepalived/VIP）；切换窗口单次探测最长 ≈3.6s（含 Windows `docker compose exec` 开销，非纯 DB 延迟）；api 未开 `pool_pre_ping`，极少数持旧连接请求可能报一次错（预期语义，文档标注）。
+86. **W5-16 演练记录 JSON 容器供给（终审 I-1 闭环）**：`GET /admin/drills` 默认按 cwd 相对路径读 `deploy/drills/drill-records.json`，而 api 镜像构建上下文为 `backend/`（WORKDIR `/workspace`）不含该文件——终审发现 compose 环境恒空态（健康页备份卡同受「—」影响）；**收口修复：dev/staging compose 的 api 服务补只读挂载 + `EDP_DRILLS_FILE` env（本文件闭环）**。另 T16 演练时 staging api 镜像早于 W5 quality 模块，`--build` 重建后新代码方生效（部署例行事项）。
+87. **W5-17 前端全量套件负载 flake 与 Makefile 参数修复**：宿主满载下 registry 页单用例超时偶发（W3/W4 同类）；**W5 收口实测发现原 Makefile `pnpm ... test -- --maxWorkers=2 --testTimeout=60000` 的 `--` 被 pnpm 原样透传给 vitest 成为「文件过滤器」，参数实际未生效（超时仍 15000ms）**——已改 `pnpm --filter web exec vitest run --maxWorkers=2 --testTimeout=60000` 并复跑全绿（web 231/api-sdk 22/shared 96）。
+88. **W5-18 租户页 Minor 三项**：租户切换弹窗副标题「· 生产环境」硬编码（原型 DEMO 行为「测试环境」，宜删或数据驱动）；新建租户弹窗未做原型的配额预览（契约无对应字段，PLAN_QUOTAS 可推导）；租户管理稿权限矩阵表未落地（任务卡未列，后续可选）。
+89. **W5-19 备份卡键名语义与 Bell 清零竞态**：健康页备份卡「可恢复性」行取 readings["切换成功率"]（标签与键名语义错位，展示取舍待对齐）；Bell 未读清零用旧 items[0] 推水位（毫秒级竞态，看过仍可能计未读，影响极小）。
+90. **W5-20 租户恢复演练断言口径**：T15c api 层断言降为 DB 层等价（tenant-b 成员 JWT 未配置，脚本头/readings 已注）；后续补 tenant-b 凭据配置后恢复 api 层端到端断言。
+
+91. **W5-21 终审 Minor 三项**：adapter sync FAILED 时 stats 置空（quality/evidence 保留已完成段/批进度，语义可辩护，统一留 W6）；switchover `rto_seconds=0` 为 healthz 零中断口径（DB 写面 3.6s 在 readings，前端展示建议加注）；`GET /admin/drills` 用 quality:read（含租户 MANAGER/ANALYST，内容为基础设施元数据、无凭据，低风险）。
