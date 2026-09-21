@@ -2,3 +2,5 @@
 # 否则 Windows autocrlf 检出后 sha256 门禁（export --check / api-sdk gen / CI）必然失败。
 contracts/openapi.json text eol=lf
 contracts/openapi.sha256 text eol=lf
+# shell 脚本（如 deploy/scripts/init-minio.sh）在 Linux 容器内执行，CRLF 会破坏 shebang
+*.sh text eol=lf

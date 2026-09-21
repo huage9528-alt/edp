@@ -2,6 +2,7 @@ name: edp-staging
 
 # EDP staging 最小 HA 拓扑（T14 / EDP-021）：etcd×1 + patroni×2（PG16 主从）+ pgbackrest
 # + 应用层（api/worker/web 复用 dev compose 的 build 上下文与 env 形态）。
+# W5-T14（EDP-031 前置）：+ MinIO 对象存储，pgbackrest repo1 迁 S3（bucket edp-backups）。
 #
 # 端口（避开 dev 5432/15432、8000/18000、5173/9080）：
 #   api 18010 / web 9090 / patroni restapi 8008(patroni1)、8009(patroni2)
@@ -97,17 +98,59 @@ services:
       timeout: 5s
       retries: 12
 
-  # pgbackrest：repo keeper（持有备份卷 + 配置；备份命令经 patroni1 exec 本地执行，
+  # pgbackrest：repo keeper（W5-T14 起为 S3 repo：仅挂配置；备份命令经 patroni1 exec 本地执行，
   # 首次全量备份命令见 deploy/pgbackrest/pgbackrest.conf 头部注释）
   pgbackrest:
     build: *patroni-build
     image: edp-staging/patroni:pg16
     entrypoint: ["sleep", "infinity"]
     depends_on:
-      - patroni1
+      patroni1:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      init-minio:
+        condition: service_completed_successfully
     volumes:
       - ./pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      # W4 本地 repo 卷保留为降级预案（repo1 已迁 S3；MinIO 不可用时回退
+      # repo1-type=posix + repo1-path=/pgbackrest/repo，见 docs/demo/w5-drills.md T14 降级段）
       - backups:/pgbackrest
+
+  # ---- 对象存储（W5-T14 / EDP-031 前置）：MinIO = pgbackrest S3 repo ----
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # 演示值（32 hex 随机，与 pgbackrest.conf repo1-s3-key/-secret 一致）：
+      # 生产经 secret manager 注入，勿在 compose 内置真实凭据
+      MINIO_ROOT_USER: edp_minio
+      MINIO_ROOT_PASSWORD: ***REMOVED_MINIO_PASSWORD***
+    ports:
+      # 宿主端口避开已占（5432/15432/8000/18000/5173/9080/8008/8009/9090）
+      - "19000:9000" # S3 API（compose 网内 pgbackrest 仍走 minio:9000）
+      - "19001:9001" # console（浏览器 http://localhost:19001）
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # 一次性 job：等 minio ready → mc alias → 建 edp-backups bucket（幂等；restart: no）
+  init-minio:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: edp_minio
+      MINIO_ROOT_PASSWORD: ***REMOVED_MINIO_PASSWORD***
+    volumes:
+      - ./scripts/init-minio.sh:/usr/local/bin/init-minio.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/init-minio.sh"]
 
   # ---- 应用层（build/env 复用 docker-compose.dev.yml 形态）----
   api:
@@ -156,3 +199,4 @@ volumes:
   patroni1:
   patroni2:
   backups:
+  minio-data:
