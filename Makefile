@@ -29,7 +29,9 @@ frontend-lint:
 frontend-test:
 	# --maxWorkers=2 --testTimeout=60000：宿主满载（Docker Desktop + 多 uvicorn）下
 	# 默认 15s 超时随机 flake（W3/W4 收口两轮复现），代码同版本两参复跑恒绿（W3-134 惯例固化）
-	cd frontend && pnpm --filter web test -- --maxWorkers=2 --testTimeout=60000 && pnpm --filter @edp/api-sdk test && pnpm --filter @edp/shared test
+	# W5 收口修正：原 `test -- --maxWorkers=2 ...` 的 `--` 被 pnpm 原样透传给 vitest，
+	# 成为「文件过滤器」——参数实际未生效（W5 实测超时仍 15000ms）；改 exec 直跑确保生效。
+	cd frontend && pnpm --filter web exec vitest run --maxWorkers=2 --testTimeout=60000 && pnpm --filter @edp/api-sdk test && pnpm --filter @edp/shared test
 
 verify-all: backend-lint backend-test frontend-lint frontend-test backend-migrate-check contract-export contract-gate
 
