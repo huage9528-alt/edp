@@ -155,8 +155,14 @@ async def test_ops_tasks_rls_isolates_tenants(
     session = async_sessionmaker(app_role_engine)()
     try:
         await bind_tenant(session, tenant_id)
-        own = (await session.execute(text("SELECT count(*) FROM ops.tasks"))).scalar_one()
-        assert own == 1  # 正对照：绑定本租户可见造数行
+        visible_own = (
+            await session.execute(
+                text("SELECT count(*) FROM ops.tasks WHERE task_id = :tid"),
+                {"tid": task_id},
+            )
+        ).scalar_one()
+        assert visible_own == 1  # 正对照：本租户上下文可见造数行（按行定位，
+        # 与全表存量解耦——其他测试文件的 adapter_sync 行不得影响本断言）
 
         await bind_tenant(session, uuid4())  # 任意其他租户上下文
         other = (
