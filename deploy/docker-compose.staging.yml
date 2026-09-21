@@ -6,11 +6,12 @@ name: edp-staging
 #
 # 端口（避开 dev 5432/15432、8000/18000、5173/9080）：
 #   api 18010 / web 9090 / patroni restapi 8008(patroni1)、8009(patroni2)
+#   haproxy 5432 仅 compose 内网（haproxy:5432），不映射宿主端口
 #
-# 单写入口约定（最小版不做自动跟随）：DATABASE_URL 固定指向 patroni1:5432；
-# 主从切换（switchover）后若 leader 变为 staging-pg2，应用层需人工/脚本改指
-# patroni2:5432 并 `docker compose -f deploy/docker-compose.staging.yml up -d api worker`
-# ——W5 引入 HAProxy/Pgbouncer 统一读写入口后消除（缺口已记 docs/demo/staging-drill.md）。
+# 单写入口约定（W5-T16 起自动跟随）：api/worker 的 DATABASE_URL 统一指向
+# haproxy:5432——HAProxy 按 Patroni REST API（8008 /primary）健康检查自动跟随
+# 主库（仅 leader 200，replica 503 摘除），switchover 后无需人工改配置。
+# 降级：HAProxy 不可用时回退固定 patroni1:5432（见 docs/demo/w5-drills.md T16 段）。
 #
 # 用法（部署/回滚/演练统一走脚本）：
 #   powershell -File deploy/scripts/deploy-staging.ps1 -Action deploy|rollback|drill
@@ -98,6 +99,26 @@ services:
       timeout: 5s
       retries: 12
 
+  # ---- 单写入口（W5-T16 / W4-T14 后续项）：HAProxy 按 Patroni /primary 自动跟随主库 ----
+  # 配置与检查口径见 deploy/haproxy/haproxy.cfg 头部注释
+  haproxy:
+    image: haproxy:3.0-alpine
+    depends_on:
+      patroni1:
+        condition: service_healthy
+      patroni2:
+        condition: service_healthy
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    # stats socket 需可写目录（镜像默认以 haproxy 用户运行）
+    tmpfs:
+      - /var/run/haproxy:mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   # pgbackrest：repo keeper（W5-T14 起为 S3 repo：仅挂配置；备份命令经 patroni1 exec 本地执行，
   # 首次全量备份命令见 deploy/pgbackrest/pgbackrest.conf 头部注释）
   # W5-T15a（EDP-031）：入口改挂 backup-cron.sh——容器内循环脚本每日 02:00 UTC 全量备份
@@ -165,10 +186,11 @@ services:
       context: ../backend
       dockerfile: apps/api/Dockerfile
     depends_on:
-      patroni1:
+      haproxy:
         condition: service_healthy
     environment:
-      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
+      # 单写入口（W5-T16）：经 HAProxy 自动跟随主库，勿再固定 patroni1/patroni2
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@haproxy:5432/edp
       # 64 hex 随机演示密钥（W4-12 弱密钥修复，与 worker 同值）：
       # 生产经 secret manager 注入，勿在 compose 内置真实密钥
       EDP_JWT_SECRET: ***REMOVED_JWT_SECRET***
@@ -181,11 +203,12 @@ services:
       context: ../backend
       dockerfile: apps/worker/Dockerfile
     depends_on:
-      patroni1:
+      haproxy:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@patroni1:5432/edp
+      # 单写入口（W5-T16）：经 HAProxy 自动跟随主库
+      EDP_DATABASE_URL: postgresql+asyncpg://edp_app:edp_app@haproxy:5432/edp
       # 64 hex 随机演示密钥（与 api 同值）；生产经 secret manager 注入
       EDP_JWT_SECRET: ***REMOVED_JWT_SECRET***
 

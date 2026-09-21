@@ -220,3 +220,55 @@ stanza: edp
 2. **patroni 容器无需重启**：pgbackrest.conf 为只读 bind mount，宿主改写即热生效（archive_command 每次调用重读配置），S3 迁移对主从零扰动。
 3. **降级预案（未触发，凭据已验在位）**：MinIO 不可用/资源不足时，将 pgbackrest.conf `[global]` 改回 `repo1-path=/pgbackrest/repo` 并删除 `repo1-type`/`repo1-s3-*` 各行（backups 卷仍挂载，W4 本地备份集实测仍在：`/pgbackrest/repo` 13M，含 20260918-002007F 全量）。
 4. **已知取舍（记入后续项）**：内网明文 http（演示形态，生产走 TLS + secret manager 注入凭据）；MINIO_ROOT_USER 复用为 repo1-s3-key（生产应为独立最小权限 service account）；单副本 MinIO 无纠删码，对象存储冗余待 EDP-031 正式选型。
+
+## T16 — HAProxy 单写入口 + switchover 复测（W4 T14 后续项）
+
+- 改动：新增 `deploy/haproxy/haproxy.cfg`（frontend `pg` :5432 → backend `patroni_primary`；`option httpchk GET /primary` + `http-check expect status 200`；`inter 1s rise 1 fall 2`；`retries 3` + `option redispatch`；stats socket 经 compose tmpfs 可写）；compose 新增 `haproxy` 服务（`haproxy:3.0-alpine`，实测可拉取 digest `sha256:30860bc9...`，仅 compose 内网、不映射宿主端口），api/worker `EDP_DATABASE_URL` 改指 `haproxy:5432`（`depends_on: haproxy healthy`）。
+- 演练时间：2026-09-21 13:22~13:24（容器 UTC 05:22~05:24）；增量上栈 `up -d haproxy` + `up -d api worker`，etcd/patroni×2/pgbackrest/minio/web 未动。
+- 校验：`docker compose config` 退出码 0；`haproxy -c -f`（compose 网络内）退出码 0。
+
+### 健康检查选主口径（实测）
+
+    # 切换前 stats（socat show stat 摘录；截断列）
+    patroni_primary,patroni1, ..., UP,   L7OK,  200   # leader
+    patroni_primary,patroni2, ..., DOWN, L7STS, 503   # replica（GET /primary 503 → 摘除）
+
+HAProxy 日志角色翻转（容器 UTC）：
+- 段1（pg1→pg2，patronictl 05:22:47.256 成功）：patroni2 UP @05:22:47.861（+0.6s）→ patroni1 DOWN @05:22:48.314（+1.1s）；双 UP 重叠窗 ≈0.45s
+- 段2（pg2→pg1，patronictl 05:24:22.872 成功）：patroni1 UP @05:24:22.785 → patroni2 DOWN @05:24:23.324（+0.5s）；双 UP 重叠窗 ≈0.54s
+
+### 复测读数（W4 固定 patroni1 vs W5-T16 HAProxy）
+
+| 读数 | W4（固定 patroni1:5432） | W5-T16（haproxy:5432） |
+| --- | --- | --- |
+| switchover 成功率 | 2/2（pg1→pg2→pg1） | 2/2（同往返） |
+| api /healthz 探测 | 40/40 全 200（2×20×1s），0 中断 | **80/80 全 200（2×40×1s），0 中断** |
+| DB 写面（新连接） | 未直接测；切换后需人工改 `DATABASE_URL` 并 recreate api/worker | **120/120 OK**（psql `SELECT pg_is_in_recovery()` → `f`，2×60×~1s）；切换窗口内单次探测最长 ≈3.6s（连接重试+重派），0 失败 |
+| 自动跟随 | 否（人工改配） | 是（0 人工操作） |
+| 切换后复制延迟 | lag=0，replay_lag 3.2ms | lag=0，replay_lag NULL（新会话未采样，同 W4 第二段） |
+| timeline | 5 → 7 | 7 → 9 |
+
+探测原始记录（摘录）：
+- 段1 healthz：+0.3s~+39.5s 全 200（40/40）；db：+0.0~+59.0s 全 OK(f)（60/60），唯一次慢探 +7.0s 起耗时 3.6s
+- 段2 healthz：+1.5s~+39.1s 全 200（40/40）；db：+0.0~+59.0s 全 OK(f)（60/60），唯一次慢探 +6.0s 起耗时 2.5s
+
+patronictl 输出（两段，摘录）：
+
+    段1: 2026-09-21 05:22:47.25640 Successfully switched over to "staging-pg2"
+         staging-pg1 Replica stopped / staging-pg2 Leader running
+    段2: 2026-09-21 05:24:22.87186 Successfully switched over to "staging-pg1"
+         staging-pg1 Leader running / staging-pg2 Replica stopped
+
+切换后角色/延迟读数：
+- 段1 后：`GET :8008/primary -> 503 ; GET :8009/primary -> 200`；staging-pg2 leader TL8，staging-pg1 streaming lag=0；`pg_stat_replication`：staging-pg1 state=streaming sync=async replay_lag=NULL
+- 段2 后：`GET :8008/primary -> 200 ; GET :8009/primary -> 503`；staging-pg1 leader TL9，staging-pg2 streaming lag=0；`pg_stat_replication`：staging-pg2 state=streaming sync=async replay_lag=NULL
+
+- api 侧等价断言：api 容器内 asyncpg 经 `EDP_DATABASE_URL`（haproxy）查 `SELECT pg_is_in_recovery()` → False；`SHOW server_version` → 16.15（Debian 16.15-1.pgdg12+2）。
+- worker 韧性：两段切换各 1 条 `dispatch failed ... connection is closed`（旧主 PG 重启断开池连接；05:22:49 / 05:24:24），均被循环捕获后自动恢复，`RestartCount=0` 无重启。
+
+### 结论与降级预案
+
+1. **单写入口成立、未触发降级**：两段 switchover 全程 0 人工配置改动；HAProxy 在新主 `GET /primary` 200 后 ≈0.6s 内回挂、旧主 2 次 503 后 ≈1.1s 摘除；新连接 120/120 零失败（慢探 1 次 3.6s 为窗口内重试/重派）。
+2. **已建连接语义（如实记）**：切换时旧主 PG 重启会断开池中已建连接——worker 每段切换报 1 次 `connection is closed` 后自动恢复（asyncpg/SQLAlchemy 池重连）；`/healthz` 为无 DB 依赖探针，故 80/80 零中断不能单独证明写面，写面以上表 DB 探测为准。
+3. **降级预案（本次未触发）**：haproxy 起不来/资源不足 → api/worker `EDP_DATABASE_URL` 回退 `patroni1:5432` + `up -d api worker`，恢复 W4 固定入口形态（compose 顶部注释已留痕）。
+4. **后续项**：HAProxy 单点（staging 最小版）；生产形态为 HAProxy 双实例 + keepalived/VIP（或 PgBouncer 读写分离），纳入 W6+ 部署设计。
