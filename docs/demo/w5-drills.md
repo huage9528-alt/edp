@@ -147,6 +147,38 @@ stanza: edp
 2. 触发口令 `edp_dev` 为演示值（compose 环境变量注入，与 deploy-staging.ps1 迁移账号同源；生产走 secret manager）。
 3. 调度粒度：每日一次全量（无 incr/diff 分层），量级 32MB 下可接受；数据量增长后改 full+incr 组合（脚本 `BACKUP_TYPE` 已参数化）。
 
+## T15b — PITR 整库恢复演练（EDP-027）
+
+- 脚本：`deploy/scripts/pitr-drill.ps1`（七步全流程，一键真跑）；演练时间 2026-09-21 11:22~11:24（容器 UTC 03:22~03:24）。
+- 读数归档：`deploy/drills/drill-records.json` pitr 项（SUCCEEDED / rto=22.1s / rpo=0s）。
+
+### 流程与实测（脚本输出摘要）
+
+1. **标记行**：`event.events` 插 `pitr-marker-20260921-112207`（edp_migrator BYPASSRLS；object_id 经 FK 需要 CTE 连造 `master.business_objects` marker 专用行），DB 时钟 `occurred_at=2026-09-21 03:22:07.999+00`，event_id=b40af9df-46d5-4969-8692-9db60f9b64ce。
+2. **WAL 推进①**：`pg_switch_wal()` + 轮询 `pg_stat_archiver`——归档 `...001A -> ...001B`（marker 段落 S3，03:22:09）。
+3. **目标时点** = marker+60s = `2026-09-21 03:23:07.999924+00:00`；睡 61s 跨过目标（窗口内无写入）。
+4. **end-marker + WAL 推进②**：跨过目标后插 `pitr-marker-end-...`（commit ts > target，保证 recovery 有可停提交点）+ 再 switch——归档 `...001B -> ...001C`（03:23:12）。**end-marker 按时间点语义不应被重放——兼作负向断言**。
+5. **恢复**（RTO 从冷启动计）：一次性容器 `edp-pitr-restore`（同 patroni 镜像，原生 postgres 单实例、**不走 patroni** 避免加入集群；宿主端口 15433）：
+
+        restore OK 备份集=20260921-025634F（耗时 13.9s）
+        promote 完成（到达目标时点 2026-09-21 03:23:07.999924+00:00），RTO=22.1s
+
+6. **断言（4/4 通过）**：15433 TCP 可连；恢复库 `marker count=1`（目标前事务已重放）；`end-marker count=0`（时间点精度：目标后事务未重放）；`platform.tenants` 主库=恢复库=1。
+7. **清理**：恢复容器删除；主库 marker 行（events + business_objects）清零复核。
+
+### RTO / RPO 实测
+
+- **RTO = 22.1s**（口径：冷启动恢复容器 → S3 restore（13.9s，备份集 20260921-025634F）→ WAL 重放至目标 → promote → 可连可断言）。
+- **RPO = 0s**（目标时点前的提交零丢失：marker 行在恢复库存在）；WAL 归档覆盖余量 4.1s（最后归档 `...001C` @ 03:23:12 vs 目标 03:23:07.999）。
+- 目标时点 vs marker 间隔 60s（演练参数 `TargetDelaySec`，可调）。
+
+### 关键实测发现（踩坑记）
+
+1. **恢复目录必须与原 pg1-path 同路径**：patroni 写入 postgresql.conf 的 `hba_file` 为绝对路径（`/var/lib/postgresql/data/pgdata/pg_hba.conf`）——恢复到任意目录（如 /tmp/verify）起原生 postgres 会 FATAL；恢复到同路径 `.../pgdata` 后正常起（T15a 单用户模式无 pg_hba 依赖故不受影响）。
+2. **pgbackrest 2.59 时间点恢复用 `--target`**（与 `--type=time` 配套），`--target-time` 报 `restore command requires option: target`。
+3. **宿主 15432 被常驻 edp-dev-db-1（dev 栈）占用**——不动 dev 栈，恢复实例端口改 15433（演练语义不变，脚本参数化 `param([int]$RestoreHostPort = 15433)`）。
+4. PS 5.1 传参坑两则（已固化脚本注释）：`@()` 数组内跨行 `+` 不续行（拆参被 psql 忽略）；here-string 内 JSON 双引号会被剥（改 `jsonb_build_object`）。
+
 ## T14 结论与降级预案
 
 1. **对象存储备份链路实测成立，未触发降级**：MinIO 起 → bucket 幂等初始化 → stanza-create → 全量备份 → WAL 推取往返（check）→ info/mc du 读数全部真跑通过；既有 7 容器（含 api/worker/web）零重启零中断。

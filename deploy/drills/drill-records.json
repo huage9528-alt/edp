@@ -21,12 +21,22 @@
     },
     {
       "drill_type": "pitr",
-      "executed_at": null,
+      "executed_at": "2026-09-21T11:22:07+08:00",
       "topology": "etcd×1 + patroni×2 + pgbackrest(repo=MinIO S3)",
-      "rto_seconds": null,
-      "rpo_seconds": null,
-      "result": "PLANNED",
-      "readings": {},
+      "rto_seconds": 22.1,
+      "rpo_seconds": 0,
+      "result": "SUCCEEDED",
+      "readings": {
+        "标记行": "pitr-marker-20260921-112207（occurred_at 2026-09-21 03:22:07.999 UTC，event_id=b40af9df）",
+        "目标时点": "marker+60s = 2026-09-21 03:23:07.999924+00:00",
+        "恢复备份集": "20260921-025634F（S3 restore 13.9s）",
+        "RTO 构成": "冷启动容器 -> restore 13.9s -> WAL 重放 -> promote -> 可断言，共 22.1s",
+        "RPO 口径": "0 = 目标时点前提交零丢失（marker 在恢复库存在）；WAL 归档覆盖余量 4.1s（...001C @ 03:23:12 vs 目标）",
+        "断言": "15433 TCP 可连；marker count=1；end-marker count=0（时间点精度负向断言）；platform.tenants 主=恢复=1",
+        "WAL 推进": "pg_switch_wal×2：...001A->001B(marker)->001C(end-marker)",
+        "恢复实例形态": "同 patroni 镜像原生 postgres 单实例（不走 patroni，端口 15433——15432 被 dev 栈 db 常驻占用）",
+        "W5 实测归档": "docs/demo/w5-drills.md T15b 段"
+      },
       "manual_url": "docs/demo/w5-drills.md"
     },
     {
