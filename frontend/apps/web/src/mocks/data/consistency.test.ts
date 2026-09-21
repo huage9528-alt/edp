@@ -7,6 +7,7 @@ import { exceptions } from "./ebms";
 import { health } from "./health";
 import { objects } from "./objects";
 import { qualityReport } from "./quality";
+import { platformUsers, tenantMembers, tenantRows } from "./tenants";
 import { CASE_ORDER_B, EVT_ORDER_I_DQ } from "./ids";
 
 const objectIds = new Set(objects.map((o) => o.object_id));
@@ -75,6 +76,24 @@ describe("fixtures 跨页一致性（spec §4）", () => {
     const types = new Set(objects.map((o) => o.object_type));
     for (const t of ["ORDER", "CUSTOMER", "MATERIAL", "PRODUCT", "SUPPLIER", "PURCHASE_ORDER", "PROJECT"]) {
       expect(types.has(t)).toBe(true);
+    }
+  });
+
+  it("租户 fixtures：≥8 且三状态覆盖；slug 全局唯一", () => {
+    expect(tenantRows.length).toBeGreaterThanOrEqual(8);
+    for (const s of ["ACTIVE", "SUSPENDED", "CANCELLED"]) {
+      expect(tenantRows.some((t) => t.status === s)).toBe(true);
+    }
+    expect(new Set(tenantRows.map((t) => t.slug)).size).toBe(tenantRows.length);
+  });
+
+  it("租户成员：user_id ⊆ 平台用户目录；每个租户至少一名 ACTIVE ADMIN", () => {
+    const userIds = new Set(platformUsers.map((u) => u.user_id));
+    for (const tenant of tenantRows) {
+      const members = tenantMembers[tenant.tenant_id] ?? [];
+      expect(members.length).toBeGreaterThan(0);
+      for (const m of members) expect(userIds.has(m.user_id)).toBe(true);
+      expect(members.some((m) => m.member_roles.includes("ADMIN") && m.status === "ACTIVE")).toBe(true);
     }
   });
 });

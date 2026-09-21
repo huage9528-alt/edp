@@ -18,6 +18,8 @@ import {
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { QualityPage } from "../features/quality/QualityPage";
 import { RegistryPage } from "../features/registry/RegistryPage";
+import { TenantDetailPage } from "../features/tenants/TenantDetailPage";
+import { TenantsPage } from "../features/tenants/TenantsPage";
 import { AppLayout } from "../shell/AppLayout";
 import { RedirectIfAuthed, RequireAuth } from "./guards";
 
@@ -89,8 +91,16 @@ export const routes: RouteObject[] = [
         element: <HealthPage />,
         handle: { title: "系统健康" } satisfies RouteHandle,
       },
-      { path: "tenants", ...withTitle("租户管理") },
-      { path: "tenants/:tenant_id", ...withTitle("租户详情") },
+      {
+        path: "tenants",
+        element: <TenantsPage />,
+        handle: { title: "租户管理" } satisfies RouteHandle,
+      },
+      {
+        path: "tenants/:tenant_id",
+        element: <TenantDetailPage />,
+        handle: { title: "租户详情" } satisfies RouteHandle,
+      },
       {
         path: "cases",
         element: <CasesPage />,
