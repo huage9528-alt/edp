@@ -88,6 +88,9 @@ async def _clean_w3r_rows(
         ),
         {"t": default_tenant_id},
     )
+    await db_session.execute(
+        text("DELETE FROM ops.tasks WHERE task_type = 'adapter_sync'")
+    )
     await db_session.commit()
 
 

@@ -4,19 +4,11 @@ import type { ExceptionItem } from "../../mocks/types";
 
 const BASE = "/api/v1";
 
-export interface RecheckBody {
-  dimensions: string[];
-  scope: "ALL" | "EXCEPTIONS";
-}
-
-export interface RecheckTask {
-  task_id: string;
-  status: string;
-  started_at: string;
-}
+export type RecheckScope = "RECONCILE" | "ORPHAN" | "CHECKSUM" | "ALL";
+export type RecheckAccepted = { task_id: string; status: string };
 
 export const qualityApi = {
-  /** B.13 报告（含 mock 扩展 kpi/dimensions；真实后端 W5 EDP-030）。 */
+  /** B.13/T3 报告（四段实时聚合 + kpi/dimensions 派生）。 */
   reports: (date?: string): Promise<QualityReport> => {
     const q = date ? `?date=${encodeURIComponent(date)}` : "";
     return apiClient.get<QualityReport>(`${BASE}/admin/quality/reports${q}`);
@@ -26,15 +18,10 @@ export const qualityApi = {
     apiClient.get<Page<ExceptionItem>>(
       `${BASE}/ebms/exceptions?status=OPEN&limit=${limit}`,
     ),
-  /** mock 自有（EDP-030 落地后替换）：重校验提交。 */
-  recheck: (body: RecheckBody): Promise<RecheckTask> =>
-    apiClient.post<RecheckTask>(`${BASE}/admin/quality/rechecks`, body),
-  /** mock 自有：任务详情（任务日志抽屉）。 */
+  /** T4 重校验提交：scope → 202 {task_id, status}（后台异步执行）。 */
+  recheck: (scope: RecheckScope): Promise<RecheckAccepted> =>
+    apiClient.post<RecheckAccepted>(`${BASE}/admin/quality/rechecks`, { scope }),
+  /** T4 任务详情（重校验/重索引轮询共用）。 */
   task: (taskId: string): Promise<QualityTask> =>
     apiClient.get<QualityTask>(`${BASE}/admin/quality/tasks/${taskId}`),
 };
-
-/** 质量接口可用性：MSW 模式可用；真实后端 W5 EDP-030（spec §7.2）。 */
-export function qualityAvailable(): boolean {
-  return import.meta.env.VITE_USE_MSW === "1";
-}

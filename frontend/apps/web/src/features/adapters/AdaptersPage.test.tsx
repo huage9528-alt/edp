@@ -310,19 +310,34 @@ describe("AdaptersPage 适配器管理（MSW 模式渲染路由）", () => {
     await waitFor(() => expect($("connect-wizard")).toBeNull());
   });
 
-  it("日志抽屉：最近一次 sync（sync_id/stats 四计数/时间线）+ W5 交付提示条", async () => {
+  it("日志抽屉：历史下拉（默认最新）切换 FAILED 任务 + stats/时间线两态", async () => {
     renderAdapters();
     await waitFor(() => expect(rows().length).toBe(5));
 
     fireEvent.click(btn("adapter-log-erp"));
     await waitFor(() => expect($("adapter-log-body")).not.toBeNull());
+    // 默认最新一次：sync_id + stats 四计数 + 完成时间线
     expect($("adapter-log-sync-id")!.textContent).toContain(SYNC_ID);
     const stats = $("adapter-log-stats")!;
     for (const value of ["1200", "1180", "20", "0"]) {
       expect(stats.textContent).toContain(value);
     }
     expect($("adapter-log-timeline")!.textContent).toContain("同步完成");
-    expect($("adapter-log-w5-hint")!.textContent).toContain("完整任务日志 W5 交付");
+
+    // 历史下拉三条（latest SUCCEEDED + full SUCCEEDED + replay FAILED）
+    const history = $("adapter-log-history") as HTMLSelectElement;
+    expect(history.options.length).toBe(3);
+    const failedId = "00000000-0000-4000-8000-000000000912";
+    expect(Array.from(history.options).some((o) => o.value === failedId)).toBe(true);
+
+    fireEvent.change(history, { target: { value: failedId } });
+    await waitFor(() =>
+      expect($("adapter-log-sync-id")!.textContent).toContain("000000000912"),
+    );
+    const failedStats = $("adapter-log-stats")!;
+    expect(failedStats.textContent).toContain("210");
+    expect($("adapter-log-failed-row")).not.toBeNull();
+    expect($("adapter-log-timeline")!.textContent).toContain("同步失败");
   });
 
   it("刷新按钮 → 重拉清单（请求计数 +1）", async () => {

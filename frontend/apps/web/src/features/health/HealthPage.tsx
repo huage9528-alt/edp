@@ -3,7 +3,8 @@ import { Archive, Bell, Database, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { StatusPill } from "@edp/shared";
 import type { HealthResponse } from "../../mocks/types";
-import { useDeepHealth } from "./hooks";
+import type { DrillRecord } from "./api";
+import { useDeepHealth, useDrillRecords } from "./hooks";
 
 function CardShell({
   icon,
@@ -49,13 +50,19 @@ function fmtTime(iso: string | undefined): string {
 /**
  * 系统健康页（EDP-304，设计 13.6.3；无设计稿，MSW 先行）：
  * HA / 备份 / Outbox / 告警渠道四卡 + 演练入口；10s 深层轮询；
- * 真模式：db_ha/outbox_pending/ops_metrics 为真值，backup 缺失 → 「—」。
+ * 备份卡读数取 T7 演练归档（GET /admin/drills——switchover readings 的
+ * 全量备份/切换成功率 + executed_at；pitr 未执行 → 「恢复演练未执行」副行）。
  */
 export function HealthPage() {
   const healthQuery = useDeepHealth();
+  const drillsQuery = useDrillRecords();
   const health: HealthResponse | undefined = healthQuery.data;
   const ha = health?.db_ha;
-  const backup = health?.backup;
+  const drills = drillsQuery.data?.items ?? [];
+  const switchover = drills.find((d) => d.drill_type === "switchover");
+  const pitr = drills.find((d) => d.drill_type === "pitr");
+  const backupReadings = (record: DrillRecord | undefined) =>
+    record?.readings as Record<string, unknown> | undefined;
 
   return (
     <div className="space-y-4" data-dom-id="health-page">
@@ -116,23 +123,29 @@ export function HealthPage() {
             title="备份"
             domId="health-backup-card"
           >
-            {backup == null ? (
-              <p className="text-[11px] text-muted-foreground">
-                备份调度 W5 交付（EDP-031）
-              </p>
+            {drillsQuery.isError || (drillsQuery.isSuccess && switchover == null) ? (
+              <p className="text-[11px] text-muted-foreground">备份读数暂不可用</p>
+            ) : switchover == null ? (
+              <p className="text-[11px] text-muted-foreground">加载中…</p>
             ) : (
               <>
-                <Row label="最近全量备份" value={fmtTime(backup.last_full_at)} />
-                <Row label="WAL 归档时点" value={fmtTime(backup.wal_archive_at)} />
+                <Row label="最近备份时间" value={fmtTime(switchover.executed_at ?? undefined)} />
                 <Row
-                  label="恢复验证"
-                  value={
-                    <StatusPill
-                      tone={backup.last_restore_verify === "PASSED" ? "success" : "warning"}
-                      label={backup.last_restore_verify}
-                    />
-                  }
+                  label="备份大小"
+                  value={String(backupReadings(switchover)?.["全量备份"] ?? "—")}
                 />
+                <Row
+                  label="可恢复性"
+                  value={String(backupReadings(switchover)?.["切换成功率"] ?? "—")}
+                />
+                {pitr != null && pitr.executed_at == null && (
+                  <p
+                    className="mt-2 text-[10px] text-muted-foreground"
+                    data-dom-id="health-backup-pitr-planned"
+                  >
+                    恢复演练未执行（pitr 计划中，读数待 T15 实测回填）
+                  </p>
+                )}
               </>
             )}
           </CardShell>

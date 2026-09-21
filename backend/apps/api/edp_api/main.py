@@ -25,10 +25,13 @@ from edp_api.modules.catalog.router import router as catalog_router
 from edp_api.modules.decisions.router import router as decisions_router
 from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
+from edp_api.modules.evidence.router import admin_router as evidence_admin_router
 from edp_api.modules.evidence.router import router as evidence_router
 from edp_api.modules.health.router import router as health_router
 from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
+from edp_api.modules.quality.router import drills_router as quality_drills_router
+from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
@@ -86,6 +89,9 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(audit_policies_router)
     # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(evidence_router)
+    # evidence 管理路由（W3-04 收口）：/admin/evidence/reindex（quality:run
+    # 复用口径，任务轨道复用 quality tasks 端点）
+    app.include_router(evidence_admin_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
     app.include_router(adapters_admin_router)
     # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）
@@ -104,6 +110,11 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     app.include_router(memories_router)
     # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
     app.include_router(health_router)
+    # quality 路由（B.13 上半）：质量报告/覆盖率（EDP-030；rechecks/tasks T4 起）
+    app.include_router(quality_router)
+    # quality drills 路由（EDP-502 / W5 T7）：/admin/drills 演练记录只读归档
+    # （drill-records.json；复用 quality:read 口径，无 DB 访问）
+    app.include_router(quality_drills_router)
     for router in extra_routers:
         app.include_router(router)
 

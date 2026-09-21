@@ -1,4 +1,5 @@
-"""tenantmgmt 请求/响应模型（当前租户信息 + W2 租户生命周期 EDP-024/B.14）。"""
+"""tenantmgmt 请求/响应模型（当前租户信息 + W2 生命周期 EDP-024/B.14 +
+W5 B.14 补齐：PATCH/context/members/quotas，EDP-501 后端）。"""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -144,3 +145,83 @@ class UsageItem(BaseModel):
     events_duplicated: int
     storage_gb: Decimal
     throttled_429: int
+
+
+# ---- W5 B.14 租户 API 补齐（EDP-501 后端，T2） ----
+
+TenantMemberStatus = Literal["INVITED", "ACTIVE", "DISABLED"]
+
+
+class TenantUpdateRequest(BaseModel):
+    """PATCH /tenants/{id} 请求（B.14）：name / plan 均可选；plan 变更仅
+    记录（租户对象 + 审计行），不联动配额调整（见 service.update_tenant）。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    plan: TenantPlan | None = None
+
+
+class TenantContextResponse(BaseModel):
+    """POST /tenants/{id}/context 响应（B.14 逐字段 + access_token）。
+
+    B.14 未定义新 token 的下发通道；本实现以响应体 access_token 返回
+    （最小可行口径，docstring 留痕见 platform_router/service）。
+    """
+
+    tenant_id: UUID
+    switched_at: datetime
+    note: str
+    access_token: str
+
+
+class TenantMemberItem(BaseModel):
+    """成员投影（B.14 GET members）：display_name 经 join platform.users；
+    joined_at = tenant_members.created_at（加入时间）。"""
+
+    member_id: UUID
+    user_id: UUID
+    display_name: str | None = None
+    member_roles: list[str]
+    status: str
+    joined_at: datetime
+
+
+class TenantMemberCreateRequest(BaseModel):
+    """POST members 请求（B.14）：user_id 须为目标租户内 ACTIVE 用户；
+    member_roles 空数组的语义拒绝（422）由 service 判定。"""
+
+    user_id: UUID
+    member_roles: list[str] = Field(default_factory=list)
+
+
+class TenantMemberUpdateRequest(BaseModel):
+    """PATCH member 请求（B.14：改角色/禁用）；member_roles 提供且为空 →
+    422（service 判定）；不可禁用最后一个 ACTIVE ADMIN（400，service 判定）。"""
+
+    member_roles: list[str] | None = None
+    status: TenantMemberStatus | None = None
+
+
+class TenantQuotaDetail(BaseModel):
+    """完整配额对象（B.14 七字段 + tenant_id；PATCH /tenants 响应同形）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    tenant_id: UUID
+    api_rate_limit: int
+    batch_max_events: int
+    query_timeout_ms: int
+    pool_share: Decimal
+    storage_gb: int
+    events_per_month: int
+    updated_at: datetime | None = None
+
+
+class TenantQuotaUpdateRequest(BaseModel):
+    """PATCH quotas 请求（B.14 临时提额）：仅 api_rate_limit / storage_gb /
+    events_per_month 三字段可调；reason 必填非空（422，service 判定——
+    临时提额留痕，审计行 detail 携带）。"""
+
+    api_rate_limit: int | None = Field(default=None, ge=1)
+    storage_gb: int | None = Field(default=None, ge=1)
+    events_per_month: int | None = Field(default=None, ge=1)
+    reason: str | None = Field(default=None, max_length=512)

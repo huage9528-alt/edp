@@ -48,9 +48,18 @@ export function useVerifyEvidence() {
   });
 }
 
-/** 重索引向导提交（MSW 自有端点）。 */
+/** 重索引提交（T6 POST reindex scope=ALL → 202）。 */
 export function useReindexEvidence() {
-  return useMutation({
-    mutationFn: evidenceApi.reindex,
+  return useMutation({ mutationFn: evidenceApi.reindex });
+}
+
+/** 重索引任务轮询（quality tasks 端点；1s 推进，终态停止）。 */
+export function useReindexTask(taskId: string | null) {
+  return useQuery({
+    queryKey: ["evidence", "reindex-task", taskId],
+    queryFn: () => evidenceApi.reindexTask(taskId!),
+    enabled: taskId != null,
+    refetchInterval: (query) =>
+      query.state.data?.status === "RUNNING" ? 1_000 : false,
   });
 }

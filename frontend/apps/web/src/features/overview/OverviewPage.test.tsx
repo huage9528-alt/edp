@@ -140,7 +140,7 @@ describe("OverviewPage 面板级独立降级（T3 评审遗留闭环）", () => 
 });
 
 describe("OverviewPage T6 三栏图表与审计动态（MSW fixtures）", () => {
-  it("三栏标题与数据健康子指标（SLA 99.2% / 完整性 98.7% / 对象覆盖率 96.8% / 孤儿事件 0）", async () => {
+  it("三栏标题与数据健康子指标（校验通过率 99.2% / 完整性 96.8% / 对象覆盖率 96.8% / 孤儿事件 0）", async () => {
     renderOverview();
 
     const bottom = (await waitFor(() => {
@@ -151,9 +151,10 @@ describe("OverviewPage T6 三栏图表与审计动态（MSW fixtures）", () => 
     for (const title of ["数据健康", "证据链健康", "审计动态"]) {
       expect(within(bottom).getByText(title)).toBeInTheDocument();
     }
-    expect(await within(bottom).findByText("99.2%")).toBeInTheDocument();
-    expect(within(bottom).getByText("98.7%")).toBeInTheDocument();
-    expect(within(bottom).getByText("96.8%")).toBeInTheDocument();
+    expect(await within(bottom).findByText("校验通过率")).toBeInTheDocument();
+    expect(within(bottom).getByText("99.2%")).toBeInTheDocument();
+    // 完整性与对象覆盖率同口径（completeness = coverage.overall）→ 双 96.8%
+    expect(within(bottom).getAllByText("96.8%")).toHaveLength(2);
     expect(within(bottom).getByText("0")).toBeInTheDocument();
   });
 

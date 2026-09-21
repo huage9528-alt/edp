@@ -71,7 +71,9 @@ async def _clean_business_rows(
     db_session: AsyncSession, default_tenant_id: UUID
 ) -> None:
     """每测试后清场：seed 业务数据（逆依赖序，含 delivery.capacity）+
-    本模块审计行。清场经 migrator 会话（BYPASSRLS，同 test_demo_seed 模式）。"""
+    本模块审计行 + adapter_sync 任务行（T5 起 sync 落 ops.tasks，防跨文件
+    残留——同 test_adapters_api 口径）。清场经 migrator 会话（BYPASSRLS，
+    同 test_demo_seed 模式）。"""
     yield
     await demo_service.purge_tenant_business_data(db_session, default_tenant_id)
     await db_session.execute(
@@ -81,6 +83,9 @@ async def _clean_business_rows(
             " 'records', 'systems')"
         ),
         {"t": default_tenant_id},
+    )
+    await db_session.execute(
+        text("DELETE FROM ops.tasks WHERE task_type = 'adapter_sync'")
     )
     await db_session.commit()
 

@@ -2,15 +2,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Modal, message } from "antd";
 import { useState } from "react";
 import { errorSpec } from "@edp/shared";
-import { qualityAvailable } from "./api";
+import type { RecheckScope } from "./api";
 import { useRecheck } from "./hooks";
 
-const DIMENSIONS = [
-  { key: "completeness", label: "完整性" },
-  { key: "consistency", label: "一致性" },
-  { key: "timeliness", label: "时效性" },
-  { key: "uniqueness", label: "唯一性" },
-] as const;
+/** 校验范围（对齐契约 RecheckRequest.scope 值域；coverage 段仅 ALL 覆盖——
+ * 后端 _SCOPE_SEGMENTS：单段 scope = RECONCILE/ORPHAN/CHECKSUM，ALL = 四段）。 */
+const SCOPES: { key: RecheckScope; label: string; description: string }[] = [
+  { key: "ALL", label: "全部四段", description: "对账 / 覆盖率 / 孤儿 / 校验和抽检" },
+  { key: "RECONCILE", label: "对账", description: "按 (来源系统, 对象类型) 分组比对期望基数" },
+  { key: "ORPHAN", label: "孤儿", description: "事件与证据悬挂（object_id 无注册对象）" },
+  { key: "CHECKSUM", label: "校验和抽检", description: "P0/P1 证据抽样重算 canonical checksum" },
+];
 
 export interface RecheckModalProps {
   open: boolean;
@@ -20,42 +22,31 @@ export interface RecheckModalProps {
 }
 
 /**
- * 重新校验弹窗（视觉基线 `重新校验 - 弹窗.html`）：校验维度 2×2 复选卡
- * （默认全选）+ 范围 radio（全部对象/仅异常对象）+ info 提示条；提交后
- * 前端本地 notification 通知（无消息中心 API，spec §7.2）。
+ * 重新校验弹窗（视觉基线 `重新校验 - 弹窗.html`，范围对齐 T4 契约）：
+ * 校验范围 2×2 单选卡（默认全部四段）+ info 提示条；提交 POST rechecks
+ * （scope）→ 202 → 任务日志抽屉轮询，完成事件经消息中心（Bell）通知。
  */
 export function RecheckModal({ open, onClose, onSubmitted }: RecheckModalProps) {
-  const [dimensions, setDimensions] = useState<string[]>(DIMENSIONS.map((d) => d.key));
-  const [scope, setScope] = useState<"ALL" | "EXCEPTIONS">("ALL");
+  const [scope, setScope] = useState<RecheckScope>("ALL");
   const [error, setError] = useState<string | null>(null);
   const recheck = useRecheck();
   const queryClient = useQueryClient();
-  const available = qualityAvailable();
-
-  const toggle = (key: string) => {
-    setDimensions((current) =>
-      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
-    );
-  };
 
   const submit = () => {
     setError(null);
-    recheck.mutate(
-      { dimensions, scope },
-      {
-        onSuccess: (task) => {
-          void message.success("校验任务已提交，完成后将通知");
-          void queryClient.invalidateQueries({ queryKey: ["quality", "report"] });
-          void queryClient.invalidateQueries({ queryKey: ["quality", "exceptions"] });
-          onSubmitted(task.task_id);
-          onClose();
-        },
-        onError: (err) => {
-          const code = (err as unknown as { code?: string }).code;
-          setError(errorSpec(code).message);
-        },
+    recheck.mutate(scope, {
+      onSuccess: (task) => {
+        void message.success("校验任务已提交，完成后将通知");
+        void queryClient.invalidateQueries({ queryKey: ["quality", "report"] });
+        void queryClient.invalidateQueries({ queryKey: ["quality", "exceptions"] });
+        onSubmitted(task.task_id);
+        onClose();
       },
-    );
+      onError: (err) => {
+        const code = (err as unknown as { code?: string }).code;
+        setError(errorSpec(code).message);
+      },
+    });
   };
 
   return (
@@ -69,48 +60,28 @@ export function RecheckModal({ open, onClose, onSubmitted }: RecheckModalProps) 
       data-dom-id="recheck-modal"
     >
       <div data-dom-id="recheck-body">
-        <p className="text-xs font-medium text-foreground mt-2 mb-2">校验维度</p>
+        <p className="text-xs font-medium text-foreground mt-2 mb-2">校验范围</p>
         <div className="grid grid-cols-2 gap-2">
-          {DIMENSIONS.map((dimension) => {
-            const active = dimensions.includes(dimension.key);
+          {SCOPES.map((option) => {
+            const active = scope === option.key;
             return (
               <button
-                key={dimension.key}
+                key={option.key}
                 type="button"
-                data-dom-id={`recheck-dim-${dimension.key}`}
+                data-dom-id={`recheck-scope-${option.key}`}
                 aria-pressed={active}
-                onClick={() => toggle(dimension.key)}
-                className={`h-10 px-3 rounded-lg border text-xs font-medium text-left ${
+                onClick={() => setScope(option.key)}
+                className={`h-12 px-3 rounded-lg border text-left ${
                   active
                     ? "border-primary bg-primary-50 text-primary"
                     : "border-border text-muted-foreground hover:bg-muted"
                 }`}
               >
-                {dimension.label}
+                <span className="text-xs font-medium block">{option.label}</span>
+                <span className="text-[10px] block mt-0.5 opacity-80">{option.description}</span>
               </button>
             );
           })}
-        </div>
-
-        <p className="text-xs font-medium text-foreground mt-4 mb-2">校验范围</p>
-        <div className="flex items-center gap-4" data-dom-id="recheck-scope">
-          {(
-            [
-              { key: "ALL", label: "全部对象" },
-              { key: "EXCEPTIONS", label: "仅异常对象" },
-            ] as const
-          ).map((option) => (
-            <label key={option.key} className="inline-flex items-center gap-1.5 text-xs">
-              <input
-                type="radio"
-                name="recheck-scope"
-                data-dom-id={`recheck-scope-${option.key}`}
-                checked={scope === option.key}
-                onChange={() => setScope(option.key)}
-              />
-              {option.label}
-            </label>
-          ))}
         </div>
 
         <p className="mt-4 text-[11px] text-state-info bg-state-info-bg rounded-lg px-3 py-2">
@@ -135,8 +106,7 @@ export function RecheckModal({ open, onClose, onSubmitted }: RecheckModalProps) 
         <button
           type="button"
           data-dom-id="recheck-submit"
-          disabled={!available || dimensions.length === 0 || recheck.isPending}
-          title={available ? undefined : "质量任务 W5 交付（真实后端未实现）"}
+          disabled={recheck.isPending}
           onClick={submit}
           className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none"
         >

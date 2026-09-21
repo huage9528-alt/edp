@@ -26,9 +26,28 @@ describe("evidence handlers", () => {
     expect(body.valid).toBe(true);
   });
 
-  it("reindex → 202 RUNNING", async () => {
-    const resp = await fetch(`${BASE}/api/v1/admin/evidence/reindex`, { method: "POST", body: JSON.stringify({ scope: "ALL" }) });
+  it("reindex POST {scope:ALL} → 202；任务轮询 RUNNING → SUCCEEDED（stats total/mismatched）", async () => {
+    const resp = await fetch(`${BASE}/api/v1/admin/evidence/reindex`, {
+      method: "POST",
+      body: JSON.stringify({ scope: "ALL" }),
+    });
     expect(resp.status).toBe(202);
-    expect(await resp.json()).toMatchObject({ status: "RUNNING" });
+    const accepted = (await resp.json()) as { task_id: string; status: string };
+    expect(accepted).toMatchObject({ status: "RUNNING" });
+
+    // 首次轮询 RUNNING；二次起终态 SUCCEEDED + stats（证据总量 20）
+    const first = (await (await fetch(`${BASE}/api/v1/admin/quality/tasks/${accepted.task_id}`)).json()) as {
+      status: string;
+      stats?: { total?: number; mismatched?: number };
+    };
+    expect(first.status).toBe("RUNNING");
+    const second = (await (await fetch(`${BASE}/api/v1/admin/quality/tasks/${accepted.task_id}`)).json()) as {
+      status: string;
+      finished_at: string | null;
+      stats: { total: number; rechecked: number; mismatched: number };
+    };
+    expect(second.status).toBe("SUCCEEDED");
+    expect(second.finished_at).not.toBeNull();
+    expect(second.stats).toMatchObject({ total: 20, rechecked: 20, mismatched: 0 });
   });
 });

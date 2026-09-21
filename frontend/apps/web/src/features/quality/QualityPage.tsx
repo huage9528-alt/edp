@@ -3,30 +3,25 @@ import { AlertTriangle, ListChecks, RefreshCw, ShieldAlert } from "lucide-react"
 import { useState } from "react";
 import { KpiCard, StatusPill } from "@edp/shared";
 import type { ExceptionItem } from "../../mocks/types";
-import { qualityAvailable } from "./api";
 import { useQualityExceptions, useQualityReport } from "./hooks";
 import { RecheckModal } from "./RecheckModal";
 import { TaskLogDrawer } from "./TaskLogDrawer";
 
 const RISK_TONE = { P0: "error", P1: "error", P2: "warning", P3: "info" } as const;
 
-/** 真模式降级：quality API 未实现（W5 EDP-030）→ 面板级「—」。 */
-function DegradedPanel({ label }: { label: string }) {
-  return (
-    <div
-      className="bg-card border border-border rounded-xl p-4 text-xs text-muted-foreground"
-      data-dom-id="quality-degraded"
-    >
-      {label}暂不可用（质量任务 API W5 交付）
-    </div>
-  );
-}
+/** 维度短标签：后端 dimensions.domain 为四段标识（T3 derive_dimensions 值域），
+ * 非业务域——按段名映射中文，未知域回退响应 label。 */
+const DIMENSION_LABELS: Record<string, string> = {
+  reconciliation: "对账",
+  coverage: "覆盖率",
+  orphans: "孤儿",
+  checksum: "校验和抽检",
+};
 
 /**
  * 数据质量页（EDP-303，视觉基线 `数据质量.html` + `重新校验 - 弹窗.html` +
- * `任务日志 - 抽屉.html`）：KPI 4 卡 + 左维度评分 + 右异常卡 + 重校验弹窗 +
- * 任务日志抽屉。数据源：MSW 模式全量；真模式 quality 未实现（W5）→ 面板级
- * 降级，异常卡走真实 EBMS API，重校验禁用。
+ * `任务日志 - 抽屉.html`）：KPI 4 卡 + 左维度评分（四段）+ 右异常卡 +
+ * 重校验弹窗 + 任务日志抽屉。数据源：真端点（T3 报告/T4 任务 + EBMS 异常）。
  */
 export function QualityPage() {
   const [recheckOpen, setRecheckOpen] = useState(false);
@@ -35,7 +30,6 @@ export function QualityPage() {
   const reportQuery = useQualityReport();
   const exceptionsQuery = useQualityExceptions(3);
   const report = reportQuery.data;
-  const available = qualityAvailable();
 
   const openTask = (id: string) => {
     setTaskId(id);
@@ -66,8 +60,6 @@ export function QualityPage() {
           <button
             type="button"
             data-dom-id="quality-recheck-btn"
-            disabled={!available}
-            title={available ? undefined : "质量任务 W5 交付（真实后端未实现）"}
             onClick={() => setRecheckOpen(true)}
             className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5"
           >
@@ -79,7 +71,12 @@ export function QualityPage() {
 
       {report == null ? (
         reportQuery.isError ? (
-          <DegradedPanel label="质量报告" />
+          <div
+            className="bg-card border border-border rounded-xl p-4 text-xs text-muted-foreground"
+            data-dom-id="quality-error"
+          >
+            质量报告暂不可用，请稍后重试
+          </div>
         ) : (
           <div className="bg-card border border-border rounded-xl p-4">
             <Skeleton active paragraph={{ rows: 4 }} />
@@ -91,21 +88,21 @@ export function QualityPage() {
             <KpiCard
               label="综合质量"
               value={`${report.kpi.overall_pct}%`}
-              hint="全维度加权得分"
+              hint="四维度评分均分"
               icon={<ShieldAlert className="w-4 h-4" />}
               tone="success"
             />
             <KpiCard
-              label="时效性 SLA"
+              label="校验通过率"
               value={`${report.kpi.sla_pct}%`}
-              hint="近 24 小时同步窗口"
+              hint="证据 checksum 抽检通过率"
               icon={<RefreshCw className="w-4 h-4" />}
               tone="info"
             />
             <KpiCard
               label="完整性"
               value={`${report.kpi.completeness_pct}%`}
-              hint="必填字段填充率"
+              hint="对象覆盖率口径"
               icon={<ListChecks className="w-4 h-4" />}
             />
             <KpiCard
@@ -122,14 +119,18 @@ export function QualityPage() {
               className="bg-card border border-border rounded-xl p-4"
               data-dom-id="quality-dimensions"
             >
-              <h2 className="text-xs font-semibold text-foreground mb-3">5 个维度 · 实时评分</h2>
+              <h2 className="text-xs font-semibold text-foreground mb-3">
+                {report.dimensions.length} 个维度 · 实时评分
+              </h2>
               <ul className="space-y-3">
                 {report.dimensions.map((dimension) => {
                   const low = dimension.score_pct < 95;
                   return (
                     <li key={dimension.domain}>
                       <div className="flex items-center justify-between text-[11px] mb-1">
-                        <span className="text-muted-foreground">{dimension.label}</span>
+                        <span className="text-muted-foreground">
+                          {DIMENSION_LABELS[dimension.domain] ?? dimension.label}
+                        </span>
                         <span className={low ? "text-state-warning" : "text-foreground"}>
                           {dimension.score_pct}%
                         </span>

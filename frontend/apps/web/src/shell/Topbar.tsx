@@ -1,9 +1,10 @@
 import { App as AntdApp, Dropdown } from "antd";
-import { Bell, ChevronDown, Command, Search } from "lucide-react";
+import { ChevronDown, Command, Search } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { useMatches, useNavigate } from "react-router-dom";
 import { useSessionStore } from "../features/auth/session-store";
 import { initials } from "../lib/labels";
+import { NotificationBell } from "./NotificationBell";
 
 /** 顶栏（结构/class/尺寸照抄原型 运营总览.html 行 308~331）。 */
 export function Topbar() {
@@ -66,15 +67,7 @@ export function Topbar() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="h-9 px-2.5 border border-border bg-card rounded-lg text-muted-foreground hover:bg-muted flex items-center gap-1.5"
-          data-dom-id="notifications-btn"
-          onClick={() => message.info("消息中心建设中")}
-        >
-          <Bell className="w-4 h-4" aria-hidden="true" />
-          <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">3</span>
-        </button>
+        <NotificationBell />
         <button
           type="button"
           className="h-9 px-3 border border-border bg-card rounded-lg text-xs text-muted-foreground hover:bg-muted flex items-center gap-1.5"

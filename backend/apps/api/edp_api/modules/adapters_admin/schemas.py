@@ -7,6 +7,7 @@ status, started_at}）；status/清单为真实语义超集——T18 契约冻�
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -49,6 +50,28 @@ class AdapterStatusResponse(BaseModel):
     mode: str
     last_sync: LastSyncSummary | None = None
     health: str
+
+
+class AdapterJobItem(BaseModel):
+    """GET /{adapter_name}/jobs 行（W5 T5：ops.tasks 任务历史简投影）。
+
+    task_id 即 sync 触发响应的 sync_id（UUID str 化）；scope=触发 mode；
+    stats 四计数语义同 LastSyncSummary。
+    """
+
+    task_id: UUID
+    status: str
+    scope: str | None = None
+    stats: SyncStats | None = None
+    started_at: datetime
+    finished_at: datetime | None = None
+
+
+class AdapterJobsResponse(BaseModel):
+    """GET /{adapter_name}/jobs 响应（items + next_cursor，B.0 分页 envelope）。"""
+
+    items: list[AdapterJobItem]
+    next_cursor: str | None = None
 
 
 class AdapterListItem(BaseModel):

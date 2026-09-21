@@ -17,6 +17,17 @@ export function useAdapterStatus(name: string | undefined) {
   });
 }
 
+/** 任务历史（T5 jobs 端点；最新一条 RUNNING 时 1s 轮询推进）。 */
+export function useAdapterJobs(name: string | undefined) {
+  return useQuery({
+    queryKey: ["adapters", "jobs", name],
+    queryFn: () => adaptersApi.jobs(name!),
+    enabled: name != null && name !== "",
+    refetchInterval: (query) =>
+      query.state.data?.items[0]?.status === "RUNNING" ? 1_000 : false,
+  });
+}
+
 /** 触发增量同步（测试连接）：202 → 由调用方开启 status 轮询。 */
 export function useSyncAdapter() {
   return useMutation({

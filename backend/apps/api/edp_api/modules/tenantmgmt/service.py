@@ -1,12 +1,14 @@
 """租户域服务：tenants / tenant_members 查询（模块间共享经由本文件）+
 W2 生命周期（EDP-024）：单事务开通 / 状态机（暂停-恢复-注销强确认）/
-清单与详情。
+清单与详情 + W5 B.14 补齐（EDP-501）：PATCH 更新 / context 切换重签 /
+members CRUD（最后 ACTIVE ADMIN 保护）/ quotas 读改（reason 留痕）。
 
 RLS 要点：tenants / tenant_quotas 为控制面表（不受 RLS）；users /
 tenant_members FORCE RLS——create_tenant 在租户行落库后 bind_tenant 到
-新租户再写初始管理员（事务级 set_config，请求提交自动失效）。状态写回
-一律 ORM 属性赋值（before_flush 审计切面自动落 TENANTS_UPDATE，勿改
-SQL update）。
+新租户再写初始管理员，members 读写同样先 bind_tenant 目标租户（事务级
+set_config，请求提交自动失效）。状态/成员/配额写回一律 ORM 属性赋值
+（before_flush 审计切面自动落 TENANTS_UPDATE / TENANT_MEMBERS_UPDATE /
+TENANT_QUOTAS_UPDATE，勿改 SQL update）。
 """
 
 import secrets
@@ -22,7 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from edp_api.core.db import bind_tenant
 from edp_api.core.errors import EdpError
 from edp_api.core.pagination import Page, decode_cursor, encode_cursor
+from edp_api.core.security.jwt import create_access_token
 from edp_api.core.security.password import hash_password
+from edp_api.core.security.principal import Principal
+from edp_api.core.tenant_context import ensure_tenant_usable
+from edp_api.modules.audit import service as audit_service
 from edp_api.modules.tenantmgmt.models import (
     Tenant,
     TenantMember,
@@ -33,8 +39,14 @@ from edp_api.modules.tenantmgmt.models import (
 from edp_api.modules.tenantmgmt.schemas import (
     TenantCreateRequest,
     TenantDetail,
+    TenantMemberCreateRequest,
+    TenantMemberItem,
+    TenantMemberUpdateRequest,
+    TenantQuotaDetail,
     TenantQuotaInfo,
+    TenantQuotaUpdateRequest,
     TenantSummary,
+    TenantUpdateRequest,
     TenantUsage,
     UsageItem,
 )
@@ -557,3 +569,357 @@ async def get_tenant_detail(sess: AsyncSession, tenant_id: UUID) -> TenantDetail
         quotas=TenantQuotaInfo.model_validate(quota) if quota is not None else None,
         usage=TenantUsage(),
     )
+
+
+# ---- W5 B.14 租户 API 补齐（EDP-501 后端，T2） ----
+
+# context 切换响应 note 文案（B.14 逐字）
+CONTEXT_SWITCH_NOTE = "所有后续请求将以该租户执行，操作全程审计"
+
+# 显式审计动作名（B.14 平台面留痕；切面自动行之外的业务语义补点）
+ACTION_CONTEXT_SWITCH = "TENANT_CONTEXT_SWITCH"
+ACTION_QUOTA_ADJUST = "TENANT_QUOTAS_ADJUST"
+
+
+async def update_tenant(
+    sess: AsyncSession, tenant_id: UUID, req: TenantUpdateRequest, *, actor_id: str
+) -> None:
+    """PATCH /tenants/{id}：name / plan 局部更新（ORM 赋值 → 切面自动
+    TENANTS_UPDATE 审计行）。
+
+    plan 变更**仅记录不调配额**：开通默认值只在 POST /tenants 按
+    PLAN_QUOTAS 落库一次，后续配额调整唯一入口是 PATCH /quotas
+    （显式 reason 留痕）——避免 plan 字段变化静默改写运维调过的配额。
+    """
+    tenant = await get_tenant(sess, tenant_id)
+    if tenant is None:
+        raise EdpError.not_found("租户不存在")
+    now = datetime.now(UTC)
+    if req.name is not None:
+        tenant.name = req.name
+    if req.plan is not None:
+        tenant.plan = req.plan
+    tenant.updated_at = now
+    tenant.updated_by = actor_id
+    await sess.flush()
+
+
+async def switch_tenant_context(
+    sess: AsyncSession, principal: Principal, tenant_id: UUID
+) -> tuple[Tenant, str]:
+    """POST /tenants/{id}/context：校验并重签平台 ADMIN 会话的目标租户。
+
+    - 目标租户不存在 → 404；非 ACTIVE 复用既有租户状态墙
+      ensure_tenant_usable（SUSPENDED/CANCELLED → 403 TENANT_SUSPENDED，
+      PROVISIONING → 403 TENANT_FORBIDDEN）；
+    - 重签复用 create_access_token 既有签发参数与过期语义（exp = now +
+      access_ttl），仅在 claims 上附加 act_tenant——tenant_id 保持用户
+      绑定租户（身份归属），act_tenant 为执行租户（tenant_scoped 解析
+      优先级 act_tenant > 绑定租户）；roles / principal_type /
+      is_platform_admin 原样保留；
+    - 平台面审计行（record_explicit，action=TENANT_CONTEXT_SWITCH，
+      detail 含 from_tenant/to_tenant，actor 归因平台 ADMIN 本人）；
+      from_tenant 记 `principal.effective_tenant_id`（act_tenant 优先）
+      ——已切换再切换场景下记当前执行租户，而非身份归属租户；
+    - **token 经响应体返回是最小可行口径**（B.14 未定义通道）——前端
+      TenantSwitchModal 持有后替换本地凭据并全站重拉（13.8）。
+    """
+    tenant = await get_tenant(sess, tenant_id)
+    if tenant is None:
+        raise EdpError.not_found("租户不存在")
+    ensure_tenant_usable(tenant.status)
+    token = create_access_token(
+        principal.id,
+        principal.tenant_id,
+        principal.roles,
+        principal.kind,
+        principal.is_platform_admin,
+        act_tenant=tenant.tenant_id,
+    )
+    await audit_service.record_explicit(
+        sess,
+        action=ACTION_CONTEXT_SWITCH,
+        resource_type="tenants",
+        resource_id=str(tenant.tenant_id),
+        detail={
+            "from_tenant": str(principal.effective_tenant_id),
+            "to_tenant": str(tenant.tenant_id),
+        },
+        principal=principal,
+    )
+    return tenant, token
+
+
+async def list_members(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    cursor: str | None = None,
+) -> Page[TenantMemberItem]:
+    """GET /tenants/{id}/members：joined_at（= created_at）DESC 游标分页
+    （member_id tiebreak，锚 {"o","i"} 与租户清单同构）；投影含
+    display_name（join platform.users）。
+
+    tenant_members / users 均 FORCE RLS——先 bind_tenant 目标租户再查；
+    租户不存在 → 404。
+    """
+    if await get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    await bind_tenant(sess, tenant_id)
+    limit = max(1, min(limit, MAX_LIMIT))
+    stmt = (
+        select(TenantMember, UserRow.display_name)
+        .join(UserRow, TenantMember.user_id == UserRow.user_id)
+        .where(TenantMember.tenant_id == tenant_id)
+    )
+    decoded = decode_cursor(cursor)
+    if decoded is not None:
+        anchor = _parse_anchor(decoded)
+        if anchor is not None:
+            joined_at, anchor_member_id = anchor
+            stmt = stmt.where(
+                or_(
+                    TenantMember.created_at < joined_at,
+                    and_(
+                        TenantMember.created_at == joined_at,
+                        TenantMember.member_id < anchor_member_id,
+                    ),
+                )
+            )
+    stmt = stmt.order_by(
+        TenantMember.created_at.desc(), TenantMember.member_id.desc()
+    ).limit(limit + 1)
+    rows = (await sess.execute(stmt)).all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    next_cursor = None
+    if has_more and page_rows:
+        last_member, _ = page_rows[-1]
+        next_cursor = encode_cursor(
+            {"o": last_member.created_at.isoformat(), "i": str(last_member.member_id)}
+        )
+    items = [
+        TenantMemberItem(
+            member_id=member.member_id,
+            user_id=member.user_id,
+            display_name=display_name,
+            member_roles=list(member.member_roles or []),
+            status=member.status,
+            joined_at=member.created_at,
+        )
+        for member, display_name in page_rows
+    ]
+    return Page(items=items, next_cursor=next_cursor)
+
+
+async def add_member(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    req: TenantMemberCreateRequest,
+    *,
+    actor_id: str,
+) -> TenantMemberItem:
+    """POST members：bind_tenant 后写 tenant_members（ORM → 切面
+    TENANT_MEMBERS_CREATE 审计行）。
+
+    - 租户不存在 → 404；member_roles 空数组 → 400 VALIDATION_ERROR
+      （语义拒绝与请求体校验同口径，W5 评审裁定）；
+    - user_id 须为目标租户内 ACTIVE 用户（users FORCE RLS，绑定后 0 行
+      即 404，不泄露存在性）；已在册 → 409（uq_tenant_member 先查再插
+      + IntegrityError 兜底）。
+    """
+    if await get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    if not req.member_roles:
+        raise EdpError.validation_error("member_roles 不能为空数组")
+    await bind_tenant(sess, tenant_id)
+    user = await sess.get(UserRow, req.user_id)
+    if user is None or user.status != "ACTIVE":
+        raise EdpError.not_found("用户不存在")
+    existing = (
+        await sess.execute(
+            select(TenantMember.member_id).where(
+                TenantMember.tenant_id == tenant_id,
+                TenantMember.user_id == req.user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise EdpError.conflict("用户已是该租户成员")
+    now = datetime.now(UTC)
+    member = TenantMember(
+        member_id=uuid4(),
+        tenant_id=tenant_id,
+        user_id=req.user_id,
+        member_roles=list(req.member_roles),
+        status="ACTIVE",
+        invited_by=actor_id,
+        created_at=now,
+        updated_at=now,
+        created_by=actor_id,
+        updated_by=actor_id,
+    )
+    sess.add(member)
+    try:
+        await sess.flush()
+    except IntegrityError:
+        await sess.rollback()
+        raise EdpError.conflict("用户已是该租户成员") from None
+    return TenantMemberItem(
+        member_id=member.member_id,
+        user_id=member.user_id,
+        display_name=user.display_name,
+        member_roles=list(member.member_roles),
+        status=member.status,
+        joined_at=member.created_at,
+    )
+
+
+async def update_member(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    member_id: UUID,
+    req: TenantMemberUpdateRequest,
+    *,
+    actor_id: str,
+) -> TenantMemberItem:
+    """PATCH member（改角色/禁用；ORM 赋值 → 切面 TENANT_MEMBERS_UPDATE）。
+
+    - bind_tenant 后 RLS 天然收敛：跨租户/不存在 member_id 统一 404；
+    - member_roles 提供且为空数组 → 400 VALIDATION_ERROR（同 add_member
+      口径，W5 评审裁定）；
+    - 最后 ACTIVE ADMIN 保护：本次变更会使租户内 ACTIVE ADMIN 数归零
+      （禁用该成员或移除其 ADMIN 角色，且无其他 ACTIVE ADMIN）→
+      400 VALIDATION_ERROR。
+    """
+    if await get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    if req.member_roles is not None and not req.member_roles:
+        raise EdpError.validation_error("member_roles 不能为空数组")
+    await bind_tenant(sess, tenant_id)
+    member = await sess.get(TenantMember, member_id)
+    if member is None or member.tenant_id != tenant_id:
+        raise EdpError.not_found("成员不存在")
+    new_roles = (
+        list(req.member_roles)
+        if req.member_roles is not None
+        else list(member.member_roles or [])
+    )
+    new_status = req.status if req.status is not None else member.status
+    await _ensure_last_active_admin_preserved(sess, member, new_roles, new_status)
+    now = datetime.now(UTC)
+    if req.member_roles is not None:
+        member.member_roles = new_roles
+    if req.status is not None:
+        member.status = new_status
+    member.updated_at = now
+    member.updated_by = actor_id
+    await sess.flush()
+    display_name = (
+        await sess.execute(
+            select(UserRow.display_name).where(UserRow.user_id == member.user_id)
+        )
+    ).scalar_one_or_none()
+    return TenantMemberItem(
+        member_id=member.member_id,
+        user_id=member.user_id,
+        display_name=display_name,
+        member_roles=list(member.member_roles or []),
+        status=member.status,
+        joined_at=member.created_at,
+    )
+
+
+async def _ensure_last_active_admin_preserved(
+    sess: AsyncSession, member: TenantMember, new_roles: list[str], new_status: str
+) -> None:
+    """禁用/降级守卫：变更成员原为 ACTIVE ADMIN、变更后不再是，且租户内
+    无其他 ACTIVE ADMIN → 400 VALIDATION_ERROR（不可禁用最后一个
+    ACTIVE ADMIN）。非 ADMIN 成员的普通变更不受限。
+
+    check-then-act 竞态窗口登记：count 查询与写回 flush 非原子，并发
+    变更两个 ADMIN 可能双双通过守卫——单副本部署语义可接受，分布式锁
+    （Redis）评估 T17 覆盖。
+    """
+    was_admin = "ADMIN" in (member.member_roles or []) and member.status == "ACTIVE"
+    still_admin = "ADMIN" in new_roles and new_status == "ACTIVE"
+    if not was_admin or still_admin:
+        return
+    others = (
+        await sess.execute(
+            select(func.count())
+            .select_from(TenantMember)
+            .where(
+                TenantMember.tenant_id == member.tenant_id,
+                TenantMember.member_id != member.member_id,
+                TenantMember.status == "ACTIVE",
+                TenantMember.member_roles.contains(["ADMIN"]),
+            )
+        )
+    ).scalar_one()
+    if others == 0:
+        raise EdpError.validation_error("不能禁用或降级租户内最后一个 ACTIVE ADMIN")
+
+
+async def get_quota_detail(sess: AsyncSession, tenant_id: UUID) -> TenantQuotaDetail:
+    """GET quotas：B.14 七字段完整配额对象（+tenant_id）；租户不存在 → 404；
+    配额行缺失容忍为默认值实例（updated_at 为 None）。"""
+    if await get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    quota = await get_quota(sess, tenant_id)
+    return TenantQuotaDetail.model_validate(quota)
+
+
+async def update_quota(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    req: TenantQuotaUpdateRequest,
+    *,
+    actor_id: str,
+    principal: Principal,
+) -> TenantQuotaDetail:
+    """PATCH quotas（B.14 临时提额）：仅 api_rate_limit / storage_gb /
+    events_per_month 三字段可调（batch_max_events / query_timeout_ms /
+    pool_share 不在本端点口径内）。
+
+    - reason 必填非空 → 缺失/空白 400 VALIDATION_ERROR（W5 评审裁定，
+      与请求体校验同口径）；
+    - 审计留痕双行：ORM 赋值触发切面 TENANT_QUOTAS_UPDATE（before/after
+      diff）+ record_explicit 补 TENANT_QUOTAS_ADJUST（detail 携带
+      reason 与变更清单——「临时提额留痕」的业务语义行）；
+    - 配额行缺失时以默认值实例补落库（健康租户不应出现，防御性口径）；
+    - check-then-act 竞态窗口登记：读配额行 → 属性赋值 → flush 非原子，
+      并发 PATCH 后写覆盖前写（丢失更新）——单副本部署语义可接受，
+      分布式锁（Redis）评估 T17 覆盖。
+    """
+    if await get_tenant(sess, tenant_id) is None:
+        raise EdpError.not_found("租户不存在")
+    if not (req.reason or "").strip():
+        raise EdpError.validation_error("调整配额必须填写 reason（临时提额留痕）")
+    quota = await sess.get(TenantQuota, tenant_id)
+    now = datetime.now(UTC)
+    if quota is None:
+        quota = await get_quota(sess, tenant_id)
+        quota.created_at = now
+        quota.created_by = actor_id
+        sess.add(quota)
+    changes: dict[str, dict[str, int]] = {}
+    for field in ("api_rate_limit", "storage_gb", "events_per_month"):
+        value = getattr(req, field)
+        if value is not None:
+            changes[field] = {"before": getattr(quota, field), "after": value}
+            setattr(quota, field, value)
+    quota.updated_at = now
+    quota.updated_by = actor_id
+    if changes:
+        await audit_service.record_explicit(
+            sess,
+            action=ACTION_QUOTA_ADJUST,
+            resource_type="tenant_quotas",
+            resource_id=str(tenant_id),
+            detail={"reason": req.reason, "changes": changes},
+            principal=principal,
+        )
+    await sess.flush()
+    return TenantQuotaDetail.model_validate(quota)
