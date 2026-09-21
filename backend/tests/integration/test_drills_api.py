@@ -225,10 +225,13 @@ async def test_repo_drill_records_file_parses(
     assert switchover["result"] == "SUCCEEDED"
     assert switchover["executed_at"] is not None  # W4 实测已回填
     assert switchover["readings"]  # staging-drill.md 摘录读数非空
-    assert all(
-        next(i for i in items if i["drill_type"] == dt)["executed_at"] is None
-        for dt in ("pitr", "tenant_restore")
-    )  # T14~T16 待回填
+    # T15b/T15c 实测回填：pitr/tenant_restore 均已执行且有读数
+    for dt in ("pitr", "tenant_restore"):
+        item = next(i for i in items if i["drill_type"] == dt)
+        assert item["result"] == "SUCCEEDED"
+        assert item["executed_at"] is not None
+        assert item["rto_seconds"] is not None
+        assert item["readings"]
 
 
 # ---- 5. 鉴权矩阵：ANALYST 200；SERVICE readonly Key 403；匿名 401 ----

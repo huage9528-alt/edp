@@ -41,12 +41,23 @@
     },
     {
       "drill_type": "tenant_restore",
-      "executed_at": null,
+      "executed_at": "2026-09-21T13:11:21+08:00",
       "topology": "etcd×1 + patroni×2 + pgbackrest(repo=MinIO S3)",
-      "rto_seconds": null,
-      "rpo_seconds": null,
-      "result": "PLANNED",
-      "readings": {},
+      "rto_seconds": 23.8,
+      "rpo_seconds": 0,
+      "result": "SUCCEEDED",
+      "readings": {
+        "租户": "demo-b（b0000000-0000-4000-8000-00000000000b，固定 UUID 幂等重跑）",
+        "误删范围": "event.events×120 + evidence.records×40（platform.tenants 行保留 count=1）",
+        "增量备份": "20260921-025634F_20260921-051115I（05:11:15→05:11:20 UTC，5s，WAL ...0024；full+3 incr 链）",
+        "隔离恢复": "一次性容器 edp-tenant-restore（同 patroni 镜像原生单实例 :15434，--target-timeline=current）",
+        "回放": "容器内 psql|psql COPY 管道（CSV 不落宿主盘）：COPY 120 / COPY 40",
+        "断言": "误删前/隔离库/回放后计数全等（events 120/120/120，evidence 40/40/40）；checksum 抽样 5/5 一致",
+        "RTO 口径": "23.8s = 误删 -> 隔离恢复 -> 回放 -> 断言全过（目标 ≤4h）",
+        "RPO 口径": "0 = 整批找回（行数+checksum 抽样一致）",
+        "api 等价断言": "DB 层等价（tenant-b 成员 JWT 未配置）；api /healthz 演练后 200，主栈零影响",
+        "W5 实测归档": "docs/demo/w5-drills.md T15c 段"
+      },
       "manual_url": "docs/demo/w5-drills.md"
     }
   ]

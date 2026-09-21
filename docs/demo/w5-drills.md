@@ -179,6 +179,41 @@ stanza: edp
 3. **宿主 15432 被常驻 edp-dev-db-1（dev 栈）占用**——不动 dev 栈，恢复实例端口改 15433（演练语义不变，脚本参数化 `param([int]$RestoreHostPort = 15433)`）。
 4. PS 5.1 传参坑两则（已固化脚本注释）：`@()` 数组内跨行 `+` 不续行（拆参被 psql 忽略）；here-string 内 JSON 双引号会被剥（改 `jsonb_build_object`）。
 
+## T15c — 租户级恢复演练（EDP-027）
+
+- 脚本：`deploy/scripts/tenant-restore-drill.ps1`（八步一键真跑：造数→增量备份→误删→隔离恢复→COPY 回放→断言→清理；固定租户 UUID，幂等重跑）；演练时间 2026-09-21 13:11（容器 UTC 05:11）。
+- 读数归档：`deploy/drills/drill-records.json` tenant_restore 项（SUCCEEDED / rto=23.8s / rpo=0s）。
+
+### 流程与实测（脚本输出摘要）
+
+1. **幂等清场 + demo 租户 b**：固定 UUID `b0000000-0000-4000-8000-00000000000b`（`platform.tenants` ON CONFLICT DO NOTHING，重跑安全）。
+2. **造业务数据**：`master.business_objects`×12（source_system=t15c-drill）+ `event.events`×120 + `evidence.records`×40；留证计数 events=120 / evidence=40（edp_migrator BYPASSRLS 直连 patroni1）。
+3. **增量备份**：`pgbackrest --type=incr` → `20260921-025634F_20260921-051115I`（05:11:15→05:11:20 UTC，5s，WAL ...0024；full+3 incr 链）。
+4. **误删（RTO 计时起）**：`DELETE evidence.records/event.events WHERE tenant_id=b`（先计数留证）；误删后 0/0，`platform.tenants` 行保留（count=1）。
+5. **隔离恢复**：一次性容器 `edp-tenant-restore`（同 patroni 镜像原生 postgres 单实例，宿主 :15434，不走 patroni）从 S3 restore 最新 incr 链（`--target-timeline=current`）。
+6. **校验 + 回放**：隔离库计数 == 误删前（120/40）→ 容器内 `psql|psql` COPY 管道按 tenant_id 回插主库（CSV 不落宿主盘；主库行已删，UUID 直插无冲突）→ `COPY 120` / `COPY 40`。
+7. **断言（RTO 计时止）**：主库计数 120/120/40 三段全等；evidence checksum 抽样 5/5 与隔离库一致；**RTO=23.8s**。
+8. **清理**：恢复容器删除；租户 b 数据保留 = 演练成果。
+
+日志（`deploy/logs/tenant-restore-drill.log`，gitignore）：
+
+    2026-09-21 13:11:45 | b0000000-0000-4000-8000-00000000000b | events 120->120->120 | evidence 40->40->40 | checksum 5/5 | rto=23.8s | GREEN
+
+### RTO / RPO 实测
+
+- **RTO = 23.8s**（口径：误删 → 隔离恢复 → 回放 → 断言全过；含恢复容器冷启动 + S3 restore + 隔离实例启动 + 240 行 COPY 回放；目标 ≤4h）。
+- **RPO = 0s**（整批找回：误删前/隔离库/回放后计数全等 + checksum 抽样 5/5 一致）。
+
+### 等价口径与降级说明
+
+1. **api 层断言 → DB 层等价**：tenant-b 成员账号/JWT 未配置，脚本以 migrator 直查 + checksum 抽样作等价断言；`api /healthz` 演练后实测 200（主栈零影响）；api 级查询断言记后续（readings 已注）。
+2. **恢复实例不触主栈**：同 patroni 镜像但 `pg_ctl` 直起原生单实例（端口 15434 避开 dev 15432 / PITR 15433），不加入 patroni/etcd；主栈 8 容器（含 api/worker/web）零重启零中断。
+
+### 关键实测发现（踩坑记）
+
+1. **演练实例 timeline 污染（[058] 受控复现）**：恢复实例 promote 后若 archive_mode 开启，新 timeline 的 WAL/history 会回推共享 repo；后续 restore 默认 `latest` 选中该线时报 `[058] target timeline 8 forked from backup timeline 7 at 0/23000000 which is before backup lsn of 0/24000028`（开发期三次 RED 后加固；受控复现：向 repo 放入 fork 点早于最新备份的 `00000008.history` → 复现，删除后恢复）。处置：恢复实例一律 `-c archive_mode=off` + restore 显式 `--target-timeline=current`（=备份所在主线）；`pitr-drill.ps1` 同步加固（本 commit）。
+2. **PS Stopwatch 无 TotalSeconds 属性**：`$sw.TotalSeconds` 静默取 `$null` → `[math]::Round` 恒 0（11:34 首次全绿 rto=0s 即此症状）；改 `.Elapsed.TotalSeconds` 后本次实测 23.8s。
+
 ## T14 结论与降级预案
 
 1. **对象存储备份链路实测成立，未触发降级**：MinIO 起 → bucket 幂等初始化 → stanza-create → 全量备份 → WAL 推取往返（check）→ info/mc du 读数全部真跑通过；既有 7 容器（含 api/worker/web）零重启零中断。

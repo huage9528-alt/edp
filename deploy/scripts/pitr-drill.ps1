@@ -150,6 +150,8 @@ FROM obj
     Write-Host "  end-marker 已提交（commit ts > target）+ 归档推进：$walBefore2 -> $walEnd"
 
     Write-Host "== [5/7] 恢复（RTO 计时从冷启动起）：一次性容器 + --type=time restore + promote =="
+    # --target-timeline=current（=备份所在 timeline，主库现线）：显式指定，防历次演练实例 promote
+    # 的新 timeline 干扰目标 timeline 判定（演练实例已统一 archive_mode=off 不再回推 repo）
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     Invoke-Native @("docker", "rm", "-f", $RestoreContainer) | Out-Null
     $r = Invoke-Native @("docker", "run", "-d", "--name", $RestoreContainer,
@@ -162,15 +164,16 @@ FROM obj
     Invoke-Native @("docker", "exec", $RestoreContainer, "chown", "postgres:postgres", "/var/lib/postgresql/data/pgdata") | Out-Null
     $r = Invoke-Native @("docker", "exec", "-u", "postgres", $RestoreContainer,
         "pgbackrest", "--stanza=edp", "--pg1-path=/var/lib/postgresql/data/pgdata",
-        "--type=time", "--target=$targetStr", "--target-action=promote", "restore")
+        "--type=time", "--target=$targetStr", "--target-timeline=current",
+        "--target-action=promote", "restore")
     if ($r.Exit -ne 0) { throw "pgbackrest restore 失败：$($r.Out)" }
     $setLine = ""
     if ($r.Out -match "restore backup set (\S+?),") { $setLine = $Matches[1] }
     Write-Host "  restore OK 备份集=$setLine（耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1))s）"
-    # 原生 postgres 单实例起（不走 patroni，避免加入集群）
+    # 原生 postgres 单实例起（不走 patroni，避免加入集群）；archive_mode=off 防 promote 后新 timeline WAL 回推共享 repo
     $r = Invoke-Native @("docker", "exec", "-u", "postgres", $RestoreContainer,
         "pg_ctl", "-D", "/var/lib/postgresql/data/pgdata", "-l", "/tmp/pitr-postgres.log",
-        "-o", "-p 5432", "-w", "-t", "60", "start")
+        "-o", "-p 5432 -c archive_mode=off", "-w", "-t", "60", "start")
     if ($r.Exit -ne 0) {
         $log = Invoke-Native @("docker", "exec", $RestoreContainer, "tail", "-n", "20", "/tmp/pitr-postgres.log")
         throw "pg_ctl start 失败：$($r.Out)`n$($log.Out)"
