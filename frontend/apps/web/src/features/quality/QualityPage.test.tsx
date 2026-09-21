@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ThemeProvider } from "../../app/providers/ThemeProvider";
 import { routes } from "../../app/router";
 import { useSessionStore, type AuthTokenResponse } from "../auth/session-store";
@@ -41,18 +41,14 @@ function renderQuality() {
 }
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => {
-  server.resetHandlers();
-  vi.unstubAllEnvs();
-});
+afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 beforeEach(() => {
-  vi.stubEnv("VITE_USE_MSW", "1");
   useSessionStore.getState().setSession(sessionOf());
 });
 
-describe("QualityPage 数据质量（MSW 模式渲染路由）", () => {
-  it("KPI 四卡 + 维度评分 + 异常卡与合并提示", async () => {
+describe("QualityPage 数据质量（真端点形状渲染）", () => {
+  it("KPI 四卡（校验通过率文案）+ 四段维度评分 + 异常卡与合并提示", async () => {
     renderQuality();
 
     const band = await waitFor(() => {
@@ -60,18 +56,21 @@ describe("QualityPage 数据质量（MSW 模式渲染路由）", () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(band.textContent).toContain("97.8%");
+    // kpi 派生对齐后端 T3 口径：overall=四维均分 99、sla=抽检通过率 99.2、
+    // completeness=coverage.overall 96.8、pending=7
+    expect(band.textContent).toContain("校验通过率");
+    expect(band.textContent).toContain("99%");
     expect(band.textContent).toContain("99.2%");
-    expect(band.textContent).toContain("98.7%");
-    expect(band.textContent).toContain("7"); // pending_exceptions
+    expect(band.textContent).toContain("96.8%");
+    expect(band.textContent).toContain("7");
 
+    // 四段维度标识（reconciliation/coverage/orphans/checksum）全 success 色
     await waitFor(() =>
-      expect(document.querySelectorAll('[data-dom-id^="quality-dim-"]').length).toBe(5),
+      expect(document.querySelectorAll('[data-dom-id^="quality-dim-"]').length).toBe(4),
     );
-    // 低分维度（PLM 94.2 < 95）warning 色
     expect(
-      document.querySelector('[data-dom-id="quality-dim-rd"]')!.className,
-    ).toContain("bg-state-warning");
+      document.querySelector('[data-dom-id="quality-dim-coverage"]')!.className,
+    ).toContain("bg-state-success");
 
     await waitFor(() =>
       expect(document.querySelectorAll('[data-dom-id^="quality-exception-"]').length).toBe(3),
@@ -81,7 +80,30 @@ describe("QualityPage 数据质量（MSW 模式渲染路由）", () => {
     );
   });
 
-  it("重校验弹窗：默认全选 → 提交后通知并打开任务日志抽屉（日志时间线）", async () => {
+  it("重校验弹窗：范围单选（默认全部四段）→ POST scope → 202 打开任务日志抽屉", async () => {
+    const bodies: { scope?: string }[] = [];
+    server.use(
+      http.post("*/api/v1/admin/quality/rechecks", async ({ request }) => {
+        bodies.push((await request.json()) as { scope?: string });
+        return HttpResponse.json(
+          { task_id: "TASK-20260928-7777", status: "RUNNING" },
+          { status: 202 },
+        );
+      }),
+      http.get("*/api/v1/admin/quality/tasks/:taskId", () =>
+        HttpResponse.json({
+          task_id: "TASK-20260928-7777",
+          task_type: "quality_recheck",
+          status: "RUNNING",
+          scope: "CHECKSUM",
+          started_at: "2026-09-28T08:30:00.000Z",
+          logs: [
+            { ts: "2026-09-28T08:30:01.000Z", level: "INFO", message: "任务启动：scope=CHECKSUM" },
+            { ts: "2026-09-28T08:30:02.000Z", level: "INFO", message: "抽检段完成：抽样 120，失配 1" },
+          ],
+        }),
+      ),
+    );
     renderQuality();
 
     const button = await waitFor(() => {
@@ -95,31 +117,68 @@ describe("QualityPage 数据质量（MSW 模式渲染路由）", () => {
     await waitFor(() =>
       expect(document.querySelector('[data-dom-id="recheck-body"]')).not.toBeNull(),
     );
-    // 默认全选（aria-pressed=true）
-    for (const key of ["completeness", "consistency", "timeliness", "uniqueness"]) {
-      expect(
-        document
-          .querySelector(`[data-dom-id="recheck-dim-${key}"]`)!
-          .getAttribute("aria-pressed"),
-      ).toBe("true");
-    }
-    fireEvent.click(document.querySelector('[data-dom-id="recheck-scope-EXCEPTIONS"]')!);
+    // 默认选中全部四段
+    expect(
+      document.querySelector('[data-dom-id="recheck-scope-ALL"]')!.getAttribute("aria-pressed"),
+    ).toBe("true");
+    // 切到校验和抽检段
+    fireEvent.click(document.querySelector('[data-dom-id="recheck-scope-CHECKSUM"]')!);
+    expect(
+      document.querySelector('[data-dom-id="recheck-scope-CHECKSUM"]')!.getAttribute("aria-pressed"),
+    ).toBe("true");
     fireEvent.click(document.querySelector('[data-dom-id="recheck-submit"]')!);
 
-    // 提交成功 → 打开任务日志抽屉（含任务号与日志时间线）
+    await waitFor(() => expect(bodies).toEqual([{ scope: "CHECKSUM" }]));
+    // 提交成功 → 打开任务日志抽屉（logs 进度时间线 + scope 元信息）
     await waitFor(() =>
       expect(document.querySelector('[data-dom-id="quality-task-body"]')).not.toBeNull(),
     );
-    expect(screen.getByText(/TASK-20260928-0001/)).toBeInTheDocument();
+    expect(screen.getByText("TASK-20260928-7777")).toBeInTheDocument();
     expect(document.querySelector('[data-dom-id="quality-task-logs"]')!.textContent).toContain(
-      "任务启动",
+      "任务启动：scope=CHECKSUM",
     );
     expect(screen.getByText("运行中")).toBeInTheDocument();
   });
 
-  it("真模式（VITE_USE_MSW!=1）：质量报告面板降级 + 重校验禁用", async () => {
-    vi.stubEnv("VITE_USE_MSW", "0");
-    // 真实后端无 quality API（W5）→ 404 模拟
+  it("任务终态 FAILED：抽屉失败 pill 呈现", async () => {
+    server.use(
+      http.get("*/api/v1/admin/quality/tasks/:taskId", () =>
+        HttpResponse.json({
+          task_id: "TASK-20260928-8888",
+          task_type: "quality_recheck",
+          status: "FAILED",
+          scope: "ALL",
+          started_at: "2026-09-28T08:30:00.000Z",
+          finished_at: "2026-09-28T08:31:00.000Z",
+          logs: [{ ts: "2026-09-28T08:30:30.000Z", level: "ERROR", message: "对账段异常：连接超时" }],
+        }),
+      ),
+    );
+    renderQuality();
+
+    fireEvent.click(
+      await waitFor(() => {
+        const el = document.querySelector('[data-dom-id="quality-recheck-btn"]');
+        expect(el).not.toBeNull();
+        return el as HTMLButtonElement;
+      }),
+    );
+    fireEvent.click(await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="recheck-submit"]');
+      expect(el).not.toBeNull();
+      return el as HTMLButtonElement;
+    }));
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-dom-id="quality-task-body"]')).not.toBeNull(),
+    );
+    expect(screen.getByText("失败")).toBeInTheDocument();
+    expect(document.querySelector('[data-dom-id="quality-task-logs"]')!.textContent).toContain(
+      "对账段异常",
+    );
+  });
+
+  it("报告端点失败 → 错误态面板（非降级占位），重校验入口仍可用", async () => {
     server.use(
       http.get("*/api/v1/admin/quality/reports", () =>
         HttpResponse.json(
@@ -131,10 +190,10 @@ describe("QualityPage 数据质量（MSW 模式渲染路由）", () => {
     renderQuality();
 
     await waitFor(
-      () => expect(document.querySelector('[data-dom-id="quality-degraded"]')).not.toBeNull(),
+      () => expect(document.querySelector('[data-dom-id="quality-error"]')).not.toBeNull(),
       { timeout: 3_000 },
     );
     const button = document.querySelector('[data-dom-id="quality-recheck-btn"]') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
   });
 });

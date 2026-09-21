@@ -118,8 +118,7 @@ describe("EvidencePage 证据库（MSW 模式渲染路由）", () => {
     await waitFor(() => expect(cards().length).toBe(evidence.length));
   });
 
-  it("真模式（VITE_USE_MSW!=1）重建索引按钮禁用", async () => {
-    vi.stubEnv("VITE_USE_MSW", "0");
+  it("重建索引按钮真模式直接可用（T6 端点已交付）", async () => {
     renderEvidence();
 
     const button = await waitFor(() => {
@@ -127,9 +126,6 @@ describe("EvidencePage 证据库（MSW 模式渲染路由）", () => {
       expect(el).not.toBeNull();
       return el as HTMLButtonElement;
     });
-    expect(button.disabled).toBe(true);
-    expect(
-      document.querySelector('[data-dom-id="evidence-reindex-wrap"]')?.getAttribute("title"),
-    ).toContain("W5");
+    expect(button.disabled).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { qualityApi } from "./api";
+import { qualityApi, type RecheckScope } from "./api";
 
-/** 质量报告（面板级降级由页面处理；真模式 404 → isError）。 */
+/** 质量报告（真端点 T3 交付；错误由页面错误态承接）。 */
 export function useQualityReport() {
   return useQuery({
     queryKey: ["quality", "report"],
@@ -19,12 +19,12 @@ export function useQualityExceptions(limit = 3) {
   });
 }
 
-/** 重校验提交（MSW 自有端点）。 */
+/** 重校验提交（POST rechecks scope → 202）。 */
 export function useRecheck() {
-  return useMutation({ mutationFn: qualityApi.recheck });
+  return useMutation({ mutationFn: (scope: RecheckScope) => qualityApi.recheck(scope) });
 }
 
-/** 任务日志抽屉轮询（1s；任务完成后停止）。 */
+/** 任务日志抽屉轮询（1s；任务进入终态后停止）。 */
 export function useQualityTask(taskId: string | undefined) {
   return useQuery({
     queryKey: ["quality", "task", taskId],

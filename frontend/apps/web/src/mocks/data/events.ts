@@ -1,10 +1,12 @@
 import type { EventResponse } from "../types";
 import { daysBefore, hoursBefore, minutesBefore } from "../lib/demo-time";
 import { objects } from "./objects";
+import { EVID_ORDER_I_DUAL } from "./ids";
 import {
   EVT_ADAPTER_PLM_FAILED, EVT_CASE_B_CREATED, EVT_ORDER_A_RISK, EVT_ORDER_B_RISK, EVT_ORDER_C_RISK,
   EVT_ORDER_E_RISK, EVT_ORDER_G_RISK, EVT_ORDER_H_RISK, EVT_ORDER_I_DQ, EVT_ORDER_J_RISK,
-  EVT_PRJD_READINESS, OBJ_ORDER_A, OBJ_ORDER_B, OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H,
+  EVT_PRJD_READINESS, EVT_QUALITY_CHECKSUM_FAIL, EVT_QUALITY_RECHECK_OK, EVT_QUALITY_REINDEX_MISMATCH,
+  EVT_QUALITY_REINDEX_OK, OBJ_ORDER_A, OBJ_ORDER_B, OBJ_ORDER_C, OBJ_ORDER_E, OBJ_ORDER_G, OBJ_ORDER_H,
   OBJ_ORDER_I, OBJ_ORDER_J, OBJ_ORDER_R1, OBJ_ORDER_R2, OBJ_PROJECT_PRJD, TENANT_ID, mockUuid,
 } from "./ids";
 
@@ -103,7 +105,71 @@ const capabilityEvents: EventResponse[] = [
   evt({ id: EVT_ADAPTER_PLM_FAILED, type: "adapter.sync.failed", objectId: OBJ_PROJECT_PRJD, source: "edp-adapter", occurredAt: minutesBefore(18), actorType: "SERVICE", actorId: "adapter:plm", risk: "P2", score: 0.5, resultType: "ADAPTER", deliveryStatus: "DEAD_LETTER", data: { adapter: "plm", reason: "UPSTREAM_UNAVAILABLE", note: "场景 10：工具调用失败，已转人工跟进" } }),
 ];
 
-export const events: EventResponse[] = [...orderRoutineEvents, ...inventoryRoutineEvents, ...capabilityEvents];
+/** 质量事件流（T3/T4/T6 后端写通道 event_type 实测：quality.* / edp-quality）：
+ *  occurred_at 置于事件流页默认 24H 窗口之外（26h+），不扰动既有窗口计数断言。 */
+const qualityEvents: EventResponse[] = [
+  evt({
+    id: EVT_QUALITY_REINDEX_OK,
+    type: "quality.reindex_succeeded",
+    objectId: OBJ_ORDER_A,
+    source: "edp-quality",
+    occurredAt: hoursBefore(26),
+    actorType: "SERVICE",
+    actorId: "service:quality",
+    data: {
+      task_id: "a3e1c000-0000-4000-8000-000000000950",
+      scope: "ALL",
+      stats: { total: 20, rechecked: 20, mismatched: 0 },
+    },
+  }),
+  evt({
+    id: EVT_QUALITY_REINDEX_MISMATCH,
+    type: "quality.reindex_mismatch",
+    objectId: OBJ_ORDER_A,
+    source: "edp-quality",
+    occurredAt: hoursBefore(26.1),
+    actorType: "SERVICE",
+    actorId: "service:quality",
+    data: {
+      task_id: "a3e1c000-0000-4000-8000-000000000950",
+      mismatched: 1,
+      mismatches: [
+        { evidence_id: EVID_ORDER_I_DUAL, expected: "sha256:9f2c…", actual: "sha256:71ab…" },
+      ],
+    },
+  }),
+  evt({
+    id: EVT_QUALITY_RECHECK_OK,
+    type: "quality.recheck_succeeded",
+    objectId: OBJ_ORDER_A,
+    source: "edp-quality",
+    occurredAt: hoursBefore(30),
+    actorType: "SERVICE",
+    actorId: "service:quality",
+    data: {
+      task_id: "TASK-20260926-0003",
+      scope: "ALL",
+      stats: { reconciliation: { groups: 5, bad_groups: 0 }, checksum: { sampled: 120, failed: 1 } },
+    },
+  }),
+  evt({
+    id: EVT_QUALITY_CHECKSUM_FAIL,
+    type: "quality.checksum_failed",
+    objectId: OBJ_ORDER_I,
+    source: "edp-quality",
+    occurredAt: hoursBefore(49),
+    actorType: "SERVICE",
+    actorId: "service:quality",
+    data: { evidence_id: EVID_ORDER_I_DUAL, expected: "sha256:9f2c…", actual: "sha256:71ab…" },
+  }),
+];
+
+export const events: EventResponse[] = [
+  ...orderRoutineEvents,
+  ...inventoryRoutineEvents,
+  ...capabilityEvents,
+  ...qualityEvents,
+];
 
 export function findEvent(id: string): EventResponse | undefined {
   return events.find((e) => e.event_id === id);

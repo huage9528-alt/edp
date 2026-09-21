@@ -7,6 +7,8 @@ const BASE = "/api/v1";
 export type AdapterListItem = Schemas["AdapterListItem"];
 export type AdapterStatusResponse = Schemas["AdapterStatusResponse"];
 export type AdapterSyncResponse = Schemas["AdapterSyncResponse"];
+export type AdapterJobItem = Schemas["AdapterJobItem"];
+export type AdapterJobsResponse = Schemas["AdapterJobsResponse"];
 export type SystemCreateRequest = Schemas["SystemCreateRequest"];
 export type SystemCreatedResponse = Schemas["SystemCreatedResponse"];
 export type SyncStats = Schemas["SyncStats"];
@@ -49,6 +51,12 @@ export const adaptersApi = {
   status: (name: string): Promise<AdapterStatusResponse> =>
     apiClient.get<AdapterStatusResponse>(
       `${BASE}/admin/adapters/${encodeURIComponent(name)}/status`,
+    ),
+
+  /** T5 GET /admin/adapters/{name}/jobs：任务历史（ops.tasks 简投影，日志抽屉历史下拉）。 */
+  jobs: (name: string): Promise<AdapterJobsResponse> =>
+    apiClient.get<AdapterJobsResponse>(
+      `${BASE}/admin/adapters/${encodeURIComponent(name)}/jobs`,
     ),
 
   /** B.12 POST /admin/adapters/{name}/sync（测试连接走 incremental）→ 202。 */

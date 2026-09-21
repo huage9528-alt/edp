@@ -71,7 +71,7 @@ export function BottomThree() {
       >
         <MiniBarChart peak={ops?.ingest_peak_24h} />
         <div className="grid grid-cols-2 gap-3 pt-3 mt-3 border-t border-border">
-          <MetricCell label="SLA" value={kpi ? `${kpi.sla_pct}%` : "—"} />
+          <MetricCell label="校验通过率" value={kpi ? `${kpi.sla_pct}%` : "—"} />
           <MetricCell label="完整性" value={kpi ? `${kpi.completeness_pct}%` : "—"} />
           <MetricCell label="对象覆盖率" value={quality.data ? `${quality.data.coverage.overall_pct}%` : "—"} />
           <MetricCell label="孤儿事件" value={quality.data ? fmt(quality.data.orphans.event_orphans) : "—"} />

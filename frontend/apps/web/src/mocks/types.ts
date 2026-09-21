@@ -49,31 +49,9 @@ export interface ExceptionItem {
   case_id: string | null;
 }
 
-/** B.13 GET /admin/quality/reports。kpi/dimensions 为 mock 扩展（质量页 KPI 与左栏维度评分，EDP-030 落地后替换）。 */
-export interface ReconciliationRow {
-  source_system: string;
-  object_type: string;
-  source_count: number;
-  edp_count: number;
-  deviation_pct: number;
-  ok: boolean;
-}
-
-export interface QualityReport {
-  date: string;
-  reconciliation: ReconciliationRow[];
-  coverage: { overall_pct: number; by_type: { object_type: string; coverage_pct: number }[] };
-  orphans: { event_orphans: number; evidence_orphans: number };
-  checksum_sampling: { sampled: number; failed: number };
-  kpi: {
-    overall_pct: number;
-    sla_pct: number;
-    completeness_pct: number;
-    pending_exceptions: number;
-    high_priority: number;
-  };
-  dimensions: { domain: string; label: string; score_pct: number }[];
-}
+/** B.13 GET /admin/quality/reports（契约已冻结，直接引 SDK 生成类型）。 */
+export type ReconciliationRow = Schemas["ReconciliationRow"];
+export type QualityReport = Schemas["QualityReport"];
 
 /** B.13 GET /api/v1/health；backup 与 ops_metrics 为 mock 扩展（备份卡/总览与事件流 KPI 带，spec §3.2/§5.2）。
  *  db_ha 仅 ?deep=true 返回（真实模式缺省）；ops_metrics 前 6 字段为真实子集，后 4 字段为 mock 扩展（真 API 缺省 → 字段级兜底）。 */
@@ -148,11 +126,5 @@ export type PolicyItem = Schemas["PolicyItem"];
 export type PolicyCreateRequest = Schemas["PolicyCreateRequest"];
 export type PolicyUpdateRequest = Schemas["PolicyUpdateRequest"];
 
-/** mock 自有端点（EDP-030 落地后替换）：重校验/重索引任务与任务日志抽屉。 */
-export interface QualityTask {
-  task_id: string;
-  task_type: string;
-  status: string;
-  started_at: string;
-  logs: { ts: string; level: "INFO" | "WARN" | "ERROR"; message: string }[];
-}
+/** B.13 任务轨道：GET /admin/quality/tasks/{id} 响应（SDK QualityTaskOut——recheck/reindex 轮询共用）。 */
+export type QualityTask = Schemas["QualityTaskOut"];

@@ -4,6 +4,8 @@ import type {
   EvidenceVerifyResponse,
   HealthResponse,
   Page,
+  QualityTask,
+  Schemas,
 } from "../../mocks/types";
 
 const BASE = "/api/v1";
@@ -21,19 +23,8 @@ export interface EvidenceListParams {
   cursor?: string | null;
 }
 
-/** 重索引向导请求体（mock 自有端点，W5 EDP-030 落地前仅 MSW 模式可用）。 */
-export interface ReindexBody {
-  object_ids: string[];
-  date_from?: string;
-  date_to?: string;
-  rule: "integrity" | "lineage" | "both";
-}
-
-export interface ReindexTask {
-  sync_id: string;
-  status: string;
-  started_at: string;
-}
+/** T6 重索引：202 响应（ReindexAccepted）——任务经 GET /admin/quality/tasks/{id} 轮询。 */
+export type ReindexAccepted = Schemas["ReindexAccepted"];
 
 export const evidenceApi = {
   list: (params: EvidenceListParams = {}): Promise<Page<EvidenceRecord>> => {
@@ -52,12 +43,10 @@ export const evidenceApi = {
     apiClient.get<EvidenceVerifyResponse>(`${BASE}/evidence/${evidenceId}/verify`),
   /** KPI 带真数据源（证据数量 ← ops_metrics.evidence_count）。 */
   health: (): Promise<HealthResponse> => apiClient.get<HealthResponse>(`${BASE}/health`),
-  /** 重索引任务下发（MSW 自有端点）。 */
-  reindex: (body: ReindexBody): Promise<ReindexTask> =>
-    apiClient.post<ReindexTask>(`${BASE}/admin/evidence/reindex`, body),
+  /** T6 重索引下发：scope=ALL（契约当前仅全量）→ 202 {task_id, status}。 */
+  reindex: (): Promise<ReindexAccepted> =>
+    apiClient.post<ReindexAccepted>(`${BASE}/admin/evidence/reindex`, { scope: "ALL" }),
+  /** T6 任务轮询（quality tasks 端点共用，不新开查询端点）。 */
+  reindexTask: (taskId: string): Promise<QualityTask> =>
+    apiClient.get<QualityTask>(`${BASE}/admin/quality/tasks/${taskId}`),
 };
-
-/** 重索引端点可用性：MSW 模式可用；真实后端 W5 EDP-030 落地（spec §7.1）。 */
-export function reindexAvailable(): boolean {
-  return import.meta.env.VITE_USE_MSW === "1";
-}

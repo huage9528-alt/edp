@@ -16,7 +16,7 @@ import {
   type FilterChip,
 } from "@edp/shared";
 import type { EvidenceRecord } from "../../mocks/types";
-import { EVIDENCE_PAGE_LIMIT, reindexAvailable } from "./api";
+import { EVIDENCE_PAGE_LIMIT } from "./api";
 import { ChainPanel } from "./ChainPanel";
 import type { VerifyState } from "./derive";
 import { EvidenceList } from "./EvidenceList";
@@ -76,7 +76,7 @@ function KpiBand({
 /**
  * 证据库页（EDP-302，视觉基线 `原型设计/pages/证据库.html` + 设计 13.6.2）：
  * KPI 带 + 工具栏（卡内搜索/来源筛选）+ 双栏（证据列表 | 证据链图）+
- * verify 联动（本会话状态 pill）+ 重建索引三步向导（MSW 模式可用，真模式禁用）。
+ * verify 联动（本会话状态 pill）+ 重建索引三步向导（T6 真端点，全量 scope）。
  */
 export function EvidencePage() {
   const [search, setSearch] = useState("");
@@ -132,7 +132,6 @@ export function EvidencePage() {
   const start = items.length === 0 ? 0 : offset + 1;
   const end = offset + items.length;
   const navLocked = listQuery.isFetching;
-  const mockMode = reindexAvailable();
 
   const handleVerify = (record: EvidenceRecord) => {
     setVerifyState((state) => ({ ...state, [record.evidence_id]: "pending" }));
@@ -169,21 +168,15 @@ export function EvidencePage() {
           >
             完整性抽检
           </button>
-          <span
-            title={mockMode ? undefined : "重索引任务 W5 交付（真实后端未实现）"}
-            data-dom-id="evidence-reindex-wrap"
+          <button
+            type="button"
+            data-dom-id="evidence-reindex-btn"
+            onClick={() => setWizardOpen(true)}
+            className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 flex items-center gap-1.5"
           >
-            <button
-              type="button"
-              data-dom-id="evidence-reindex-btn"
-              disabled={!mockMode}
-              onClick={() => setWizardOpen(true)}
-              className="h-9 px-4 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5"
-            >
-              <RotateCw className="w-4 h-4" aria-hidden="true" />
-              重建索引
-            </button>
-          </span>
+            <RotateCw className="w-4 h-4" aria-hidden="true" />
+            重建索引
+          </button>
         </div>
       </section>
 
@@ -248,10 +241,7 @@ export function EvidencePage() {
             primaryAction={{ label: "清空筛选", onClick: clearFilters }}
             secondaryAction={{
               label: "重建索引",
-              onClick: () => {
-                if (mockMode) setWizardOpen(true);
-                else void message.info("重索引任务 W5 交付");
-              },
+              onClick: () => setWizardOpen(true),
             }}
           />
         </div>

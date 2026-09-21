@@ -93,6 +93,8 @@ export function TracesPage() {
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
+              // 与 capability 切换对齐：过滤态从首页起（本地过滤下深页码无意义）
+              resetCursor();
             }}
             className="h-9 px-3 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
           >

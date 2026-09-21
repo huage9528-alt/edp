@@ -6,14 +6,15 @@ export interface TraceFilters {
   status?: string;
 }
 
-/** B.10 轨迹列表（keepPreviousData 防翻页/筛选闪烁；queryKey 含全部条件与游标）。 */
+/** B.10 轨迹列表（keepPreviousData 防翻页/筛选闪烁；queryKey 含全部条件与游标——
+ *  status 虽为 select 本地过滤也入 key，保证过滤态独立缓存）。 */
 export function useTracesList(filters: TraceFilters, cursor: string | null) {
   return useQuery({
     queryKey: ["traces", "list", filters.capabilityId ?? "", filters.status ?? "", cursor],
     queryFn: () =>
       tracesApi.list({
         capability_id: filters.capabilityId || undefined,
-        // 后端契约无 status 过滤参数：status 条件由列表页本地过滤呈现
+        // 后端契约无 status 过滤参数：status 由下方 select 缓存内过滤（不发请求）
         limit: TRACES_PAGE_LIMIT,
         cursor,
       }),

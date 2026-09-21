@@ -47,6 +47,12 @@ export const EVT_ORDER_J_RISK = mockUuid(409);
 export const EVT_ADAPTER_PLM_FAILED = mockUuid(410);
 export const EVT_CASE_B_CREATED = mockUuid(411);
 
+// ---- 质量事件（42x；quality.* 写通道——Bell 消息中心 fixtures） ----
+export const EVT_QUALITY_REINDEX_OK = mockUuid(421);
+export const EVT_QUALITY_REINDEX_MISMATCH = mockUuid(422);
+export const EVT_QUALITY_RECHECK_OK = mockUuid(423);
+export const EVT_QUALITY_CHECKSUM_FAIL = mockUuid(424);
+
 // ---- 证据（6xx 具名；611+ 为常规快照生成段） ----
 export const EVID_ORDER_B_SNAPSHOT = mockUuid(601);
 export const EVID_ORDER_B_INVENTORY = mockUuid(602);

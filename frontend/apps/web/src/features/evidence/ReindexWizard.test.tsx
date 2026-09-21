@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ThemeProvider } from "../../app/providers/ThemeProvider";
 import { routes } from "../../app/router";
 import { useSessionStore, type AuthTokenResponse } from "../auth/session-store";
@@ -43,20 +44,17 @@ const step1 = () => document.querySelector('[data-dom-id="reindex-step-1"]');
 const nextBtn = () => document.querySelector('[data-dom-id="reindex-next"]') as HTMLButtonElement;
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => {
-  server.resetHandlers();
-  vi.unstubAllEnvs();
-});
+afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 beforeEach(() => {
-  vi.stubEnv("VITE_USE_MSW", "1"); // 重索引端点为 MSW 自有：向导仅在 mock 模式可用
   useSessionStore.getState().setSession(sessionOf());
 });
 
-describe("ReindexWizard 重建索引三步向导（MSW 模式）", () => {
-  it("三步前进/后退；取消选择时下一步禁用；提交 202 展示任务并可完成关闭", async () => {
+describe("ReindexWizard 重建索引三步向导（T6 真端点：全量 + tasks 轮询）", () => {
+  it("三步前进/后退；提交 202 → RUNNING → 轮询 SUCCEEDED（stats total/mismatched）→ 完成关闭", async () => {
     renderEvidence();
 
+    // 真模式按钮直接可用（无 W5 禁用 tooltip）
     const openBtn = await waitFor(() => {
       const el = document.querySelector('[data-dom-id="evidence-reindex-btn"]');
       expect(el).not.toBeNull();
@@ -65,29 +63,27 @@ describe("ReindexWizard 重建索引三步向导（MSW 模式）", () => {
     expect(openBtn.disabled).toBe(false);
     fireEvent.click(openBtn);
 
-    // 步骤 1：默认选中「订单」
+    // 步骤 1：全量范围（scope=ALL 唯一）
     await waitFor(() => expect(step1()).not.toBeNull());
-    expect(nextBtn().disabled).toBe(false);
-    fireEvent.click(document.querySelector('[data-dom-id="reindex-collection-ORDER"]')!);
-    expect(nextBtn().disabled).toBe(true); // 空选择禁用
-    fireEvent.click(document.querySelector('[data-dom-id="reindex-collection-MATERIAL"]')!);
+    expect(step1()!.textContent).toContain("全量范围");
     expect(nextBtn().disabled).toBe(false);
 
     fireEvent.click(nextBtn());
     await waitFor(() =>
       expect(document.querySelector('[data-dom-id="reindex-step-2"]')).not.toBeNull(),
     );
-    fireEvent.click(document.querySelector('[data-dom-id="reindex-rule-integrity"]')!);
+    expect(document.querySelector('[data-dom-id="reindex-step-2"]')!.textContent).toContain(
+      "checksum 重算",
+    );
 
     fireEvent.click(document.querySelector('[data-dom-id="reindex-next"]')!);
     await waitFor(() =>
       expect(document.querySelector('[data-dom-id="reindex-step-3"]')).not.toBeNull(),
     );
-    // 摘要回显：集合/规则/预估
+    // 摘要回显：范围/规则
     const step3 = document.querySelector('[data-dom-id="reindex-step-3"]')!;
-    expect(step3.textContent).toContain("MATERIAL");
+    expect(step3.textContent).toContain("全量");
     expect(step3.textContent).toContain("完整性");
-    expect(step3.textContent).toContain("预估");
 
     // 返回上一步可回退
     fireEvent.click(document.querySelector('[data-dom-id="reindex-prev"]')!);
@@ -97,16 +93,76 @@ describe("ReindexWizard 重建索引三步向导（MSW 模式）", () => {
     fireEvent.click(document.querySelector('[data-dom-id="reindex-next"]')!);
 
     fireEvent.click(document.querySelector('[data-dom-id="reindex-submit"]')!);
+    // 202 → 首轮 RUNNING
     await waitFor(() =>
-      expect(document.querySelector('[data-dom-id="reindex-result"]')).not.toBeNull(),
+      expect(document.querySelector('[data-dom-id="reindex-running"]')).not.toBeNull(),
     );
-    expect(document.querySelector('[data-dom-id="reindex-result"]')!.textContent).toContain(
-      "RUNNING",
+    // 轮询（1s）→ SUCCEEDED：stats total=20 / mismatched=0
+    await waitFor(
+      () => {
+        expect(document.querySelector('[data-dom-id="reindex-result"]')).not.toBeNull();
+      },
+      { timeout: 5_000 },
     );
+    expect(document.querySelector('[data-dom-id="reindex-stats-total"]')!.textContent).toBe("20");
+    expect(
+      document.querySelector('[data-dom-id="reindex-stats-mismatched"]')!.textContent,
+    ).toBe("0");
 
     fireEvent.click(document.querySelector('[data-dom-id="reindex-done"]')!);
     await waitFor(() =>
       expect(document.querySelector('[data-dom-id="reindex-step-1"]')).toBeNull(),
+    );
+  });
+
+  it("终态 FAILED → 失败态呈现（任务号 + 重试提示）", async () => {
+    server.use(
+      http.post("*/api/v1/admin/evidence/reindex", () =>
+        HttpResponse.json(
+          {
+            task_id: "00000000-0000-4000-8000-000000000951",
+            status: "RUNNING",
+          },
+          { status: 202 },
+        ),
+      ),
+      http.get("*/api/v1/admin/quality/tasks/:taskId", () =>
+        HttpResponse.json({
+          task_id: "00000000-0000-4000-8000-000000000951",
+          task_type: "evidence_reindex",
+          status: "FAILED",
+          scope: "ALL",
+          started_at: "2026-09-28T08:30:00.000Z",
+          finished_at: "2026-09-28T08:30:05.000Z",
+          logs: [{ ts: "2026-09-28T08:30:04.000Z", level: "ERROR", message: "重算失败：存储连接中断" }],
+        }),
+      ),
+    );
+    renderEvidence();
+
+    fireEvent.click(
+      await waitFor(() => {
+        const el = document.querySelector('[data-dom-id="evidence-reindex-btn"]');
+        expect(el).not.toBeNull();
+        return el as HTMLButtonElement;
+      }),
+    );
+    await waitFor(() => expect(step1()).not.toBeNull());
+    fireEvent.click(nextBtn());
+    fireEvent.click(document.querySelector('[data-dom-id="reindex-next"]')!);
+    fireEvent.click(document.querySelector('[data-dom-id="reindex-submit"]')!);
+
+    await waitFor(
+      () => {
+        expect(document.querySelector('[data-dom-id="reindex-failed"]')).not.toBeNull();
+      },
+      { timeout: 5_000 },
+    );
+    expect(document.querySelector('[data-dom-id="reindex-failed"]')!.textContent).toContain(
+      "000000000951",
+    );
+    expect(document.querySelector('[data-dom-id="reindex-failed"]')!.textContent).toContain(
+      "重索引失败",
     );
   });
 });
