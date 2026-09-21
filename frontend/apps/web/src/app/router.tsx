@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import { ActionsPage } from "../features/decisions_actions/ActionsPage";
 import { DecisionsPage } from "../features/decisions_actions/DecisionsPage";
+import { DrillsPage } from "../features/drills/DrillsPage";
 import { AdaptersPage } from "../features/adapters/AdaptersPage";
 import { AuditPage } from "../features/audit/AuditPage";
 import { CasesPage } from "../features/cases/CasesPage";
@@ -124,7 +125,11 @@ export const routes: RouteObject[] = [
       { path: "admin/tools", ...withTitle("Agent 工具") },
       { path: "admin/traces", ...withTitle("Trace 检索") },
       { path: "admin/memory", ...withTitle("候选记忆") },
-      { path: "admin/drills", ...withTitle("演练回放") },
+      {
+        path: "admin/drills",
+        element: <DrillsPage />,
+        handle: { title: "演练回放" } satisfies RouteHandle,
+      },
       {
         path: "search",
         element: <SearchPlaceholderPage />,
