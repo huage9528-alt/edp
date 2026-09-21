@@ -110,7 +110,44 @@ stanza: edp
 - 对象数：**1576**（备份集 1565 文件 + WAL/manifest 索引等）；占用 **4.8MiB**；结构 `pgbackrest/edp/{archive,backup}`
 - console：宿主浏览器 http://localhost:19001（edp_minio / 演示密码）
 
-## 结论与降级预案
+## T15a — 备份调度 + 恢复验证任务化（EDP-031）
+
+- 改动：`deploy/pgbackrest/backup-cron.sh`（容器内循环调度脚本）、`deploy/scripts/backup-verify.ps1`（check+抽样恢复+断言，追加式日志 `deploy/logs/backup-verify.log`，已 gitignore）、`deploy/docker-compose.staging.yml` pgbackrest 服务入口改挂脚本、`.gitignore` 增 `deploy/logs/`。
+- 演练时间：2026-09-21 11:00~11:01（容器 UTC 03:00~03:01）。
+
+### 调度机制（本地拷贝模式约束下的容器内 cron）
+
+- 形态：pgbackrest repo keeper 容器（无状态）入口改 `/usr/local/bin/backup-cron.sh`——`while+sleep` 纯算术算距下一个 **02:00 UTC**（本地 10:00）的秒数，每日触发一次全量备份；容器内无 cron 服务，不依赖 `date -d` 解析。
+- 执行路径：keeper 容器无 patroni 数据目录（本地拷贝模式备份必须在 patroni1 执行）——脚本经 `psql -h patroni1 -U edp_migrator` 用 `COPY (SELECT ...) TO PROGRAM 'pgbackrest --stanza=edp --type=full backup >> /tmp/backup-cron.log'`（superuser 同步等退出码）在数据库宿主上拉起本地备份。链路先经探针实测（keeper→psql→patroni1 落文件往返）再上栈。
+- keeper 重建（`up -d pgbackrest`，仅该无状态容器）后循环存活读数：`loop mode: 每日 02:00 UTC 全量备份` / `next run in 23h3m`；主栈 7 容器 Up 3 days 零扰动。
+
+### 调度路径实跑（--once 立即模式，2026-09-21 02:56 UTC）
+
+    [backup-cron] backup begin: type=full exec=patroni1:local(pg1-path) via COPY TO PROGRAM
+    COPY 1
+    [backup-cron] backup OK: repo 最新备份集 -> full backup: 20260921-025634F
+
+- 新备份集 **20260921-025634F**（02:56:34→02:56:43，≈9.3s，32.3MB/1565 文件/压缩 4.1MB），retention-full=2 自动保留双份（与 20260921-024032F 并存）。
+
+### backup-verify 连续 3 次全绿（等价证据）
+
+单次流程 = `pgbackrest check`（真实 WAL 归档往返）→ 一次性恢复容器（同 patroni 镜像，`--pg1-path=/tmp/verify` 从 S3 restore 最新备份集）→ 单用户模式（`postgres --single`）断言 `platform.tenants` 计数非零 → 拆容器。日志（`deploy/logs/backup-verify.log`，gitignore）：
+
+    2026-09-21 11:00:24 | GREEN | check=exit:0(618ms) | restore=9.6s | tenants=1 | events=0 | GREEN
+    2026-09-21 11:00:49 | GREEN | check=exit:0(970ms) | restore=9.7s | tenants=1 | events=0 | GREEN
+    2026-09-21 11:01:16 | GREEN | check=exit:0(843ms) | restore=9.5s | tenants=1 | events=0 | GREEN
+
+- 3/3 全绿：check 0.6~1.0s（pgbackrest 计时 179~372ms，含 WAL 往返）；S3 restore 9.5~9.7s（备份集 20260921-025634F）；断言 tenants=1 非零（events=0 为当时真值——业务数据尚未造，见 T15c）。
+- **等价口径（用户批准）**：M5「连续 3 天」以任务化连续 N≥3 次全绿为等价证据；日历 3 天的每日调度累计读数后续补充（cron 已常驻，日志追加式可查）。
+- 单用户模式侧证：恢复目录起 `postgres --single` 会走一遍 archive-get（S3 拉补 WAL）+ end-of-recovery——即断言同时覆盖「备份集可恢复 + WAL 链路可达」两级。
+
+### 已知取舍
+
+1. keeper 循环以 root 运行，repo 侧 `info` 需 `--allow-root`（只读不落文件）；备份本体在 patroni1 以 postgres 服务用户执行，无 root 写风险。
+2. 触发口令 `edp_dev` 为演示值（compose 环境变量注入，与 deploy-staging.ps1 迁移账号同源；生产走 secret manager）。
+3. 调度粒度：每日一次全量（无 incr/diff 分层），量级 32MB 下可接受；数据量增长后改 full+incr 组合（脚本 `BACKUP_TYPE` 已参数化）。
+
+## T14 结论与降级预案
 
 1. **对象存储备份链路实测成立，未触发降级**：MinIO 起 → bucket 幂等初始化 → stanza-create → 全量备份 → WAL 推取往返（check）→ info/mc du 读数全部真跑通过；既有 7 容器（含 api/worker/web）零重启零中断。
 2. **patroni 容器无需重启**：pgbackrest.conf 为只读 bind mount，宿主改写即热生效（archive_command 每次调用重读配置），S3 迁移对主从零扰动。

@@ -100,10 +100,16 @@ services:
 
   # pgbackrest：repo keeper（W5-T14 起为 S3 repo：仅挂配置；备份命令经 patroni1 exec 本地执行，
   # 首次全量备份命令见 deploy/pgbackrest/pgbackrest.conf 头部注释）
+  # W5-T15a（EDP-031）：入口改挂 backup-cron.sh——容器内循环脚本每日 02:00 UTC 全量备份
+  #   （keeper 无数据目录，经 psql COPY TO PROGRAM 在 patroni1 本地执行，见脚本头注释）
   pgbackrest:
     build: *patroni-build
     image: edp-staging/patroni:pg16
-    entrypoint: ["sleep", "infinity"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup-cron.sh"]
+    environment:
+      BACKUP_PGHOST: patroni1
+      # 演示值（同 deploy-staging.ps1 迁移账号口令）；生产经 secret manager 注入
+      PGPASSWORD: edp_dev
     depends_on:
       patroni1:
         condition: service_started
@@ -113,6 +119,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - ./pgbackrest/backup-cron.sh:/usr/local/bin/backup-cron.sh:ro
       # W4 本地 repo 卷保留为降级预案（repo1 已迁 S3；MinIO 不可用时回退
       # repo1-type=posix + repo1-path=/pgbackrest/repo，见 docs/demo/w5-drills.md T14 降级段）
       - backups:/pgbackrest
