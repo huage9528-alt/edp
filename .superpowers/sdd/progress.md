@@ -199,3 +199,36 @@ Branch: feat/w4（自 master 673fe4f 切出；T1 后 rebase 吸收评审修复 f
 终审（整分支）：**Approved with conditions→已闭环**——16 节逐节核对（终审代理报告）：范围零越界（无关文件零混入）、契约三处指纹一致、波 2 零 contracts/ 改动、四页与 SDK 类型对齐、越权矩阵/演示读数/staging 演练全实证。条件项：① I-1 PATCH 双轨超 B.5「仅 JWT」→ 保留有意行为，W4-11 + spec §3 同步；② T15 收口 → 本行 + verify-all 全绿。Minor 顺手闭环：POLICY 审计前缀、ACTION_UPDATE resource fullname 统一（W4-13）；其余 Minor（422 extra 透传/词表预留前缀/notify_channel 演示文案/JWT 弱密钥）留 W5。
 
 收口记录（2026-09-18）：feat/w4 15 任务 + 并行评审线全部闭环；测试基线 439/259 → 618/302；缺口清单 W4-01~13 终稿落 docs/demo/m2-demo.md；M4 出口三条：7 分钟脚本（m4-demo.md 实测读数）+ 越权矩阵 0 泄露进 CI（test_security_matrix.py 41 用例）+ 彩排 ≥2 次中 1 次仓库内可复现（浏览器级 5 步清单人工执行）——三方彩排与 PM/Tech Lead 签认线下补。
+
+# SDD Progress Ledger — EDP W5（M5 可靠性与质量 + W4 遗留收编）
+
+Plan: docs/superpowers/plans/2026-09-20-edp-w5.md
+Spec: docs/superpowers/specs/2026-09-20-edp-w5-design.md（d2848d8）
+Branch: feat/w5（自 master 0e6bf76 切出）
+
+## 主线任务表（子代理逐任务实施 + 逐任务评审）
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | DONE | bf38340 | 0013 迁移（ops.tasks + quality:read/run）；55 定向 + 全量 622 绿；评审 Approved（幂等三重容器验证：重跑/downgrade 回退/stamp 重执行）；Minor 备忘：DROP POLICY 表缺失时报错（沿 0012 仓库模式） |
+| T2 | DONE | 50fa456+5a1719b | B.14 七端点（PATCH/context RLS 真断验/members 双轨/quotas 七字段/current-usage W3R-04 收口）；+5（627→修复后绿）；评审裁定：校验 422→400 VALIDATION_ERROR（三处，cancel 同构先例）+ from_tenant effective 语义（修复 commit）；Minor：配额空更新 200、check-then-act 竞态 docstring 登记（T17 覆盖） |
+| T3 | DONE | 76db8c8 | reports/coverage 四段 + kpi/dimensions 逐字对齐 mocks；+16；评审 Approved；Important 移交 T4：checksum 抽样 evidence_id 升序冻结问题改 captured_at DESC；裁定：ingest 副作用计量接受留痕、dimensions 四段标识 T13 按真形状消费、source_count 可空 T9 契约注意 |
+| T4 | DONE | 10c0719+beb3229 | rechecks 202/tasks 轮询/质量事件/TASK 审计前缀；评审证伪 FOR UPDATE 可见性探测（PG16 RC 不等未提交 INSERT）→ 修复有界重试 + 完成事件移出终态事务 + 抽样排序专项（25 绿）；T3 移交抽样 captured_at DESC 一并落地；裁定：object 锚定/进程存亡留痕可接受 |
+| T5 | DONE | be31da9 | _jobs 迁 ops.tasks + jobs 端点（keyset 游标）；契约形状逐字不变（对照冻结 openapi）；+回归 15 绿；评审 Approved；Minor 移交 T6：并发触发语义 docstring、FAILED 路径测试、第三次复制时抽 _wait_task_visible 公共 helper |
+| T6 | DONE | c6c1457 | reindex 202/keyset 分批全量重算/原值不回写/聚合失配事件 + wait_task_visible 抽公共实现（quality 单点）；+23 绿；评审 Approved；裁定：evidence↔quality 双向 service 引用接受（运行时属性访问 + docstring 防线，无 no-cycles 契约）；T5 移交 Minor 全落地 |
+| T7 | DONE | 685c199 | drill-records.json（switchover 回填 W4 实测、pitr/tenant_restore PLANNED）+ GET /admin/drills 容错直读；5 绿；主线抽查 Approved；备忘：drill_type 用 tenant_restore 下划线（T11 前端对齐）、rto=0 语义=healthz 零中断（DB 写面读数在 readings） |
+| T8 | DONE | 1cbd616 | staging JWT 强密钥（api/worker 同值）/QUALITY_* 前缀派生（POLICY_* 核实既有覆盖仅锚定）/notify_channel 文案；audit 16 绿 + compose config 过；主线抽查 Approved（4 文件范围内）；备忘：pnpm 包装器 ChildProcess.kill 工具层问题（vitest/eslint 直跑等价）、mocks 策略 fixture notify_channel 旧文案留 T13 顺带 |
+| T9 | DONE | 3ed08fa | 契约 53→65 路径（+15 操作，26 新 schema，既有 schema 零改）；指纹 687b6cd7→4b576ee5（contract-gate 主线复跑绿）；api-sdk 22 绿；缺口 W5-01~10 初稿；顺带修复 W4-11~13 三行 GBK 混入转 UTF-8（内容零改）；波2 起契约冻结 |
+| T10 | DONE | 1e46bf4 | 租户列表/详情/成员/配额 + 4 弹窗 + context 切换链（token/clear/store 真断言）；web 184→205；评审 Approved；裁定：usage 与 /admin/users mock 扩展接受（后者记缺口 W5-11，T18 落清单）、operator_ticket 留痕不下发；Minor：切换弹窗「· 生产环境」硬编码、配额预览未做、权限矩阵表后续可选 |
+| T11 | DONE | d3af575 | 演练回放页三卡（PLANNED 降饱和/RTO-RPO 千分位/readings 键值/manual 文本）；+3 用例 42 文件全绿；主线抽查 Approved（8 文件范围）；备忘：RPO 折 ms 口径、全量套件偶发负载 flaky（复跑绿） |
+| T12 | DONE | 7d7a999 | 工具试查/Trace 抽屉 token_usage 三卡+两级树/记忆只读；+16（224）；评审 Approved（6 条契约驱动偏差抽验全成立——CANDIDATE 枚举/扁平 tool_calls/本地过滤先例等）；Minor：traces/hooks 注释失实（T13 顺手修）、capability 三处硬编码留 follow-up |
+| T13 | DONE | 6786b28 | 质量真形状/重校验单选+轮询/日志抽屉历史/重索引两终态/备份卡 drills/Bell 未读清零；231 全绿 + tsc/eslint/build；评审 Approved；裁定：客户端过滤记缺口（FEED_WINDOW=50 挤出风险）、失实 UI 修正非退化、OverviewPage 连带合规；Minor：清零竞态毫秒级/备份卡键名语义/两处注释 |
+| T14 | DONE | 0dcef18 | minio+init-minio 增量上栈零中断；repo1 迁 S3 实测（全量 32.3MB/9.9s、1576 对象、4.8MiB）；关键发现：pgbackrest 2.59.1 明文 S3 需 http:// 前缀+path uri-style；.gitattributes eol=lf 防 CRLF 超清单报备；主线抽查 Approved |
+| T15 | DONE | cf3ea07+2b21855+40cc4ec | 三项演练实测：a) 备份 cron 容器内循环 + verify 3/3 GREEN（check 0.6-1.0s/restore 9.5-9.7s）；b) PITR RTO=22.1s/RPO=0s（端口 15433 避 dev 占用）+ timeline 污染加固（--target-timeline=current + archive_mode=off）；c) 租户恢复 RTO=23.8s（events 120/120/120 + checksum 5/5，api 断言降 DB 层等价留痕）+ drill-records 回填 + test_drills 断言同步；主栈零重启 |
+| T16 | DONE | 5b69c89 | HAProxy 单写入口（httpchk /primary 选主）；双向 switchover 2/2、healthz 80/80 零中断、DB 写面 120/120 经代理、自动跟随 ≈0.6s 回挂/≈1.1s 摘除；主栈零扰动；顾虑：healthz 无 DB 依赖（写面单列证）、切换窗口旧连接单次报错（预期语义留痕）、staging api 镜像待 --build 见 quality 模块 |
+| T17 | DONE | 3c39113 | Redis 外置评估文档 170 行（三点位×三方案+人日估计+建议）；W6 决策输入 |
+| T18 | DONE | d03b40d+68efffa+4783473+（本行随收口 commit） | verify-all 七 job 全绿：backend-lint / backend-test **663 passed**（618→663）/ frontend-lint 0 err / frontend-test **349**（web 231+api-sdk 22+shared 96）/ migrate-check 一次性容器终态 0013 / contract-export 字节不变 / gate 指纹 **4b576ee5**；收口修复三件：测试隔离（W3 老测试补 ops.tasks 清场 + w5 RLS 断言解耦，d03b40d）、Makefile 前端防抖参数生效（pnpm `--` 透传致 vitest 参数失效，68efffa）、终审 I-1 drills JSON 容器供给（4783473，staging 容器实测挂载生效）；缺口终稿 W5-01~21 |
+
+终审（整分支）：**Approved with conditions→已闭环**——终审代理报告：范围零越界（138 文件全在预期前缀，脏文件零提交）、契约纪律零违规（T9 后 contracts/ 零改动，三处指纹一致 4b576ee5）、跨任务集成自洽（ops.tasks 三生产者语义一致/wait_task_visible 单一实现/前端冻结 SDK 对齐）、证据一致（演练数字两文档全等、663+349 实测）、缺口覆盖抽查 6/6。条件项：① I-1 演练 JSON 容器供给 → 4783473 修复 + staging 容器实测闭环；② T18 收口 → 本行。Minor 三项（adapter FAILED stats 空/switchover rto=0 口径/drills 读权限）留 W5-21。
+
+收口记录（2026-09-21）：feat/w5 18 任务 + 逐任务评审 + 整分支终审全部闭环；测试基线 618/302 → **663/349**；契约 53 路径 687b6cd7 → **65 路径 4b576ee5**；M5 出口三项：Patroni 三项演练归档（W4 切换 + T15b PITR RTO 22.1s + T15c 租户恢复 RTO 23.8s）、质量覆盖率端点可用、备份可恢复性连续 N≥3 等价证据（W5-07 偏差）；演练读数终稿 w5-drills.md + drill-records.json；缺口清单 W5-01~21 终稿落 m2-demo.md。环境备忘：dev db 重建时遇 FinalShell（用户 SSH 工具）占用宿主 5432 无法绑定，dev 栈 db/api 待端口释放后 `up -d db api` 恢复（不影响本分支交付与测试——测试走 testcontainers）。
