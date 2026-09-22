@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
@@ -98,12 +98,11 @@ async def list_events(
 ) -> Page[EventResponse]:
     """过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/
     since/until 闭区间）+ 游标分页（occurred_at DESC, event_id tiebreak）；
-    event_type 与 event_type_prefix 同传 → 422（互斥），空前缀串按 None。"""
+    event_type 与 event_type_prefix 同传 → 400（互斥），空前缀串按 None。"""
     prefix = (event_type_prefix or "").strip() or None
     if event_type and prefix:
-        raise HTTPException(
-            status_code=422,
-            detail="event_type 与 event_type_prefix 互斥，同传请仅保留其一",
+        raise EdpError.validation_error(
+            "event_type 与 event_type_prefix 互斥，同传请仅保留其一"
         )
     return await events_service.query_events(
         sess,

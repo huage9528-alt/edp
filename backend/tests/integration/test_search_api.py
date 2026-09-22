@@ -1,5 +1,5 @@
 """W6 T1 全局搜索集成测试：三组聚合命中 / summary 深层命中 / 跨租户 0 行 /
-limit 截断 / 空结果空态 / 未认证 401 / 空白 q 422。
+limit 截断 / 空结果空态 / 未认证 401 / 空白 q 400。
 
 造数走 migrator 直插（绕 RLS，等同 test_tenant_isolation 的 B 侧造数方式），
 痕迹统一 SO-SRCH-% / srch.% / srch- 前缀收尾清理；应用引擎 =
@@ -341,13 +341,15 @@ async def test_search_unauthenticated_401(client: httpx.AsyncClient) -> None:
     assert forged.status_code == 401
 
 
-# ---- 7. q 缺失 / 空串 / 空白：422 ----
+# ---- 7. q 缺失 / 空串 / 空白：400 ----
 
 
-async def test_search_blank_q_422(client: httpx.AsyncClient) -> None:
+async def test_search_blank_q_400(client: httpx.AsyncClient) -> None:
     headers = await _jwt_headers(client)
     missing = await client.get(SEARCH, headers=headers)
-    assert missing.status_code == 422, missing.text
+    assert missing.status_code == 400, missing.text
+    assert missing.json()["error"]["code"] == "VALIDATION_ERROR"
     for blank in ("", "   "):
         resp = await client.get(SEARCH, params={"q": blank}, headers=headers)
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error"]["code"] == "VALIDATION_ERROR"

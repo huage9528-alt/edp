@@ -759,10 +759,10 @@ async def test_event_type_prefix_filters(client: httpx.AsyncClient) -> None:
     }
 
 
-# ---- 15. event_type 与 event_type_prefix 同传：422 互斥 ----
+# ---- 15. event_type 与 event_type_prefix 同传：400 互斥 ----
 
 
-async def test_event_type_and_prefix_mutually_exclusive_422(
+async def test_event_type_and_prefix_mutually_exclusive_400(
     client: httpx.AsyncClient,
 ) -> None:
     jwt_headers = {"Authorization": f"Bearer {await _login(client, 'manager1')}"}
@@ -771,5 +771,6 @@ async def test_event_type_and_prefix_mutually_exclusive_422(
         params={"event_type": "evt.test.created", "event_type_prefix": "evt.test"},
         headers=jwt_headers,
     )
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
     assert "互斥" in resp.json()["error"]["message"]
