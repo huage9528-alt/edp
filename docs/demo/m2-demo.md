@@ -309,3 +309,15 @@ erp            ORDER        48      43       48      48        True
 90. **W5-20 租户恢复演练断言口径**：T15c api 层断言降为 DB 层等价（tenant-b 成员 JWT 未配置，脚本头/readings 已注）；后续补 tenant-b 凭据配置后恢复 api 层端到端断言。
 
 91. **W5-21 终审 Minor 三项**：adapter sync FAILED 时 stats 置空（quality/evidence 保留已完成段/批进度，语义可辩护，统一留 W6）；switchover `rto_seconds=0` 为 healthz 零中断口径（DB 写面 3.6s 在 readings，前端展示建议加注）；`GET /admin/drills` 用 quality:read（含租户 MANAGER/ANALYST，内容为基础设施元数据、无凭据，低风险）。
+
+**W6 试运行与验收轮（W6，2026-09-22；初稿——波 1 后端 T1~T3 契约冻结实测（T4），68 路径，指纹前 8 位 `d1929b21`；波 2 续记终稿）**
+
+92. **W6-01 试运行 ≥3 天以连续 N≥3 巡检周期等价**：M6 出口「试运行 ≥3 天」以 `trial-patrol.ps1` 连续 N≥3 个巡检周期无 P0/P1 任务化等价收口（W5-07「备份验证连续 3 天」同款口径：任务化 + 日志归档，非自然日）——读数追加 `deploy/logs/trial-run.log`、缺陷分级登记 `docs/demo/w6-trial-run.md`；日历 3 天后续自然累计（spec §10.1 批准口径）。
+93. **W6-02 RLS 开销以 DB 层双会话计时为口径**：租户隔离 RLS 性能开销以 DB 层同查询双会话（RLS 绑定会话 vs bypass 会话）计时对比为等价证据——API 层无 bypass 通道（鉴权边界不允许绕过路径），spec §10.2 批准口径；压测报告与 Go/No-Go「接口响应 <2s」读数按此口径呈现。
+94. **W6-03 视觉回归 26 稿以双层合计覆盖**：「26 设计稿关键状态」以组件层 11 story（storybook-static 逐 story `toHaveScreenshot`）+ 页面层 18 路由（E2E 真栈逐路由截图基线）合计覆盖，不逐稿建页面 story（工作量与收益不匹配，spec §10.3）；基线快照入库 `e2e/__screenshots__/`，偏差 CI 失败 → `--update-snapshots` 走 PR 评审。
+95. **W6-04 预聚合/限流外置（UPSERT）为压测后条件项**：quality reports 预聚合（W5-03）与限流外置 UPSERT（W3R-01 单副本语义）均为条件工作项——压测结论达标（接口 P95 <2s 等）即登记不做，不达标再启动（spec §10.4 闭合口径）；运营报告（T12）以压测 JSON 为数据源。
+96. **W6-05 prod 形态仅设计文档**：HAProxy 双实例 + keepalived/VIP 生产形态与 prod 试运行窗口仅落 `docs/prod-deploy-design.md` 设计文档（W5-06 延续），实施留二期——本轮交付不含 prod 环境搭建（spec §10.5）。
+97. **W6-06 Redis 不引入**：任务互斥以 PG advisory lock 落地（同 task_type 单执行 + 409 TASK_CONFLICT，多副本安全）；限流令牌桶/审计策略缓存维持进程内单副本语义 + 文档化——Redis 本轮不引入（视压测结论记 W6+ 工作项，spec §10.6）。
+98. **W6-07 跨租户用户目录通道未定（T2 评审裁定）**：`GET /admin/users` 挂 require_platform_admin（平台级、无租户绑定）；RLS 下 bind_tenant 到平台管理员**主租户**——目录范围 = 主租户内用户，act_tenant 会话无租户归位语义。跨租户目录候选方案（`?tenant_id` 显式 bind / effective_tenant_id / SECURITY DEFINER）T9 前端对接与 T14 归档时裁定（B.14 未定义平台用户目录，W6 不扩契约）。
+99. **W6-08 /admin/users 响应为 Page 信封**：响应为 `Page[AdminUserItem]`（`items/next_cursor/total`，username ASC keyset 游标、user_id tiebreak，display_name 可空透传）——MSW 旧 fixture（W5-11 邀请成员下拉 mock）为**裸数组**，T9 前端接线按 Page 信封适配（MSW 数据形状同步修正）。
+100. **W6-09 events 互斥双参 400 VALIDATION_ERROR（非 422）**：`GET /events` 新增 `event_type_prefix`（LIKE prefix% 前缀过滤）与 `event_type` 精确匹配**互斥**，双参同传语义校验返 400 `VALIDATION_ERROR`——B.0 权威映射、仓库惯例（W3-03/W3-19 同款；spec §8 原文 422，按 T1 评审 C1 修正落地）；OpenAPI 沿 events.get 既有 400 声明（W3 起冻结，本轮契约无响应形态变化）。

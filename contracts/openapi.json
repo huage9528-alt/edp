@@ -630,6 +630,37 @@
         "title": "AdapterSyncResponse",
         "type": "object"
       },
+      "AdminUserItem": {
+        "description": "平台用户目录简投影（GET /api/v1/admin/users；W5-11 收口——邀请成员\n下拉真数据源）；display_name 可空透传。",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username"
+        ],
+        "title": "AdminUserItem",
+        "type": "object"
+      },
       "AuditLogItem": {
         "description": "GET /audit-logs 列表项（B.6）。",
         "properties": {
@@ -684,6 +715,30 @@
           "resource_type"
         ],
         "title": "AuditLogItem",
+        "type": "object"
+      },
+      "BackupMetric": {
+        "description": "备份读数派生（drills JSON 备份相关演练；source 恒 \"drills\"）。",
+        "properties": {
+          "last_backup_at": {
+            "title": "Last Backup At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_backup_at",
+          "status",
+          "source"
+        ],
+        "title": "BackupMetric",
         "type": "object"
       },
       "BatchRequest": {
@@ -2031,6 +2086,32 @@
         "title": "EventBatchError",
         "type": "object"
       },
+      "EventHit": {
+        "description": "事件命中（event.events 简投影）。",
+        "properties": {
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "occurred_at"
+        ],
+        "title": "EventHit",
+        "type": "object"
+      },
       "EventIn": {
         "description": "批量入库事件项（B.3）。\n\nevent_id：客户端可自带 UUID，但服务端**忽略之**——event_id 恒由服务端\nderive_event_id(tenant_ns, source_system|source_id|occurred_at|event_type)\n派生（幂等唯一事实来源，防客户端伪造不一致；见 service.ingest_batch：\nB.3 批次事件不携带源记录 source_id，派生时以 object_id 充当该槽位）。",
         "properties": {
@@ -2492,6 +2573,37 @@
           "object_id"
         ],
         "title": "EvidenceHint",
+        "type": "object"
+      },
+      "EvidenceHit": {
+        "description": "证据命中（evidence.records 简投影；source_system 充当来源 kind）。",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "source_record_id": {
+            "title": "Source Record Id",
+            "type": "string"
+          },
+          "source_system": {
+            "title": "Source System",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "source_record_id",
+          "source_system",
+          "captured_at"
+        ],
+        "title": "EvidenceHit",
         "type": "object"
       },
       "EvidenceLinkIn": {
@@ -3410,6 +3522,37 @@
         "title": "ObjectCreatedResponse",
         "type": "object"
       },
+      "ObjectHit": {
+        "description": "对象命中（master.business_objects 简投影）。",
+        "properties": {
+          "object_id": {
+            "format": "uuid",
+            "title": "Object Id",
+            "type": "string"
+          },
+          "object_type": {
+            "title": "Object Type",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object_id",
+          "source_id",
+          "object_type",
+          "updated_at"
+        ],
+        "title": "ObjectHit",
+        "type": "object"
+      },
       "ObjectResponse": {
         "description": "GET /objects/{id} 与列表项（全字段）。",
         "properties": {
@@ -3577,8 +3720,40 @@
         "type": "object"
       },
       "OpsMetrics": {
-        "description": "运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致）。",
+        "description": "运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致；\nW6 扩展 5 字段可选——无数据不出现（exclude_none））。",
         "properties": {
+          "adapters_success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapters Success Rate"
+          },
+          "audit_events_7d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Events 7D"
+          },
+          "backup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "dlq": {
             "title": "Dlq",
             "type": "integer"
@@ -3591,6 +3766,17 @@
             "title": "Evidence Count",
             "type": "integer"
           },
+          "evidence_valid_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Valid Rate"
+          },
           "idempotency_hit_rate": {
             "title": "Idempotency Hit Rate",
             "type": "number"
@@ -3602,6 +3788,17 @@
           "p95_latency_ms": {
             "title": "P95 Latency Ms",
             "type": "integer"
+          },
+          "policy_hits_today": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Hits Today"
           }
         },
         "required": [
@@ -3879,6 +4076,52 @@
         "title": "OrphansReport",
         "type": "object"
       },
+      "OutboxStatusOut": {
+        "description": "GET /admin/outbox/status 响应（B.13 Outbox 积压卡；W5-05 收口）：\nevent.outbox 聚合；空表 → pending 0 / age 与 last_published_at null。",
+        "properties": {
+          "dlq_count": {
+            "title": "Dlq Count",
+            "type": "integer"
+          },
+          "last_published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Published At"
+          },
+          "oldest_pending_age_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending Age Seconds"
+          },
+          "pending_count": {
+            "title": "Pending Count",
+            "type": "integer"
+          },
+          "published_last_hour": {
+            "title": "Published Last Hour",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending_count",
+          "published_last_hour",
+          "dlq_count"
+        ],
+        "title": "OutboxStatusOut",
+        "type": "object"
+      },
       "Page_ActionListItem_": {
         "properties": {
           "items": {
@@ -3915,6 +4158,44 @@
           "items"
         ],
         "title": "Page[ActionListItem]",
+        "type": "object"
+      },
+      "Page_AdminUserItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminUserItem]",
         "type": "object"
       },
       "Page_AuditLogItem_": {
@@ -5273,6 +5554,46 @@
           }
         },
         "title": "ReportSummaryResponse",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "description": "GET /api/v1/search 响应：三组命中 + total（三组返回行数合计）。",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventHit"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceHit"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectHit"
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "total"
+        ],
+        "title": "SearchResponse",
         "type": "object"
       },
       "SkillCreateRequest": {
@@ -8308,7 +8629,7 @@
     },
     "/api/v1/admin/drills": {
       "get": {
-        "description": "quality:read：读 drill-records.json（默认仓库相对路径，相对 cwd\n解析；EDP_DRILLS_FILE 可覆盖——容器内经卷挂载 + env 指向，staging\ncompose 注释 T14 处理）→ {items}；文件缺失/坏 JSON → {items: []}\n（不报错，前端空态）。executed_at null = 未执行（PLANNED）。",
+        "description": "quality:run（W5-21-c 收紧：PLATFORM_ADMIN/ADMIN——MANAGER/ANALYST\n403；内容为基础设施元数据、无凭据，最小权限原则收口，W5 终审裁定）：\n读 drill-records.json（默认仓库相对路径，相对 cwd\n解析；EDP_DRILLS_FILE 可覆盖——容器内经卷挂载 + env 指向，staging\ncompose 注释 T14 处理）→ {items}；文件缺失/坏 JSON → {items: []}\n（不报错，前端空态）。executed_at null = 未执行（PLANNED）。",
         "operationId": "drill_records_api_v1_admin_drills_get",
         "responses": {
           "200": {
@@ -8407,6 +8728,48 @@
         "summary": "触发证据重索引（异步：全量重算 checksum，失配仅统计不回写）",
         "tags": [
           "evidence"
+        ]
+      }
+    },
+    "/api/v1/admin/outbox/status": {
+      "get": {
+        "description": "quality:read：event.outbox 聚合（W5-05 收口）——运营报告/健康页\nOutbox 积压卡数据源；RLS 会话限本租户，空表 → pending 0 /\noldest_pending_age_seconds 与 last_published_at null。",
+        "operationId": "outbox_status_api_v1_admin_outbox_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常"
+          }
+        },
+        "summary": "事务性发件箱状态（积压/近 1h 发布/死信聚合）",
+        "tags": [
+          "outbox"
         ]
       }
     },
@@ -8658,6 +9021,88 @@
         "summary": "质量任务详情（status/stats/logs 轮询；跨租户统一 404）",
         "tags": [
           "quality"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "平台 ADMIN：username ASC keyset 游标简投影 {user_id, username,\ndisplay_name}；目录范围口径见 service.list_users docstring（W6 最小\n口径 = 平台管理员主租户，B.14 未定义留痕）。",
+        "operationId": "list_admin_users_api_v1_admin_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AdminUserItem_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN：权限不足（scope/权限不满足）"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "平台用户目录简投影（邀请成员下拉真数据源；W5-11 收口）",
+        "tags": [
+          "admin"
         ]
       }
     },
@@ -10138,7 +10583,7 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页\n（occurred_at DESC, event_id tiebreak）。",
+        "description": "过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/\nsince/until 闭区间）+ 游标分页（occurred_at DESC, event_id tiebreak）；\nevent_type 与 event_type_prefix 同传 → 400（互斥），空前缀串按 None。",
         "operationId": "list_events_api_v1_events_get",
         "parameters": [
           {
@@ -10172,6 +10617,24 @@
                 }
               ],
               "title": "Event Type"
+            }
+          },
+          {
+            "description": "事件类型前缀过滤（LIKE prefix%；与 event_type 互斥）",
+            "in": "query",
+            "name": "event_type_prefix",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "事件类型前缀过滤（LIKE prefix%；与 event_type 互斥）",
+              "title": "Event Type Prefix"
             }
           },
           {
@@ -11603,6 +12066,102 @@
         "summary": "查询业务对象版本轨迹",
         "tags": [
           "registry"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "description": "objects（source_id/object_type）/ events（event_type 或\ndata->>'summary'）/ evidence（source_record_id/source_system）三组\nILIKE 聚合，各组时间序 DESC LIMIT limit；total = 三组返回行数合计。",
+        "operationId": "global_search_api_v1_search_get",
+        "parameters": [
+          {
+            "description": "关键词（trim 后至少 1 个字符，否则 400）",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "关键词（trim 后至少 1 个字符，否则 400）",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "每组返回上限",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "description": "每组返回上限",
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR：参数缺失或格式错误"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNAUTHENTICATED：未认证或凭据无效"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TENANT_SUSPENDED：租户已暂停或状态异常"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "全局搜索（对象/事件/证据三组聚合）",
+        "tags": [
+          "search"
         ]
       }
     },
