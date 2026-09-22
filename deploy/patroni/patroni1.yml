@@ -39,6 +39,13 @@ postgresql:
     # pgbackrest WAL 归档（本地 repo 卷；实测 2026-09-18 全量备份依赖 archive_mode）
     archive_mode: "on"
     archive_command: 'pgbackrest --stanza=edp archive-push %p'
+    # pg_stat_statements 供给（W6 T3 / EDP-033 压测线）：preload 两节点一致；
+    # 扩展本体需 bootstrap 后在**主节点**手动建立（patroni initdb 不执行
+    # deploy/pg-init 目录），一次即可随流复制到从库：
+    #   psql -h patroni1 -U postgres -d edp \
+    #     -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
+    shared_preload_libraries: pg_stat_statements
+    pg_stat_statements.track: all
   authentication:
     superuser:
       username: postgres

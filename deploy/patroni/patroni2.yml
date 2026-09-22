@@ -38,6 +38,10 @@ postgresql:
     # pgbackrest WAL 归档（本地 repo 卷；实测 2026-09-18 全量备份依赖 archive_mode）
     archive_mode: "on"
     archive_command: 'pgbackrest --stanza=edp archive-push %p'
+    # pg_stat_statements 供给（W6 T3 / EDP-033 压测线）：preload 两节点一致；
+    # 扩展本体在主节点手动建立一次（见 patroni1.yml 注释步骤），随流复制到本节点
+    shared_preload_libraries: pg_stat_statements
+    pg_stat_statements.track: all
   authentication:
     superuser:
       username: postgres

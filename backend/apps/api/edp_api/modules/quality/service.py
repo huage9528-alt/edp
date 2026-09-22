@@ -25,11 +25,12 @@
   抽检样本将被永久冻结；降序保证抽检面随新证据滚动，evidence_id 降序
   作并列确定性 tie-break），重算
   canonical checksum（复用 evidence.service.compute_checksum 单一实现，
-  杜绝两套序列化）比对；**仅失配行**经 events.service.ingest_batch 写
+  杜绝两套序列化）比对；**仅失配行**经 events.service.ingest_batch
+  （internal=True——W5-09 内部写入豁免计量）写
   ``quality.checksum_failed`` 事件（UUIDv5 幂等：occurred_at 取证据
   captured_at → 同失配重复抽检恒同 event_id，幂等键归档 + ON CONFLICT
-  双保险不重复落数；risk_level 留空不计入异常面；ingest 计量/审计/outbox
-  为既有副作用，随请求事务提交）。
+  双保险不重复落数；risk_level 留空不计入异常面；审计/outbox 为既有
+  副作用，随请求事务提交）。
 
 kpi/dimensions 派生（纯函数，表驱动单测）：
 
@@ -67,16 +68,13 @@ stats 无独立 scope——仅 ALL 覆盖 coverage 段）→ stats（段名 → 
 摘要 dict）+ logs（``[{ts, level, message}]``，每段起止/关键计数）逐段
 落库、终态回写 SUCCEEDED/FAILED + finished_at；完成写
 ``quality.recheck_succeeded`` / ``quality.recheck_failed`` 事件（复用
-events.ingest_batch——同 T3 checksum_failed 写通道：UUIDv5 幂等
-occurred_at=任务 started_at、幂等键 quality-recheck:{task_id}；事件
-object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1），ingest 通道
-校验 object 存在性，空注册表跳过事件——结果已由任务行 stats/logs
-留痕）。完成事件**移出终态事务**：终态先行 commit 落库，事件随后经
-独立事务尽力写入——事件通道异常仅告警，不把已成功的计算回滚改判
-FAILED。**单副本执行
-语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）
-多副本安全；执行互斥不保证——多副本并发同租户 recheck 可并行执行（分布式锁
-Redis 方案评估 T17 覆盖）。后台会话独立于请求会话（get_session_local），
+events.ingest_batch，internal=True——W5-09 内部写入豁免计量：同 T3
+checksum_failed 写通道：UUIDv5 幂等 occurred_at=任务 started_at、幂等键
+quality-recheck:{task_id}；事件 object 锚点 = 注册表最小 object_id
+（ORDER BY LIMIT 1），ingest 通道校验 object 存在性，空注册表跳过事件
+——结果已由任务行 stats/logs 留痕）。完成事件**移出终态事务**：终态先
+行 commit 落库，事件随后经独立事务尽力写入——事件通道异常仅告警，不把
+已成功的计算回滚改判 FAILED。后台会话独立于请求会话（get_session_local），
 bind_tenant 事务级 → 每段独立事务；首段前可见性**有界重试**
 （``wait_task_visible``——T5 评审移交的公共 helper，单一实现供
 adapters_admin.service / evidence.service 后台执行体复用，防复制漂移）：
@@ -85,6 +83,15 @@ READ COMMITTED 下请求事务未提交的 INSERT
 阻塞、立即返回空——后台可能先于请求 commit 启动，首次探测读空属
 正常，按固定间隔重试至行可见再执行；deadline 后仍不可见 = 请求事务
 已回滚（行确不存在），提前退出。
+
+任务互斥（W6 T3 / Redis B 轻量项，redis-evaluation §4 建议）：三类后台
+任务入口（quality recheck / evidence reindex / adapter sync）统一
+``pg_try_advisory_lock(hashtext('ops.task:' || task_type))`` 会话级
+advisory lock——``TaskMutex`` / ``try_acquire_task_lock`` 公共实现置于
+本模块（quality 为任务轨道枢纽，evidence/adapters_admin 经 service 路径
+复用）；锁被占 → 409 CONFLICT（复用既有 CONFLICT 码 + message/extra
+区分任务冲突语义，**不扩 13 错误码表**——沿 registry 乐观锁 409 先例，
+spec §2.3 留痕）。锁语义与连接生命周期详见 ``TaskMutex`` docstring。
 """
 
 from __future__ import annotations
@@ -98,14 +105,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NoReturn
 from uuid import UUID, uuid4
 
 from edp_adapters.demo_dataset import SNAPSHOT_RECORDS
 from pydantic import ValidationError
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from edp_api.core import db as core_db
+from edp_api.core.errors import EdpError
 from edp_api.core.security.principal import Principal
 from edp_api.modules.events import service as events_service
 from edp_api.modules.events.schemas import EventIn
@@ -149,6 +162,120 @@ RECHECK_EVENT_ACTOR_ID = CHECKSUM_FAILED_ACTOR_ID
 # ≈ 1s deadline 后仍不可见才判「请求事务已回滚」
 TASK_VISIBILITY_ATTEMPTS = 10
 TASK_VISIBILITY_INTERVAL_S = 0.1
+
+# ---- 任务互斥 advisory lock（W6 T3 / Redis B 轻量项）----
+
+_TASK_TRY_LOCK_SQL = text("SELECT pg_try_advisory_lock(hashtext(:key))")
+_TASK_UNLOCK_SQL = text("SELECT pg_advisory_unlock(hashtext(:key))")
+
+
+def task_lock_key(task_type: str, ref_name: str | None = None) -> str:
+    """advisory lock 键：``ops.task:{task_type}``（adapter_sync 附
+    ``:{ref_name}``——同一适配器互斥、不同适配器并行，沿任务轨道既有
+    「同一适配器并发」语义；键不含 tenant_id，spec §2.3 取简口径）。"""
+    suffix = f":{ref_name}" if ref_name else ""
+    return f"ops.task:{task_type}{suffix}"
+
+
+@dataclass(slots=True)
+class TaskMutex:
+    """任务互斥 advisory lock 句柄（锁语义与连接生命周期留痕）：
+
+    - **会话级锁绑定连接**：``pg_try_advisory_lock`` 取得的锁归获取它的
+      那条 DB 连接所有，连接关闭（显式释放 / 进程崩溃被服务端断开）即
+      自动解锁——崩溃安全，无孤儿锁、无需 TTL；
+    - **专用连接持有**：句柄持有自引擎池检出的**专用**连接至
+      ``release()``。不能在请求会话或后台执行会话上获取：SQLAlchemy
+      会话逐事务从池换用连接，事务结束连接归还池而会话级锁仍挂在它
+      上——锁会泄漏给池中下一个使用者。专用连接在任务期间被占用
+      （pool 10 + overflow 20，三类任务低频，可接受——redis-evaluation
+      §4 已知权衡）；
+    - **触发即互斥**：入口（start_recheck / start_reindex /
+      trigger_sync）try-lock 成功才登记任务行并派发后台执行体（锁句柄
+      随执行体走，执行体 finally 释放）——两个并发 POST 同 task_type
+      恒一个 202 一个 409；入口登记/派发抛错由入口就地释放；
+    - 被占 → 409 CONFLICT（复用既有错误码，extra 附 task_type 与
+      current_task_hint——本租户最新 RUNNING 任务行 id 尽力探测，多副本
+      下持锁方可能在他租户/他副本，无行可指则略）。
+    """
+
+    key: str
+    conn: AsyncConnection
+
+    async def release(self) -> None:
+        """释放锁并归还连接（尽力：unlock 异常不阻断 close——连接关闭
+        即解锁，双重保险）。"""
+        try:
+            await self.conn.execute(_TASK_UNLOCK_SQL, {"key": self.key})
+        except Exception:
+            logger.warning(
+                "advisory lock 解锁失败（连接关闭即解锁，仅告警）：%s",
+                self.key,
+                exc_info=True,
+            )
+        finally:
+            await self.conn.close()
+
+
+async def try_acquire_task_lock(key: str) -> TaskMutex | None:
+    """try-lock advisory lock：成功返回句柄（调用方负责随任务生命周期
+    ``release``），被占返回 None（→ 409 TASK_CONFLICT 语义）。"""
+    conn = await core_db.get_engine().connect()
+    try:
+        acquired = (await conn.execute(_TASK_TRY_LOCK_SQL, {"key": key})).scalar_one()
+        if not acquired:
+            await conn.close()
+            return None
+        # 结束获取语句的隐式事务（会话级锁不受事务结束影响）——避免句柄
+        # 持有期连接滞留 idle in transaction
+        await conn.rollback()
+        return TaskMutex(key=key, conn=conn)
+    except Exception:
+        await conn.close()
+        raise
+
+
+async def running_task_hint(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    task_type: str,
+    ref_name: str | None = None,
+) -> UUID | None:
+    """本租户同 task_type（可限 ref_name）最新 RUNNING 任务行 id——409
+    envelope 的 current_task_hint 数据源（尽力：多副本下持锁方可能在别
+    租户/副本，无可见行 → None）。"""
+    stmt = (
+        select(OpsTask.task_id)
+        .where(
+            OpsTask.tenant_id == tenant_id,
+            OpsTask.task_type == task_type,
+            OpsTask.status == "RUNNING",
+        )
+        .order_by(OpsTask.started_at.desc(), OpsTask.task_id.desc())
+        .limit(1)
+    )
+    if ref_name is not None:
+        stmt = stmt.where(OpsTask.ref_name == ref_name)
+    return (await sess.execute(stmt)).scalar_one_or_none()
+
+
+async def raise_task_conflict(
+    sess: AsyncSession,
+    tenant_id: UUID,
+    task_type: str,
+    ref_name: str | None = None,
+) -> NoReturn:
+    """锁被占 → 409 CONFLICT（复用既有码不扩错误码表——registry 乐观锁
+    409 先例同构；message/extra 区分任务冲突语义）。三类任务入口共用
+    （evidence/adapters_admin 经 service 路径调用）。"""
+    key = task_lock_key(task_type, ref_name)
+    hint = await running_task_hint(sess, tenant_id, task_type, ref_name)
+    extra: dict = {"task_type": task_type}
+    if ref_name is not None:
+        extra["ref_name"] = ref_name
+    if hint is not None:
+        extra["current_task_hint"] = str(hint)
+    raise EdpError.conflict(f"同类任务已在运行，请稍后再试：{key}", extra=extra)
 
 # scope → 有序执行段（段名与 stats 键一致；coverage 无独立 scope——仅 ALL 覆盖）
 _SCOPE_SEGMENTS: dict[str, tuple[str, ...]] = {
@@ -437,10 +564,10 @@ async def _record_checksum_failure(
     record: Mapping,
     actual: str,
 ) -> None:
-    """失配行 → quality.checksum_failed 事件（复用 events.ingest_batch：
-    UUIDv5 幂等——occurred_at 取证据 captured_at、幂等键按 evidence_id
-    稳定，同失配重复抽检不重复落数；ingest 的计量/审计/outbox 为既有
-    副作用）。"""
+    """失配行 → quality.checksum_failed 事件（复用 events.ingest_batch，
+    internal=True——W5-09 内部写入豁免计量：UUIDv5 幂等——occurred_at 取
+    证据 captured_at、幂等键按 evidence_id 稳定，同失配重复抽检不重复
+    落数；ingest 的审计/outbox 为既有副作用，计量随 internal 豁免）。"""
     await events_service.ingest_batch(
         sess,
         principal,
@@ -460,6 +587,7 @@ async def _record_checksum_failure(
                 },
             )
         ],
+        internal=True,
     )
 
 
@@ -513,34 +641,43 @@ async def start_recheck(
 ) -> OpsTask:
     """登记 quality_recheck 任务行并派发后台执行（路由层 202 语义）。
 
-    **单副本执行语义（留痕）**：状态落库（ops.tasks 行级回写、终态幂等）
-    多副本安全；执行互斥不保证——多副本并发同租户 recheck 可并行执行
-    （分布式锁 Redis 方案评估 T17 覆盖）。任务行可见性由请求级 commit
-    兜底，后台执行体先等行可见再执行（见 ``_run_recheck`` docstring）。
+    **任务互斥（W6 T3）**：入口先 ``try_acquire_task_lock``——被占 →
+    409 CONFLICT（不登记行）；拿到锁才建行/派发，锁句柄随后台执行体走
+    （执行体 finally 释放，见 ``TaskMutex`` docstring）。状态落库多副本
+    安全（行级回写、终态幂等）。任务行可见性由请求级 commit 兜底，后台
+    执行体先等行可见再执行（见 ``_run_recheck`` docstring）。
     """
-    started_at = datetime.now(UTC)
-    task = OpsTask(
-        task_id=uuid4(),
-        tenant_id=principal.tenant_id,
-        task_type=RECHECK_TASK_TYPE,
-        status="RUNNING",
-        scope=scope,
-        started_at=started_at,
-        created_by=principal.id,
-    )
-    sess.add(task)
-    await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
-    background = asyncio.create_task(
-        _run_recheck(
-            task_id=task.task_id,
+    mutex = await try_acquire_task_lock(task_lock_key(RECHECK_TASK_TYPE))
+    if mutex is None:
+        await raise_task_conflict(sess, principal.tenant_id, RECHECK_TASK_TYPE)
+    try:
+        started_at = datetime.now(UTC)
+        task = OpsTask(
+            task_id=uuid4(),
             tenant_id=principal.tenant_id,
-            principal=principal,
+            task_type=RECHECK_TASK_TYPE,
+            status="RUNNING",
             scope=scope,
             started_at=started_at,
+            created_by=principal.id,
         )
-    )
-    _recheck_tasks.add(background)
-    background.add_done_callback(_recheck_tasks.discard)
+        sess.add(task)
+        await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
+        background = asyncio.create_task(
+            _run_recheck(
+                task_id=task.task_id,
+                tenant_id=principal.tenant_id,
+                principal=principal,
+                scope=scope,
+                started_at=started_at,
+                mutex=mutex,
+            )
+        )
+        _recheck_tasks.add(background)
+        background.add_done_callback(_recheck_tasks.discard)
+    except Exception:
+        await mutex.release()  # 登记/派发失败就地释放（后台未接手）
+        raise
     return task
 
 
@@ -558,9 +695,14 @@ async def _run_recheck(
     principal: Principal,
     scope: str,
     started_at: datetime,
+    mutex: TaskMutex | None = None,
 ) -> None:
     """后台执行体：独立会话逐段执行 T3 聚合 → stats/logs 落 ops.tasks →
     终态 + 完成事件。
+
+    互斥锁：入口已取得的 ``mutex`` 句柄随执行体走——**finally 释放**
+    （任务终态/提前退出均达）；缺省 None 容忍直接调用（测试竞态用例直调
+    本体，无锁语境）。
 
     会话与事务：不复用请求会话（随请求关闭）——经 get_session_local 开
     独立会话；bind_tenant 事务级（set_config is_local）→ 每段独立事务
@@ -653,6 +795,9 @@ async def _run_recheck(
             )
         except Exception:
             logger.error("recheck FAILED 终态回写失败：%s", task_id, exc_info=True)
+    finally:
+        if mutex is not None:
+            await mutex.release()  # 互斥窗 = 入口取锁至执行体收尾（终态/提前退出均达）
 
 
 async def wait_task_visible(
@@ -812,11 +957,12 @@ async def _record_recheck_event(
     stats: dict,
     error: str | None = None,
 ) -> None:
-    """完成事件（复用 events.ingest_batch——同 T3 checksum_failed 写通道）：
-    UUIDv5 幂等（occurred_at=任务 started_at → 同任务重放恒同 event_id；
-    幂等键 quality-recheck:{task_id}）；ingest 的计量/审计/outbox 为既有
-    副作用，随本事务提交（调用方 ``_record_completion_event`` 开独立
-    尽力事务——终态已先行落库，本写失败仅告警不回滚）。
+    """完成事件（复用 events.ingest_batch，internal=True——W5-09 内部
+    写入豁免计量；同 T3 checksum_failed 写通道）：UUIDv5 幂等
+    （occurred_at=任务 started_at → 同任务重放恒同 event_id；
+    幂等键 quality-recheck:{task_id}）；审计/outbox 为既有副作用随本
+    事务提交（调用方 ``_record_completion_event`` 开独立尽力事务——终态
+    已先行落库，本写失败仅告警不回滚）。
 
     事件 object 锚点 = 注册表最小 object_id（ORDER BY LIMIT 1——PG 无
     min(uuid) 聚合；ingest 通道校验 object 存在性——质量完成事件无自然
@@ -851,6 +997,7 @@ async def _record_recheck_event(
                 data=data,
             )
         ],
+        internal=True,
     )
 
 

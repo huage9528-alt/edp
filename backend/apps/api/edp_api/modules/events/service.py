@@ -288,6 +288,8 @@ async def ingest_batch(
     principal: Principal,
     idem_key: str,
     events: list[EventIn],
+    *,
+    internal: bool = False,
 ) -> BatchResponse:
     """批量入库（三层幂等；逐事件校验，不整批失败）。
 
@@ -297,7 +299,13 @@ async def ingest_batch(
       captured_at=occurred_at）+ ``RESULT`` link；duplicated 路径不建；
     - 批次末 upsert ``tenant_usage_daily``（events_in/events_duplicated）；
     - EDP-025 批量限额：事件数 > ``tenant_quotas.batch_max_events`` →
-      400 VALIDATION_ERROR（不落库、不占幂等存档）。
+      400 VALIDATION_ERROR（不落库、不占幂等存档）；
+    - ``internal=True``（W5-09）：内部来源写事件（quality 抽检
+      checksum_failed / recheck 完成事件、evidence reindex 失配与完成
+      事件——平台自身写入）**豁免 usage 计量 upsert**（内部写入不占
+      租户用量口径；事件落库/证据/outbox/审计/幂等存档副作用不变）；
+      外部调用方（/events/batch 路由、demo seed、适配器管道）不传——
+      照常计量。
 
     Returns:
         {accepted, duplicated, rejected, deduplicated, errors?}——rejected 的
@@ -416,10 +424,12 @@ async def ingest_batch(
             actor=actor,
         )
 
-    # 计量（spec §5.1）：与事件行同事务累加（批次回滚则计数一并回滚）
-    await tenantmgmt_service.bump_usage_daily(
-        sess, tenant_id, events_in=accepted, events_duplicated=duplicated
-    )
+    # 计量（spec §5.1）：与事件行同事务累加（批次回滚则计数一并回滚）；
+    # internal=True 豁免（W5-09——内部来源写事件不占租户用量口径）
+    if not internal:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_in=accepted, events_duplicated=duplicated
+        )
 
     response = BatchResponse(
         accepted=accepted,

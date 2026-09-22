@@ -3,6 +3,14 @@ name: edp-dev
 services:
   db:
     image: postgres:16-alpine
+    # pg_stat_statements 供给（W6 T3 / EDP-033 压测线）：preload 库 + 全量
+    # 跟踪；扩展本体由 pg-init/02-extensions.sql 建立（仅首次初始化执行）
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
     environment:
       POSTGRES_USER: edp_migrator
       POSTGRES_PASSWORD: edp_dev
