@@ -16,6 +16,10 @@ drills 路由（EDP-502 后端 / W5 T7）：GET ``/api/v1/admin/drills``
 （quality:read）→ W5 三项演练只读归档（drill-records.json；口径见
 service docstring）。
 
+outbox 路由（W6 / W5-05 收口）：GET ``/api/v1/admin/outbox/status``
+（quality:read）→ event.outbox 聚合（积压龄/近 1h 发布/死信；数据源
+events.service.outbox_status，口径见 service docstring）。
+
 router 级挂 tenant_scoped（认证 → 租户状态 → bind_tenant → RLS）；无
 SERVICE scope 轨道（鉴权口径见 dependencies 模块 docstring）。
 """
@@ -35,6 +39,7 @@ from edp_api.modules.quality.dependencies import require_quality_read, require_q
 from edp_api.modules.quality.schemas import (
     CoverageReport,
     DrillRecordsOut,
+    OutboxStatusOut,
     QualityReport,
     QualityTaskOut,
     RecheckAccepted,
@@ -51,6 +56,12 @@ router = APIRouter(
 drills_router = APIRouter(
     prefix="/api/v1/admin/drills",
     tags=["drills"],
+    dependencies=[Depends(tenant_scoped)],
+)
+
+outbox_router = APIRouter(
+    prefix="/api/v1/admin",
+    tags=["outbox"],
     dependencies=[Depends(tenant_scoped)],
 )
 
@@ -162,3 +173,19 @@ async def drill_records(
     compose 注释 T14 处理）→ {items}；文件缺失/坏 JSON → {items: []}
     （不报错，前端空态）。executed_at null = 未执行（PLANNED）。"""
     return DrillRecordsOut(items=quality_service.list_drills())
+
+
+@outbox_router.get(
+    "/outbox/status",
+    response_model=OutboxStatusOut,
+    summary="事务性发件箱状态（积压/近 1h 发布/死信聚合）",
+    responses=error_responses(*_READ_ERRORS),
+)
+async def outbox_status(
+    principal: Annotated[Principal, Depends(require_quality_read())],
+    sess: DbSession,
+) -> OutboxStatusOut:
+    """quality:read：event.outbox 聚合（W5-05 收口）——运营报告/健康页
+    Outbox 积压卡数据源；RLS 会话限本租户，空表 → pending 0 /
+    oldest_pending_age_seconds 与 last_published_at null。"""
+    return await quality_service.build_outbox_status(sess)

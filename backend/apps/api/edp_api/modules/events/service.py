@@ -230,6 +230,56 @@ async def record_outbox_result(
     return "failed" if status == "FAILED" else "retry"
 
 
+# ---- outbox 状态聚合（W5-05 收口：/admin/outbox/status 数据源） ----
+
+
+@dataclass(slots=True)
+class OutboxStatus:
+    """outbox 聚合读数（裸 DB 值——ISO 串化归调用方响应层）。
+
+    oldest_pending_age_seconds / last_published_at 无对应行 → None。
+    """
+
+    pending_count: int
+    oldest_pending_age_seconds: int | None
+    published_last_hour: int
+    dlq_count: int
+    last_published_at: datetime | None
+
+
+_OUTBOX_STATUS_SQL = text(
+    "SELECT"
+    " count(*) FILTER (WHERE status = 'PENDING') AS pending_count,"
+    " min(created_at) FILTER (WHERE status = 'PENDING') AS oldest_pending_at,"
+    " now() AS taken_at,"
+    " count(*) FILTER (WHERE status = 'PUBLISHED'"
+    "   AND published_at >= now() - interval '1 hour') AS published_last_hour,"
+    " count(*) FILTER (WHERE status = 'FAILED') AS dlq_count,"
+    " max(published_at) AS last_published_at"
+    " FROM event.outbox"
+)
+
+
+async def outbox_status(sess: AsyncSession) -> OutboxStatus:
+    """outbox 状态单条聚合 SQL（RLS 会话已 bind_tenant → 天然限本租户）：
+    pending 计数 / 最老 PENDING 积压龄（DB now() - min(created_at)，无
+    PENDING → None）/ 近 1h PUBLISHED 计数 / DLQ=FAILED 计数（DLQ 语义
+    同 _DELIVERY_STATUS：FAILED 即死信）/ 最近发布时刻。"""
+    row = (await sess.execute(_OUTBOX_STATUS_SQL)).one()
+    oldest_age = (
+        int((row.taken_at - row.oldest_pending_at).total_seconds())
+        if row.oldest_pending_at is not None
+        else None
+    )
+    return OutboxStatus(
+        pending_count=int(row.pending_count),
+        oldest_pending_age_seconds=oldest_age,
+        published_last_hour=int(row.published_last_hour),
+        dlq_count=int(row.dlq_count),
+        last_published_at=row.last_published_at,
+    )
+
+
 # ---- 批量入库 ----
 
 

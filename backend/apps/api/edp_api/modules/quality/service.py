@@ -118,6 +118,7 @@ from edp_api.modules.quality.schemas import (
     DimensionScore,
     DrillRecord,
     OrphansReport,
+    OutboxStatusOut,
     QualityKpi,
     QualityReport,
     ReconciliationRow,
@@ -856,6 +857,26 @@ async def _record_recheck_event(
 def _log_line(level: str, message: str) -> dict:
     """log 行（形状对齐 mocks/types.ts QualityTask.logs：{ts, level, message}）。"""
     return {"ts": datetime.now(UTC).isoformat(), "level": level, "message": message}
+
+
+# ---- outbox 状态聚合（W5-05 收口：GET /admin/outbox/status 数据源） ----
+
+
+async def build_outbox_status(sess: AsyncSession) -> OutboxStatusOut:
+    """outbox 状态响应（数据源 = events.service.outbox_status——outbox ORM
+    归 events 模块，模块间仅 service）；last_published_at ISO 串化输出。"""
+    status = await events_service.outbox_status(sess)
+    return OutboxStatusOut(
+        pending_count=status.pending_count,
+        oldest_pending_age_seconds=status.oldest_pending_age_seconds,
+        published_last_hour=status.published_last_hour,
+        dlq_count=status.dlq_count,
+        last_published_at=(
+            status.last_published_at.isoformat()
+            if status.last_published_at is not None
+            else None
+        ),
+    )
 
 
 # ---- 演练记录只读归档（EDP-502 后端 / W5 T7）----

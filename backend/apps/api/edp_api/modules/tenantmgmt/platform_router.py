@@ -1,5 +1,6 @@
 """tenantmgmt 平台级路由（EDP-024 / B.14）：租户生命周期 + W5 补齐
-（PATCH / context 切换 / members CRUD / quotas 读改，EDP-501 后端）。
+（PATCH / context 切换 / members CRUD / quotas 读改，EDP-501 后端）+
+W6 平台用户目录（GET /api/v1/admin/users，W5-11 收口）。
 
 与 router.py（GET /tenants/current[+/usage]，租户视角 tenant_scoped）相对，
 本路由为平台运营视角：每路由 require_platform_admin + get_db，**不挂
@@ -25,6 +26,7 @@ from edp_api.modules.platform.dependencies import require_platform_admin
 from edp_api.modules.tenantmgmt import service as tenantmgmt_service
 from edp_api.modules.tenantmgmt.dependencies import ensure_members_readable
 from edp_api.modules.tenantmgmt.schemas import (
+    AdminUserItem,
     TenantCancelRequest,
     TenantContextResponse,
     TenantCreateRequest,
@@ -42,6 +44,8 @@ from edp_api.modules.tenantmgmt.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
+
+admin_router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 PlatformAdmin = Annotated[Principal, Depends(require_platform_admin)]
@@ -417,3 +421,23 @@ async def get_tenant_usage(
         sess, tenant_id, since=since, until=until, limit=limit, cursor=cursor
     )
     return Page(items=items, next_cursor=next_cursor)
+
+
+@admin_router.get(
+    "/users",
+    response_model=Page[AdminUserItem],
+    summary="平台用户目录简投影（邀请成员下拉真数据源；W5-11 收口）",
+    responses=error_responses(ErrorCode.UNAUTHENTICATED, ErrorCode.FORBIDDEN),
+)
+async def list_admin_users(
+    sess: DbSession,
+    principal: PlatformAdmin,
+    limit: Annotated[int, Query(ge=1, le=100)] = tenantmgmt_service.DEFAULT_LIMIT,
+    cursor: Annotated[str | None, Query()] = None,
+) -> Page[AdminUserItem]:
+    """平台 ADMIN：username ASC keyset 游标简投影 {user_id, username,
+    display_name}；目录范围口径见 service.list_users docstring（W6 最小
+    口径 = 平台管理员主租户，B.14 未定义留痕）。"""
+    return await tenantmgmt_service.list_users(
+        sess, principal, limit=limit, cursor=cursor
+    )
