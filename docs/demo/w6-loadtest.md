@@ -42,10 +42,14 @@
 | audit 过滤一页（platform.audit_logs，控制面无 RLS） | 1.55 ms | 2.12 ms | -26.6%（零开销对照，负差为噪声） |
 
 - 结论：RLS 开销集中在多表 join 的 events 查询（每表 policy 谓词 `tenant_id = current_setting('app.tenant_id')::uuid`），绝对开销 +3.3 ms/次，相对翻倍但量级个位数毫秒；单表查询与无 RLS 控制面表开销在噪声（<1 ms）内。三模式最大相对差 +97.1%（events 模式）。
+- **显式双判定（T6 评审 I-1/裁定 b）**：相对口径 **不达标**（+97.1% > 5% 设计阈值）；绝对口径 **无实际影响**（+3.3 ms，含 RLS 的端到端 P95 全部 <2s）。
+- 归因：events 查询 4 表 policy 谓词（页查询三表 join + count 回访 events）为固定求值成本，小规模基线（毫秒级）下占比高；`tenant_id` 索引前缀使各表扫描有界，开销不随数据量线性放大。
+- 口径建议：5% 相对阈值在毫秒级基线下低于 ±0.5 ms 测量噪声地板，数学上不可判；建议 Go/No-Go 门禁改采绝对口径（或占 2s 预算百分比），阈值重校准留给设计文档修订。
 
 ## 4. 结论
 
 - **达标判定：全部 9 个接口在三档 VU 下 P95 均 <2s，达标。** 100 VU 档最慢为 POST /events/batch 1000 ms 与 admin/quality/coverage 710 ms（均受池排队长尾抬升；50 VU 及以下全部 ≤110 ms）。
+- **T12 输出口径（Go/No-Go RLS 行）**：按双口径呈现——相对口径不达标（+97.1% > 5%）/ 绝对口径无实际影响（+3.3 ms）；门禁判定采绝对口径（P95 <2s 含 RLS 全达标），不触发「按租户组拆库」条款（设计文档 V2.0 L420）。
 - **Redis 决策输入（热点接口 QPS 观测）**：峰值可持续吞吐 ≈47 req/s（50 VU）；按量排序热点为 events risk 过滤（≈18 req/s）、objects（≈9 req/s）、tools/orders 与 health（≈6 req/s）。health 的 ops_metrics 每调用执行多条 count/percentile 聚合 SQL（pg_stat 中 3713 次调用、mean 5.1~10 ms），events 列表每次执行全量 count（mean 10 ms）——若 QPS 上探（>100 req/s），这两类是 Redis 缓存的首选候选；当前 47 req/s 峰值下 DB 未过载（除池容量），暂无必须引入缓存的读数依据。
 - **T7 治理线索（pg_stat_statements top20，见 `deploy/loadtest/pg_stat_top20.txt`）**：
   1. `platform.tenant_usage_daily` 计量 upsert 为总耗时第一（37267 次 / 359.7 s / mean 9.65 ms）——api_calls 逐请求独立会话写入在压测流量下成为最大单点，建议合并批量/异步化；
