@@ -107,6 +107,26 @@ describe("MemoryPage 候选记忆只读检索（MSW 模式渲染路由）", () =
     expect(rows()[0].textContent).toContain("APPROVED");
   });
 
+  // T9（W5-13 收敛）：chips 来自 GET /capabilities 接口——第四能力（无轨迹fixtures）chip 渲染且筛选落空态
+  it("capability chips 来自 capabilities 接口：第四能力 chip 渲染 + 筛选空态", async () => {
+    renderMemory();
+    await waitFor(() => expect(rows().length).toBe(5));
+
+    const fourthChip = await waitFor(() => {
+      const el = document.querySelector(
+        '[data-dom-id="memory-capability-00000000-0000-4000-8000-000000000804"]',
+      );
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(fourthChip.textContent).toBe("供应商延期监控");
+
+    fireEvent.click(fourthChip);
+    await waitFor(() =>
+      expect(document.querySelector('[data-dom-id="memory-empty"]')).not.toBeNull(),
+    );
+  });
+
   it("行点击展开只读详情：content 全文 JSON + 来源/评审信息；再点收起", async () => {
     renderMemory();
     await waitFor(() => expect(rows().length).toBe(5));

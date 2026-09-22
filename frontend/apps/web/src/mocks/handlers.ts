@@ -3,6 +3,7 @@ import { actionHandlers } from "./handlers/actions";
 import { auditHandlers } from "./handlers/audit";
 import { authHandlers } from "./handlers/auth";
 import { caseHandlers } from "./handlers/cases";
+import { catalogHandlers } from "./handlers/catalog";
 import { decisionHandlers } from "./handlers/decisions";
 import { drillHandlers } from "./handlers/drills";
 import { ebmsHandlers } from "./handlers/ebms";
@@ -33,6 +34,7 @@ export const handlers = [
   ...decisionHandlers,
   ...actionHandlers,
   ...drillHandlers,
+  ...catalogHandlers,
   ...toolHandlers,
   ...traceHandlers,
   ...memoryHandlers,

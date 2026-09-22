@@ -31,12 +31,11 @@ export const TENANT_RETAIL_ID = mockUuid(508);
 export const TENANT_LEGACY_ID = mockUuid(509);
 export const TENANT_NW_ID = mockUuid(510);
 
-// ---- 平台用户目录（邀请成员下拉源；mock 扩展端点 GET /admin/users，契约冻结未含） ----
+// ---- 平台用户目录（邀请成员下拉源；GET /admin/users 真契约 AdminUserItem——display_name 可空透传） ----
 export interface PlatformUser {
   user_id: string;
   username: string;
-  display_name: string;
-  email: string;
+  display_name: string | null;
 }
 
 export const USER_ADMIN = mockUuid(531);
@@ -48,13 +47,14 @@ const USER_OWNER1 = mockUuid(536);
 export const USER_NEWHIRE = mockUuid(537);
 
 export const platformUsers: PlatformUser[] = [
-  { user_id: USER_ADMIN, username: "admin", display_name: "平台运营", email: "admin@example.com" },
-  { user_id: USER_MANAGER1, username: "manager1", display_name: "陈经理", email: "manager1@example.com" },
-  { user_id: USER_ANALYST1, username: "analyst1", display_name: "李审计", email: "analyst1@example.com" },
-  { user_id: USER_OPS1, username: "ops1", display_name: "王操作", email: "ops1@example.com" },
-  { user_id: USER_STEWARD1, username: "steward1", display_name: "赵数据", email: "steward1@example.com" },
-  { user_id: USER_OWNER1, username: "owner1", display_name: "周业务", email: "owner1@example.com" },
-  { user_id: USER_NEWHIRE, username: "newhire", display_name: "郑新人", email: "newhire@example.com" },
+  { user_id: USER_ADMIN, username: "admin", display_name: "平台运营" },
+  { user_id: USER_MANAGER1, username: "manager1", display_name: "陈经理" },
+  { user_id: USER_ANALYST1, username: "analyst1", display_name: "李审计" },
+  { user_id: USER_OPS1, username: "ops1", display_name: "王操作" },
+  { user_id: USER_STEWARD1, username: "steward1", display_name: "赵数据" },
+  { user_id: USER_OWNER1, username: "owner1", display_name: "周业务" },
+  // display_name 空透传用例（下拉 label 回退 username）
+  { user_id: USER_NEWHIRE, username: "newhire", display_name: null },
 ];
 
 /** B.14 租户清单（handler 按 created_at DESC 排序返回）。 */

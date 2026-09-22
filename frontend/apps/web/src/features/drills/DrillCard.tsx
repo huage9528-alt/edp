@@ -78,6 +78,11 @@ export function DrillCard({ drill }: { drill: DrillRecord }) {
           <p className="text-lg font-semibold text-foreground tabular-nums">
             {fmtRto(planned ? null : drill.rto_seconds)}
           </p>
+          {!planned && drill.drill_type === "switchover" && drill.rto_seconds === 0 && (
+            <p className="text-[10px] text-muted-foreground" data-dom-id={`${domId}-rto-note`}>
+              healthz 零中断口径，DB 写面见 readings
+            </p>
+          )}
         </div>
         <div
           className="rounded-lg bg-muted/50 px-3 py-2"

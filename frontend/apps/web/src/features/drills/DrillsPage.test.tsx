@@ -67,6 +67,10 @@ describe("DrillsPage 演练回放（MSW 模式渲染路由）", () => {
 
     // SUCCEEDED 卡：RTO/RPO 实测数字 + 绿 pill + readings 键值 + 拓扑 + 手册
     expect(card("drills-card-switchover-rto")!.textContent).toContain("0 秒");
+    // T9（W5-21-b）：switchover rto=0 加注「healthz 零中断口径，DB 写面见 readings」
+    expect(card("drills-card-switchover-rto-note")!.textContent).toContain(
+      "healthz 零中断口径，DB 写面见 readings",
+    );
     expect(card("drills-card-switchover-rpo")!.textContent).toContain("0 ms");
     expect(card("drills-card-switchover-pill")!.querySelector("span")!.className).toContain(
       "bg-state-success",
@@ -134,5 +138,7 @@ describe("DrillsPage 演练回放（MSW 模式渲染路由）", () => {
     await waitFor(() => expect(card("drills-card-switchover-rto")).not.toBeNull());
     expect(card("drills-card-switchover-rto")!.textContent).toContain("1,234 秒");
     expect(card("drills-card-switchover-rpo")!.textContent).toContain("2,000 ms");
+    // rto≠0 → 零中断加注不渲染
+    expect(card("drills-card-switchover-rto-note")).toBeNull();
   });
 });

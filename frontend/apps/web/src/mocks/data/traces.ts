@@ -10,7 +10,7 @@ import { CUSTOMER_C008, MATERIAL_X, ORDER_B_NO, SUPPLIER_S118 } from "./tools";
  * 对齐；capability_id 三能力供 traces/memory 两页筛选共用（跨页一致，spec §4）。
  */
 
-// ---- 能力（traces/memory 筛选共用；后端 capabilities 契约为 UUID 简投影） ----
+// ---- 能力（traces/memory 筛选共用；能力清单 name 见 data/catalog.ts 与 capabilities 兜底常量） ----
 export const CAP_ORDER_RISK = mockUuid(801); // 订单风险评估
 export const CAP_PRODUCT_READINESS = mockUuid(802); // 产品就绪度
 export const CAP_DQ_CHECK = mockUuid(803); // 数据质量检查
@@ -24,12 +24,6 @@ export const TRACE_ORDER_G_VIP = mockUuid(715);
 export const TRACE_ORDER_E_STRESS = mockUuid(716);
 export const TRACE_ORDER_J_CROSS = mockUuid(717);
 export const TRACE_DQ_NIGHTLY = mockUuid(718);
-
-export const CAPABILITY_LABELS: Record<string, string> = {
-  [CAP_ORDER_RISK]: "订单风险评估",
-  [CAP_PRODUCT_READINESS]: "产品就绪度",
-  [CAP_DQ_CHECK]: "数据质量检查",
-};
 
 /** 订单 B 风险评估主链（§B.10 示例）：四步工具调用 + token 三数 + 证据三链。 */
 const orderBRiskDetail: Schemas["TraceDetail"] = {

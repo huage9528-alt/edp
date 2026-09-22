@@ -103,4 +103,23 @@ describe("NotificationBell 最小消息中心", () => {
       "暂无质量通知",
     );
   });
+
+  // T9（W5-12 收口）：查询走后端前缀过滤——请求须携带 event_type_prefix=quality.
+  it("events 请求携带 event_type_prefix=quality. → 下拉渲染质量事件", async () => {
+    let seenPrefix: string | null = null;
+    server.use(
+      http.get("*/api/v1/events", ({ request }) => {
+        seenPrefix = new URL(request.url).searchParams.get("event_type_prefix");
+        const qualityOnly = events.filter((e) => e.event_type.startsWith("quality."));
+        return HttpResponse.json({ items: qualityOnly, next_cursor: null, total: qualityOnly.length });
+      }),
+    );
+    renderBell();
+
+    await waitFor(() => expect(badge()?.textContent).toBe("4"));
+    fireEvent.click(document.querySelector('[data-dom-id="notifications-btn"]')!);
+    await waitFor(() => expect(document.querySelector('[data-dom-id="bell-list"]')).not.toBeNull());
+    expect(document.querySelector('[data-dom-id="bell-list"]')!.textContent).toContain("质量重索引成功");
+    expect(seenPrefix).toBe("quality.");
+  });
 });

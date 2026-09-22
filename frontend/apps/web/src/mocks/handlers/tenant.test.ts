@@ -190,13 +190,22 @@ describe("tenant handlers（W5 平台面 EDP-501）", () => {
     ).toBe(202);
   });
 
-  it("current/usage 与 /admin/users（mock 扩展端点）形状", async () => {
+  it("current/usage 与 /admin/users（真契约 Page 信封，W6-08）形状", async () => {
     const usage = (await (await fetch(`${BASE}/api/v1/tenants/current/usage`)).json()) as {
       items: { usage_date: string }[];
     };
     expect(usage.items.length).toBeGreaterThan(0);
 
-    const users = (await (await fetch(`${BASE}/api/v1/admin/users`)).json()) as { user_id: string }[];
-    expect(users).toHaveLength(platformUsers.length);
+    const users = (await (await fetch(`${BASE}/api/v1/admin/users`)).json()) as {
+      items: { user_id: string; username: string; display_name: string | null }[];
+      next_cursor: string | null;
+      total: number;
+    };
+    expect(users.items).toHaveLength(platformUsers.length);
+    expect(users.total).toBe(platformUsers.length);
+    expect(users.next_cursor).toBeNull();
+    // username ASC 口径：目录项按 username 升序
+    const usernames = users.items.map((u) => u.username);
+    expect([...usernames].sort((a, b) => a.localeCompare(b))).toEqual(usernames);
   });
 });
