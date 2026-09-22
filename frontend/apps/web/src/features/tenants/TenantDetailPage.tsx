@@ -166,6 +166,13 @@ export function TenantDetailPage() {
                     primaryAction={{ label: "邀请成员", onClick: () => setInviteOpen(true) }}
                   />
                 </div>
+              ) : membersQuery.isError ? (
+                <div
+                  className="text-xs text-muted-foreground py-8 text-center"
+                  data-dom-id="tenant-members-error"
+                >
+                  成员列表暂不可用，请稍后重试
+                </div>
               ) : members.length === 0 ? (
                 <div className="text-xs text-muted-foreground py-8 text-center">加载中…</div>
               ) : (

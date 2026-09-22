@@ -108,6 +108,9 @@ function EvidenceSection({ hits }: { hits: EvidenceHit[] }) {
  * 三组命中区块（业务对象/事件/证据，各带计数）+ 空态三件套 + 清除搜索回空引导。
  * 命中形状按冻结契约 ObjectHit/EventHit/EvidenceHit 简投影（无 revision/risk/
  * verify 字段，行内以 object_type/事件类型/来源 pill 语义化呈现）。
+ * 如需 revision/risk_level/verify 等字段须后端契约变更后 api-sdk regen（本轮契约已冻结）。
+ * 空态文案口径：原设计稿 21 为证据库语境（「未找到匹配结果/清除筛选」），搜索页
+ * 改编为「未找到相关结果/清除搜索」。
  */
 export function SearchPage() {
   const [searchParams] = useSearchParams();

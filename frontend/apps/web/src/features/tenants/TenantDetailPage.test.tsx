@@ -285,4 +285,22 @@ describe("TenantDetailPage 租户详情（MSW 模式渲染路由）", () => {
     expect(empty.textContent).toContain("邀请成员");
     expect(memberRows().length).toBe(0);
   });
+
+  // T8 评审 Minor-4：成员段请求失败 → 错误提示（非永久「加载中…」）
+  it("成员段请求失败：错误提示而非永久加载中", async () => {
+    server.use(
+      http.get("*/api/v1/tenants/:tenantId/members", () =>
+        HttpResponse.json({ code: "INTERNAL_ERROR" }, { status: 500 }),
+      ),
+    );
+    renderDetail(TENANT_ACME_ID);
+
+    const error = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="tenant-members-error"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(error.textContent).toContain("成员列表暂不可用");
+    expect(memberRows().length).toBe(0);
+  });
 });
