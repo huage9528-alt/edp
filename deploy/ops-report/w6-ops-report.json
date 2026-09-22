@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T08:14:11+00:00",
+  "generated_at": "2026-09-22T09:36:33+00:00",
   "sources": {
     "db": "platform（migrator/BYPASSRLS）",
     "loadtest": "deploy\\loadtest\\locust.json",
@@ -35,7 +35,7 @@
       "key": "closure",
       "name": "Action 闭环率",
       "threshold": "≥90%",
-      "measured": "100.0%（0/0）",
+      "measured": "100.0%（1/1）",
       "passed": true,
       "note": "action.actions status=VERIFIED 口径"
     },
@@ -51,7 +51,7 @@
       "key": "audit_completeness",
       "name": "Action 审计完整率",
       "threshold": "=100%",
-      "measured": "100.0%（action 0/0、case 1/1、record 0/0）",
+      "measured": "100.0%（action 1/1、case 1/1、record 1/1）",
       "passed": true,
       "note": "实体级审计行存在性对账"
     },
@@ -143,17 +143,17 @@
       "pct": 100.0
     },
     "closure": {
-      "total": 0,
-      "verified": 0,
+      "total": 1,
+      "verified": 1,
       "pct": 100.0
     },
     "audit_completeness": {
-      "covered_actions": 0,
-      "total_actions": 0,
+      "covered_actions": 1,
+      "total_actions": 1,
       "covered_cases": 1,
       "total_cases": 1,
-      "covered_records": 0,
-      "total_records": 0,
+      "covered_records": 1,
+      "total_records": 1,
       "pct": 100.0
     },
     "guard_denied": {
