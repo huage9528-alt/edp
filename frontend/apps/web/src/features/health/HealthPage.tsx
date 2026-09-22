@@ -52,6 +52,9 @@ function fmtTime(iso: string | undefined): string {
  * HA / 备份 / Outbox / 告警渠道四卡 + 演练入口；10s 深层轮询；
  * 备份卡读数取 T7 演练归档（GET /admin/drills——switchover readings 的
  * 全量备份/切换成功率 + executed_at；pitr 未执行 → 「恢复演练未执行」副行）。
+ * 空态口径（EDP-601 收口裁定）：本页无列表型空场景——outbox/死信为 0 与
+ * 「暂无告警」均为健康正常态（读数语义，非数据缺失），不设 EmptyState；
+ * 取数失败已有 health-error 兜底。
  */
 export function HealthPage() {
   const healthQuery = useDeepHealth();

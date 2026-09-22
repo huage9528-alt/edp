@@ -10,8 +10,8 @@ import { server } from "../../mocks/server";
 
 function sessionOf(): AuthTokenResponse {
   return {
-    access_token: "t-manager1",
-    refresh_token: "r-manager1",
+    access_token: "t-admin1",
+    refresh_token: "r-admin1",
     expires_in: 7200,
     tenant: {
       tenant_id: "00000000-0000-0000-0000-000000000001",
@@ -21,8 +21,8 @@ function sessionOf(): AuthTokenResponse {
     },
     user: {
       user_id: "00000000-0000-0000-0000-000000000002",
-      username: "manager1",
-      roles: ["MANAGER"],
+      username: "admin1",
+      roles: ["ADMIN"],
       is_platform_admin: false,
     },
   };

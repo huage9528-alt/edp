@@ -1,5 +1,6 @@
-import { ChevronRight } from "lucide-react";
-import { StatusPill, type StatusPillTone } from "@edp/shared";
+import { ChevronRight, GitBranch } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { EmptyState, StatusPill, type StatusPillTone } from "@edp/shared";
 import type { EvidenceChainItem } from "./api";
 
 /** verify 结果（本会话状态；同证据库页 derive.VerifyState 语义）。 */
@@ -60,13 +61,16 @@ export interface EvidenceChainGraphProps {
  * 「校验」按钮 → GET /evidence/{id}/verify 即时 VALID/INVALID pill 切换 + toast。
  */
 export function EvidenceChainGraph({ chain, verifyState, onVerify }: EvidenceChainGraphProps) {
+  const navigate = useNavigate();
   if (chain.length === 0) {
     return (
-      <div
-        className="text-xs text-muted-foreground py-8 text-center"
-        data-dom-id="case-chain-empty"
-      >
-        暂无证据链数据
+      <div data-dom-id="case-chain-empty">
+        <EmptyState
+          icon={<GitBranch className="w-7 h-7" />}
+          title="暂无证据链节点"
+          description="案例尚无关联证据；可在证据库检索源记录并关联。"
+          primaryAction={{ label: "查看证据库", onClick: () => navigate("/admin/evidence") }}
+        />
       </div>
     );
   }

@@ -12,11 +12,12 @@ import { healthHandlers } from "./handlers/health";
 import { memoryHandlers } from "./handlers/memory";
 import { qualityHandlers } from "./handlers/quality";
 import { registryHandlers } from "./handlers/registry";
+import { searchHandlers } from "./handlers/search";
 import { tenantHandlers } from "./handlers/tenant";
 import { toolHandlers } from "./handlers/tools";
 import { traceHandlers } from "./handlers/traces";
 
-/** W2+W3 六页 + W4 闭环案例/决策/行动 + W5 租户/演练/Agent 工具·Trace·记忆 MSW 数据层聚合（spec §3 端点清单 + EDP-403/404/502/503）。 */
+/** W2+W3 六页 + W4 闭环案例/决策/行动 + W5 租户/演练/Agent 工具·Trace·记忆 + W6 全局搜索 MSW 数据层聚合（spec §3 端点清单 + EDP-403/404/502/503）。 */
 export const handlers = [
   ...authHandlers,
   ...tenantHandlers,
@@ -35,4 +36,5 @@ export const handlers = [
   ...toolHandlers,
   ...traceHandlers,
   ...memoryHandlers,
+  ...searchHandlers,
 ];

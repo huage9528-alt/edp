@@ -266,4 +266,23 @@ describe("TenantDetailPage 租户详情（MSW 模式渲染路由）", () => {
     await waitFor(() => expect(suspendCalled).toBe(true));
     expect(await screen.findByText("暂停已受理")).toBeInTheDocument();
   });
+
+  // EDP-601 空态收口：成员空段 → 三件套 + 邀请成员动作
+  it("成员空段：空态三件套（邀请成员动作）", async () => {
+    server.use(
+      http.get("*/api/v1/tenants/:tenantId/members", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+    );
+    renderDetail(TENANT_ACME_ID);
+
+    const empty = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="tenant-members-empty"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(empty.textContent).toContain("暂无成员");
+    expect(empty.textContent).toContain("邀请成员");
+    expect(memberRows().length).toBe(0);
+  });
 });

@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { Skeleton } from "antd";
-import { MonoId, StatusPill, type StatusPillTone } from "@edp/shared";
+import { useNavigate } from "react-router-dom";
+import { EmptyState, MonoId, StatusPill, type StatusPillTone } from "@edp/shared";
 import { relTime } from "../../lib/labels";
 import type { ExceptionItem } from "../../mocks/types";
 
@@ -17,6 +18,7 @@ export function RiskList({ items, loading, error, onOpen }: {
   error: unknown;
   onOpen: (item: ExceptionItem) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <section className="bg-card border border-border rounded-xl p-4" data-dom-id="overview-risk-list">
       <header className="flex items-center justify-between mb-3">
@@ -35,8 +37,13 @@ export function RiskList({ items, loading, error, onOpen }: {
           该面板暂不可用
         </div>
       ) : !items?.length ? (
-        <div className="text-xs text-muted-foreground py-6 text-center" data-dom-id="overview-risk-list-empty">
-          暂无数据
+        <div data-dom-id="overview-risk-list-empty">
+          <EmptyState
+            icon={<TriangleAlert className="w-7 h-7" />}
+            title="暂无风险与异常"
+            description="当前无待处理风险事件；事件回流后将在此聚合 Top 异常。"
+            secondaryAction={{ label: "查看事件流", onClick: () => navigate("/admin/events") }}
+          />
         </div>
       ) : (
         <div className="space-y-3">

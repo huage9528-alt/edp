@@ -362,4 +362,20 @@ describe("AdaptersPage 适配器管理（MSW 模式渲染路由）", () => {
     fireEvent.click(btn("adapters-refresh"));
     await waitFor(() => expect(listCalls).toBeGreaterThan(before));
   });
+
+  // EDP-601 空态收口：空清单 → 三件套 + 语境动作（新增适配器/数据源连接向导）
+  it("空清单：空态三件套（新增适配器 / 数据源连接向导动作）", async () => {
+    server.use(
+      http.get("*/api/v1/admin/adapters", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+    );
+    renderAdapters();
+
+    await waitFor(() => expect($("adapters-empty")).not.toBeNull());
+    expect($("adapters-empty")!.textContent).toContain("暂无适配器");
+    expect($("adapters-empty")!.textContent).toContain("新增适配器");
+    expect($("adapters-empty")!.textContent).toContain("数据源连接向导");
+    expect($("adapters-table")).toBeNull();
+  });
 });

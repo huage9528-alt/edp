@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ThemeProvider } from "../../app/providers/ThemeProvider";
 import { routes } from "../../app/router";
 import { useSessionStore, type AuthTokenResponse } from "../auth/session-store";
+import { qualityReport } from "../../mocks/data/quality";
 import { server } from "../../mocks/server";
 
 function sessionOf(): AuthTokenResponse {
@@ -195,5 +196,30 @@ describe("QualityPage 数据质量（真端点形状渲染）", () => {
     );
     const button = document.querySelector('[data-dom-id="quality-recheck-btn"]') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+  });
+
+  // EDP-601 空态收口：异常空段（报告 pending 同步归零）→ 三件套 + 运行重校验动作
+  it("异常空段：空态三件套（运行重校验动作），无合并提示", async () => {
+    server.use(
+      http.get("*/api/v1/admin/quality/reports", () =>
+        HttpResponse.json({
+          ...qualityReport,
+          kpi: { ...qualityReport.kpi, pending_exceptions: 0, high_priority: 0 },
+        }),
+      ),
+      http.get("*/api/v1/ebms/exceptions", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+    );
+    renderQuality();
+
+    const empty = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="quality-exceptions-empty"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(empty.textContent).toContain("当前无待处理异常");
+    expect(empty.textContent).toContain("运行重校验");
+    expect(document.querySelector('[data-dom-id="quality-merged"]')).toBeNull();
   });
 });

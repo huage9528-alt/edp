@@ -1,7 +1,7 @@
-import { Check, ChevronDown, ChevronUp, Copy, Loader2, Play, ShieldCheck } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Copy, DatabaseZap, Loader2, Play, ShieldCheck } from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { EdpApiError } from "@edp/api-sdk";
-import { errorSpec, MonoId } from "@edp/shared";
+import { EmptyState, errorSpec, MonoId } from "@edp/shared";
 import { TOOL_DEFS, type EvidenceHint } from "./api";
 import { useTryToolQuery } from "./hooks";
 
@@ -216,6 +216,15 @@ export function TryQueryForm() {
           </button>
         </div>
       </form>
+      {result == null && !tryQuery.isPending && (
+        <div data-dom-id="tools-idle">
+          <EmptyState
+            icon={<DatabaseZap className="w-7 h-7" />}
+            title="选择接口开始试查"
+            description="选择上方只读接口并填入查询参数，执行后在此查看 JSON 响应与证据追溯。"
+          />
+        </div>
+      )}
       {result}
     </section>
   );
