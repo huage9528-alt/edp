@@ -1,4 +1,4 @@
-.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile seed-demo loadtest
+.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile seed-demo loadtest ops-report
 
 backend-lint:
 	cd backend && uv run ruff check . && uv run lint-imports
@@ -60,3 +60,10 @@ loadtest:
 	docker compose -f deploy/docker-compose.dev.yml exec -T api python -m edp_api.modules.demo.cli seed --scale $(SCALE)
 	mkdir -p deploy/loadtest
 	cd backend && PYTHONUTF8=1 EDP_API_BASE=$(EDP_API_BASE) uv run locust -f scripts/loadtest/locustfile.py --headless --html ../deploy/loadtest/locust.html --json > ../deploy/loadtest/locust.json
+
+# W6 运营报告一键导出（EDP-034）：DB（BYPASSRLS 平台全量）+ 压测 JSON +
+# 演练 JSON + E2E 结果标记 → deploy/ops-report/w6-ops-report.json +
+# docs/demo/w6-gonogo.md（九指标 Go/No-Go 表；口径见脚本 docstring）。
+# DB 连接：EDP_DATABASE_URL 覆盖（缺省 dev compose migrator @15432）。
+ops-report:
+	cd backend && uv run python scripts/ops_report.py
