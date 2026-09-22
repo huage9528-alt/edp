@@ -10,7 +10,8 @@ import { defineConfig } from "@playwright/test";
  *   admin / manager1 / analyst1，密码 Admin@123!——demo dataset 本身无账号，
  *   字面量出处 backend/migrations/versions/platform/0005_seed.py）；
  * - chromium 单 project（visual 对比 T11 再加）；retries 0（真栈首跑定位优先）；
- *   workers 2（两脚本串行叙事，避免同租户数据互踩——spec 内 fullyParallel 关闭）。
+ *   workers 2（两 spec 文件各占一 worker 并行；文件内因 fullyParallel 关闭
+ *   保持串行——不互踩依据：两文件租户不相交）。
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -25,6 +26,6 @@ export default defineConfig({
     screenshot: "only-on-failure",
     locale: "zh-CN",
   },
-  reporter: [["list"]],
+  reporter: [["list"], ["html", { open: "never" }]],
   outputDir: "./test-results",
 });
