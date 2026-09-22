@@ -142,15 +142,20 @@ def test_build_metrics_all_pass_and_latency_gate() -> None:
     )
 
 
-async def test_collect_db_metrics_empty_db_smoke(database_url: str) -> None:
-    """空库冒烟：全部 SQL 可执行 + 空集口径（覆盖率/追溯率/闭环/审计 = 100，召回 0/4）。"""
+async def test_collect_db_metrics_smoke(database_url: str) -> None:
+    """冒烟：全部 SQL 可执行 + 各指标结构自洽（不依赖空库——testcontainer 为会话共享，
+    其他用例可能已写入数据；空集 100 约定由纯函数装配测试覆盖）。"""
     db = await collect_db_metrics(database_url)
-    assert db["coverage"]["overall_pct"] == 100.0
-    assert db["traceability"]["total"] == 0 and db["traceability"]["pct"] == 100.0
-    assert db["recall"]["expected_major"] == 4
-    assert db["recall"]["detected_major"] == 0
-    assert db["recall"]["recall_pct"] == 0.0
-    assert db["closure"]["pct"] == 100.0
-    assert db["audit_completeness"]["pct"] == 100.0
-    assert db["guard_denied"]["denied_count"] == 0
+    assert 0.0 <= db["coverage"]["overall_pct"] <= 100.0
+    tr = db["traceability"]
+    assert tr["traced"] <= tr["total"] and 0.0 <= tr["pct"] <= 100.0
+    rc = db["recall"]
+    assert rc["expected_major"] == 4  # 十场景中 P0/P1 期望数（dataset 常量）
+    assert 0 <= rc["detected_major"]
+    assert rc["matched"] + rc["false_positives"] == rc["detected_major"]
+    assert 0.0 <= rc["recall_pct"] <= 100.0 and 0.0 <= rc["false_positive_pct"] <= 100.0
+    cl = db["closure"]
+    assert cl["verified"] <= cl["total"] and 0.0 <= cl["pct"] <= 100.0
+    assert 0.0 <= db["audit_completeness"]["pct"] <= 100.0
+    assert db["guard_denied"]["denied_count"] >= 0
     assert db["guard_denied"]["ai_human_only_success"] == 0
