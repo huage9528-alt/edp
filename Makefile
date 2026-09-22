@@ -1,4 +1,4 @@
-.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile seed-demo
+.PHONY: backend-lint backend-test backend-isolation backend-migrate-check contract-export contract-gate frontend-lint frontend-test verify-all pipeline-full pipeline-incr reconcile seed-demo loadtest
 
 backend-lint:
 	cd backend && uv run ruff check . && uv run lint-imports
@@ -46,3 +46,17 @@ reconcile:
 
 seed-demo:
 	cd backend && uv run python -m edp_api.modules.demo.cli seed $(if $(RESET),--reset,)
+
+# W6 压测（EDP-033）：dev compose 栈 → seed 放大 → locust 三档阶梯（读数归档
+# deploy/loadtest/，明细见 docs/demo/w6-loadtest.md）。宿主 5432/8000 被占时
+# 带 override 起栈并设 EDP_API_BASE=http://localhost:18000（W5 惯例）。
+# 注意：PYTHONUTF8=1 必带——locust 解析 pyproject.toml 在 GBK 控制台下炸码；
+# --json 是 stdout 开关（无路径参数），经重定向落盘。压测前需临时提额租户
+# api_rate_limit（B.14，缺省 STANDARD 100 req/min 会被令牌桶 429 打满）。
+SCALE ?= 116
+EDP_API_BASE ?= http://localhost:8000
+loadtest:
+	docker compose -f deploy/docker-compose.dev.yml up -d --build
+	docker compose -f deploy/docker-compose.dev.yml exec -T api python -m edp_api.modules.demo.cli seed --scale $(SCALE)
+	mkdir -p deploy/loadtest
+	cd backend && PYTHONUTF8=1 EDP_API_BASE=$(EDP_API_BASE) uv run locust -f scripts/loadtest/locustfile.py --headless --html ../deploy/loadtest/locust.html --json > ../deploy/loadtest/locust.json
