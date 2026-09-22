@@ -53,11 +53,8 @@ export interface TenantMembersPageData {
 /** 邀请成员用户目录项（GET /admin/users 真契约 AdminUserItem——W5-11 收口；display_name 可空透传）。 */
 export type PlatformUserOption = Schemas["AdminUserItem"];
 
-export interface PlatformUsersPageData {
-  items: PlatformUserOption[];
-  next_cursor: string | null;
-  total: number;
-}
+/** 平台用户目录分页信封（真契约 Page 信封，口径同 capabilities 侧 Page_*——T9 统一）。 */
+export type PlatformUsersPageData = Schemas["Page_AdminUserItem_"];
 
 export const tenantsApi = {
   list: (
