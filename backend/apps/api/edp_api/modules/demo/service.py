@@ -276,18 +276,36 @@ async def purge_tenant_business_data(sess: AsyncSession, tenant_id: UUID) -> Non
         await sess.execute(text(sql), {"t": tenant_id})
 
 
-async def _reset_tenant_data(sess: AsyncSession, tenant_id: UUID) -> None:
-    """清场 + 重锚（now 截整点）；后续 resolve_anchor 复用该锚。"""
+async def _reset_tenant_data(
+    sess: AsyncSession, tenant_id: UUID, *, anchor: datetime | None = None
+) -> None:
+    """清场 + 重锚（缺省 now 截整点；显式 anchor 供 E2E visual 固定基线，W6 T11）。
+
+    显式 anchor 不截整点（调用方传确定值，如 CI seed --anchor）；后续
+    resolve_anchor 复用该锚。
+    """
     await purge_tenant_business_data(sess, tenant_id)
     await tenantmgmt_service.set_demo_anchor(
-        sess, tenant_id, _truncate_to_hour(datetime.now(UTC))
+        sess,
+        tenant_id,
+        _truncate_to_hour(datetime.now(UTC)) if anchor is None else anchor,
     )
 
 
 async def seed(
-    engine: AsyncEngine, tenant_id: UUID, *, reset: bool = False, scale: int = 1
+    engine: AsyncEngine,
+    tenant_id: UUID,
+    *,
+    reset: bool = False,
+    scale: int = 1,
+    anchor: datetime | None = None,
 ) -> SeedStats:
     """演示数据 seed（幂等重放 / reset 复位重建 / scale 放大）。
+
+    anchor（W6 T11，EDP-603）：显式演示锚（配合 --reset 使用）——E2E 视觉
+    回归要求跨环境/跨次运行的页面时间文本确定：锚固定则全部 occurred_at/
+    updated_at 派生展示（relTime 超过 30 天回退绝对日期）逐字节一致。缺省
+    不传保持既有语义（reset 重锚 now 截整点；非 reset 复用存量锚）。
 
     事务边界：快照段（基线 + 放大）逐条独立事务（单条失败隔离）；水位按
     适配器独立短事务；回流段（batch + 案例）单事务；放大活动段批量 INSERT
@@ -300,13 +318,15 @@ async def seed(
     """
     if scale < 1:
         raise ValueError(f"scale 必须 ≥ 1：{scale}")
+    if anchor is not None and not reset:
+        raise ValueError("anchor 仅在 --reset 时生效（非 reset 复用存量锚）")
     token = current_principal.set(ingest_service.service_principal(tenant_id))
     try:
         factory = async_sessionmaker(engine, expire_on_commit=False)
         if reset:
             async with factory.begin() as sess:
                 await bind_tenant(sess, tenant_id)
-                await _reset_tenant_data(sess, tenant_id)
+                await _reset_tenant_data(sess, tenant_id, anchor=anchor)
 
         async with factory.begin() as sess:
             anchor = await resolve_anchor(sess, tenant_id)

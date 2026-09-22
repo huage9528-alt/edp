@@ -11,6 +11,9 @@ const previewApiTarget = process.env.E2E_API_BASE ?? "http://localhost:18000";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   preview: {
+    // linux 视觉基线生成（Playwright 官方镜像容器内浏览器经 host.docker.internal
+    // 访问宿主 preview）需放行该 Host 头；CI/本地 localhost 访问不受影响。
+    allowedHosts: ["host.docker.internal"],
     proxy: {
       "/api": {
         target: previewApiTarget,

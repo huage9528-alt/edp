@@ -1,10 +1,13 @@
 """演示数据 seed CLI（T7）：python -m edp_api.modules.demo.cli seed [--reset]
-[--scale N]。
+[--scale N] [--anchor ISO]。
 
 dev 环境（compose db 映射宿主 15432，edp_app 应用角色）用法：
     cd backend && uv run python -m edp_api.modules.demo.cli seed
     uv run python -m edp_api.modules.demo.cli seed --reset --tenant-slug default
     uv run python -m edp_api.modules.demo.cli seed --scale 116   # W6 压测量级
+    # E2E 视觉回归固定锚（W6 T11：跨次运行页面时间文本确定）
+    uv run python -m edp_api.modules.demo.cli seed --reset \
+        --anchor 2026-08-01T00:00:00+00:00
 
 连接：环境变量 EDP_DATABASE_URL（get_settings 读的同一变量），缺省 dev
 compose 的 edp_app 连接串——seed 必须以应用角色运行让 RLS 生效，不用
@@ -13,6 +16,9 @@ migrator 超级用户。进程自装审计切面（与 create_app 同一入口�
 --scale N（W6 T5，EDP-033 压测前置）：1 = 十类场景基线（缺省，行为不变）；
 N>1 在基线外追加 N-1 份确定性放大实体（量级换算见 demo.service 模块
 docstring：目标 ≈5k 对象 / 50k 事件 / 10k 证据对应 N=116）。
+
+--anchor ISO（W6 T11，EDP-603）：显式演示锚（仅配合 --reset；否则退出码
+1）——视觉回归基线要求 seed 派生时间跨环境逐字节一致。
 
 输出/退出码：stdout 打印 SeedStats（fetched/registered/duplicated/failed +
 events_accepted/events_duplicated/case_created）；0 = 成功（failed>0 → 1）；
@@ -26,6 +32,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -51,10 +58,17 @@ async def _resolve_tenant_id(engine: AsyncEngine, slug: str) -> UUID | None:
 
 
 async def _cmd_seed(
-    engine: AsyncEngine, tenant_id: UUID, *, reset: bool, scale: int
+    engine: AsyncEngine,
+    tenant_id: UUID,
+    *,
+    reset: bool,
+    scale: int,
+    anchor: datetime | None,
 ) -> int:
     """seed：打印 SeedStats；存在失败记录 → 退出码 1。"""
-    stats = await demo_service.seed(engine, tenant_id, reset=reset, scale=scale)
+    stats = await demo_service.seed(
+        engine, tenant_id, reset=reset, scale=scale, anchor=anchor
+    )
     print(
         f"fetched={stats.fetched} registered={stats.registered} "
         f"duplicated={stats.duplicated} failed={stats.failed} "
@@ -98,12 +112,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="数据放大倍数（1=基线十场景；N>1 追加 N-1 份确定性放大实体，"
         "目标 ≈5k/50k/10k 对应 N=116）",
     )
+    parser.add_argument(
+        "--anchor",
+        type=datetime.fromisoformat,
+        default=None,
+        help="显式演示锚 ISO-8601（仅配合 --reset；W6 T11 视觉回归固定基线，"
+        "如 2026-08-01T00:00:00+00:00）",
+    )
     return parser
 
 
 async def _run(
-    url: str, command: str, tenant_slug: str, *, reset: bool, scale: int
+    url: str,
+    command: str,
+    tenant_slug: str,
+    *,
+    reset: bool,
+    scale: int,
+    anchor: datetime | None,
 ) -> int:
+    if anchor is not None and not reset:
+        print("错误：--anchor 仅在 --reset 时生效（非 reset 复用存量锚）", file=sys.stderr)
+        return EXIT_FAILURE
+    if anchor is not None and anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=UTC)  # naive 输入按 UTC
     install_audit_aspect()
     engine = create_async_engine(url)
     try:
@@ -111,7 +143,9 @@ async def _run(
         if tenant_id is None:
             print(f"错误：租户不存在：{tenant_slug}", file=sys.stderr)
             return EXIT_NOT_FOUND
-        return await _cmd_seed(engine, tenant_id, reset=reset, scale=scale)
+        return await _cmd_seed(
+            engine, tenant_id, reset=reset, scale=scale, anchor=anchor
+        )
     finally:
         await engine.dispose()
 
@@ -132,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.tenant_slug,
                 reset=args.reset,
                 scale=args.scale,
+                anchor=args.anchor,
             )
         )
     except Exception:

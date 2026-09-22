@@ -11,7 +11,8 @@
     "test": "vitest run",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "e2e": "playwright test"
+    "e2e": "playwright test --project=e2e",
+    "e2e:visual": "playwright test --project=visual"
   },
   "dependencies": {
     "@edp/api-sdk": "workspace:*",

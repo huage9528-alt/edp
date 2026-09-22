@@ -103,6 +103,19 @@ jobs:
       - run: pnpm e2e
         working-directory: frontend/apps/web
 
+      # ---- 视觉回归基线（EDP-603）：组件层 storybook + 页面层真栈 ----
+      # 页面基线依赖固定演示锚（全部业务时间文本确定）——重置 seed 后
+      # 重跑（功能 e2e 已消费案例 OPEN 状态，此处重置恰好复位）
+      - name: Re-seed with fixed anchor (visual baselines)
+        working-directory: backend
+        run: uv run python -m edp_api.modules.demo.cli seed --reset --anchor 2026-08-01T00:00:00+00:00
+        env:
+          EDP_DATABASE_URL: ${{ env.APP_DATABASE_URL }}
+      - run: pnpm --filter web build-storybook
+        working-directory: frontend
+      - run: pnpm e2e:visual
+        working-directory: frontend/apps/web
+
       - name: Upload playwright report
         if: failure()
         uses: actions/upload-artifact@v4
@@ -110,6 +123,7 @@ jobs:
           name: playwright-report
           path: |
             frontend/apps/web/playwright-report
+            frontend/apps/web/test-results
             /tmp/uvicorn.log
             /tmp/worker.log
           retention-days: 7
