@@ -711,3 +711,65 @@ async def test_purge_tenant_business_data_clears_usage(
     await demo_service.purge_tenant_business_data(db_session, tenant_id)
     await db_session.commit()
     assert await _usage_totals(db_session, tenant_id) == (0, 0)
+
+
+# ---- 14. event_type_prefix 前缀过滤（W6 T1：与 event_type 互斥）----
+
+
+async def test_event_type_prefix_filters(client: httpx.AsyncClient) -> None:
+    object_ids = await _create_objects(client, 3)
+    batch = {
+        "events": [
+            _event(object_ids[0], 1, event_type="quality.check.passed"),
+            _event(object_ids[1], 2, event_type="quality.check.failed"),
+            _event(object_ids[2], 3, event_type="order.created"),
+        ]
+    }
+    assert (
+        await client.post(EVENTS + "/batch", json=batch, headers=_key_headers(_key()))
+    ).json()["accepted"] == 3
+
+    jwt_headers = {"Authorization": f"Bearer {await _login(client, 'manager1')}"}
+    by_prefix = await client.get(
+        EVENTS, params={"event_type_prefix": "quality."}, headers=jwt_headers
+    )
+    assert by_prefix.status_code == 200, by_prefix.text
+    body = by_prefix.json()
+    assert body["total"] == 2
+    assert {item["event_type"] for item in body["items"]} == {
+        "quality.check.passed",
+        "quality.check.failed",
+    }
+
+    no_match = await client.get(
+        EVENTS, params={"event_type_prefix": "shipping."}, headers=jwt_headers
+    )
+    assert no_match.status_code == 200, no_match.text
+    assert no_match.json()["total"] == 0
+    assert no_match.json()["items"] == []
+
+    # 空串前缀按 None 处理（不过滤）：本测试批次的全部事件可见
+    empty_prefix = await client.get(
+        EVENTS, params={"event_type_prefix": ""}, headers=jwt_headers
+    )
+    assert empty_prefix.status_code == 200, empty_prefix.text
+    assert empty_prefix.json()["total"] == 3
+    assert "order.created" in {
+        item["event_type"] for item in empty_prefix.json()["items"]
+    }
+
+
+# ---- 15. event_type 与 event_type_prefix 同传：422 互斥 ----
+
+
+async def test_event_type_and_prefix_mutually_exclusive_422(
+    client: httpx.AsyncClient,
+) -> None:
+    jwt_headers = {"Authorization": f"Bearer {await _login(client, 'manager1')}"}
+    resp = await client.get(
+        EVENTS,
+        params={"event_type": "evt.test.created", "event_type_prefix": "evt.test"},
+        headers=jwt_headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "互斥" in resp.json()["error"]["message"]

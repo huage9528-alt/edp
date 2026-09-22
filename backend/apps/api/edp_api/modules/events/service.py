@@ -434,22 +434,27 @@ async def query_events(
     *,
     object_id: UUID | None = None,
     event_type: str | None = None,
+    event_type_prefix: str | None = None,
     risk_level: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
 ) -> Page[EventResponse]:
-    """过滤（object_id/event_type/risk_level/since/until，时间闭区间）+ 同过滤
-    计数（``total``，不含 cursor）+ 游标分页（occurred_at DESC, event_id DESC
-    tiebreak）；主查询左连 outbox 派生 ``delivery_status``、左连
-    business_objects 派生 ``object_source_id``；非法 cursor 视为首页。"""
+    """过滤（object_id/event_type 精确、event_type_prefix 前缀 LIKE
+    ``prefix%``（与 event_type 互斥，路由层拦）/risk_level/since/until，
+    时间闭区间）+ 同过滤计数（``total``，不含 cursor）+ 游标分页
+    （occurred_at DESC, event_id DESC tiebreak）；主查询左连 outbox 派生
+    ``delivery_status``、左连 business_objects 派生 ``object_source_id``；
+    非法 cursor 视为首页。"""
     limit = max(1, min(limit, MAX_LIMIT))
     conditions = []
     if object_id is not None:
         conditions.append(Event.object_id == object_id)
     if event_type:
         conditions.append(Event.event_type == event_type)
+    if event_type_prefix:
+        conditions.append(Event.event_type.like(f"{event_type_prefix}%"))
     if risk_level:
         conditions.append(Event.risk_level == risk_level)
     if since is not None:

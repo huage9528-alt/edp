@@ -33,6 +33,7 @@ from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.quality.router import drills_router as quality_drills_router
 from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
+from edp_api.modules.search.router import router as search_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
 from edp_api.modules.tools.router import router as tools_router
@@ -115,6 +116,8 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     # quality drills 路由（EDP-502 / W5 T7）：/admin/drills 演练记录只读归档
     # （drill-records.json；复用 quality:read 口径，无 DB 访问）
     app.include_router(quality_drills_router)
+    # search 路由（W6 T1）：全局搜索三组聚合（对象/事件/证据，RLS 收敛）
+    app.include_router(search_router)
     for router in extra_routers:
         app.include_router(router)
 

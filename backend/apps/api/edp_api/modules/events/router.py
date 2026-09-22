@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from edp_api.core.db import get_db
@@ -86,18 +86,30 @@ async def list_events(
     sess: DbSession,
     object_id: Annotated[UUID | None, Query()] = None,
     event_type: Annotated[str | None, Query()] = None,
+    event_type_prefix: Annotated[
+        str | None,
+        Query(description="事件类型前缀过滤（LIKE prefix%；与 event_type 互斥）"),
+    ] = None,
     risk_level: Annotated[Literal["P0", "P1", "P2", "P3"] | None, Query()] = None,
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = events_service.DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[EventResponse]:
-    """过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页
-    （occurred_at DESC, event_id tiebreak）。"""
+    """过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/
+    since/until 闭区间）+ 游标分页（occurred_at DESC, event_id tiebreak）；
+    event_type 与 event_type_prefix 同传 → 422（互斥），空前缀串按 None。"""
+    prefix = (event_type_prefix or "").strip() or None
+    if event_type and prefix:
+        raise HTTPException(
+            status_code=422,
+            detail="event_type 与 event_type_prefix 互斥，同传请仅保留其一",
+        )
     return await events_service.query_events(
         sess,
         object_id=object_id,
         event_type=event_type,
+        event_type_prefix=prefix,
         risk_level=risk_level,
         since=since,
         until=until,
