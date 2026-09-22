@@ -12,7 +12,6 @@ import {
   tenantRows,
   tenantUsageSummaryOf,
   usageDaily,
-  type PlatformUser,
   type TenantRow,
 } from "../data/tenants";
 
@@ -259,10 +258,15 @@ export const tenantHandlers = [
     return HttpResponse.json(paginate(usageDaily, clampLimit(q.get("limit"), 20, 100), q.get("cursor")));
   }),
 
-  // mock 扩展端点（契约冻结未含平台用户目录；邀请成员下拉数据源，EDP-501 缺口留痕）
-  http.get("*/api/v1/admin/users", (): HttpResponse<PlatformUser[]> =>
-    HttpResponse.json(platformUsers),
-  ),
+  // GET /admin/users：平台用户目录（真契约 Page[AdminUserItem] 信封——W6-08 修正旧裸数组；
+  // username ASC 口径 mock 以 paginate 简化）
+  http.get("*/api/v1/admin/users", ({ request }) => {
+    const scenario = scenarioResponse(request);
+    if (scenario) return scenario;
+    const q = new URL(request.url).searchParams;
+    const sorted = [...platformUsers].sort((a, b) => a.username.localeCompare(b.username));
+    return HttpResponse.json(paginate(sorted, clampLimit(q.get("limit"), 20, 100), q.get("cursor")));
+  }),
 ];
 
 /** 供页面单测引用的行类型（含 mock 扩展 usage 摘要）。 */

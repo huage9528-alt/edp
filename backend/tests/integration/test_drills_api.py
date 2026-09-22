@@ -2,7 +2,8 @@
 drill-records.json（EDP_DRILLS_FILE 可覆盖）→ 三项形状与 executed_at null
 透传 + readings dict 结构 / 文件缺失 → {items: []} / 坏 JSON → {items: []}
 （不 500）/ 仓库骨架文件可解析（switchover W4 实测值在档）/ 鉴权矩阵
-（ANALYST 200、SERVICE readonly Key 403、匿名 401）。
+（W5-21-c 收紧后：ADMIN 200；MANAGER/ANALYST 403——quality:run 无此二
+角色；SERVICE readonly Key 403、匿名 401）。
 
 造数：tmp_path 临时 JSON（monkeypatch setenv EDP_DRILLS_FILE——不依赖
 仓库文件，T14~T16 回填不破坏本测试）；readonly Key 直插（照
@@ -148,8 +149,8 @@ async def test_drills_items_shape_and_null_passthrough(
     client: httpx.AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_sample(monkeypatch, tmp_path, SAMPLE_ITEMS)
-    analyst = await _login(client, "analyst1")
-    resp = await client.get(DRILLS, headers=analyst)
+    admin = await _login(client, "admin")  # W5-21-c 收紧：quality:run（ADMIN）
+    resp = await client.get(DRILLS, headers=admin)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert set(body) == {"items"}
@@ -182,8 +183,8 @@ async def test_drills_missing_file_returns_empty_items(
     client: httpx.AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("EDP_DRILLS_FILE", str(tmp_path / "absent.json"))
-    analyst = await _login(client, "analyst1")
-    resp = await client.get(DRILLS, headers=analyst)
+    admin = await _login(client, "admin")
+    resp = await client.get(DRILLS, headers=admin)
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"items": []}
 
@@ -197,8 +198,8 @@ async def test_drills_bad_json_returns_empty_items(
     target = tmp_path / "broken.json"
     target.write_text("{not-json", encoding="utf-8")
     monkeypatch.setenv("EDP_DRILLS_FILE", str(target))
-    analyst = await _login(client, "analyst1")
-    resp = await client.get(DRILLS, headers=analyst)
+    admin = await _login(client, "admin")
+    resp = await client.get(DRILLS, headers=admin)
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"items": []}
 
@@ -212,8 +213,8 @@ async def test_repo_drill_records_file_parses(
     repo_file = REPO_ROOT / "deploy" / "drills" / "drill-records.json"
     assert repo_file.exists(), "deploy/drills/drill-records.json 骨架应在档"
     monkeypatch.setenv("EDP_DRILLS_FILE", str(repo_file))
-    analyst = await _login(client, "analyst1")
-    resp = await client.get(DRILLS, headers=analyst)
+    admin = await _login(client, "admin")
+    resp = await client.get(DRILLS, headers=admin)
     assert resp.status_code == 200, resp.text
     items = resp.json()["items"]
     assert {item["drill_type"] for item in items} == {
@@ -234,7 +235,8 @@ async def test_repo_drill_records_file_parses(
         assert item["readings"]
 
 
-# ---- 5. 鉴权矩阵：ANALYST 200；SERVICE readonly Key 403；匿名 401 ----
+# ---- 5. 鉴权矩阵（W5-21-c 收紧后）：ADMIN 200；MANAGER/ANALYST 403；
+#         SERVICE readonly Key 403；匿名 401 ----
 
 
 async def test_auth_matrix(
@@ -245,10 +247,19 @@ async def test_auth_matrix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _write_sample(monkeypatch, tmp_path, SAMPLE_ITEMS)
-    analyst = await _login(client, "analyst1")
-    allowed = await client.get(DRILLS, headers=analyst)
+
+    # ADMIN（quality:run）→ 200
+    admin = await _login(client, "admin")
+    allowed = await client.get(DRILLS, headers=admin)
     assert allowed.status_code == 200, allowed.text
     assert len(allowed.json()["items"]) == 3
+
+    # W5-21-c 收紧回归：MANAGER/ANALYST 持 quality:read 不持 quality:run → 403
+    for username in ("manager1", "analyst1"):
+        denied_user = await _login(client, username)
+        denied = await client.get(DRILLS, headers=denied_user)
+        assert denied.status_code == 403, f"{username} 应 403：{denied.text}"
+        assert denied.json()["error"]["code"] == "FORBIDDEN"
 
     # SERVICE readonly Key：quality 无 scope 轨道 → 403 FORBIDDEN
     await db_session.execute(

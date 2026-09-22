@@ -1,7 +1,7 @@
 import { Skeleton } from "antd";
 import { Zap } from "lucide-react";
-import { Link } from "react-router-dom";
-import { VerticalTimeline, type SemanticTone } from "@edp/shared";
+import { Link, useNavigate } from "react-router-dom";
+import { EmptyState, VerticalTimeline, type SemanticTone } from "@edp/shared";
 import { fmtDateTime } from "../../lib/labels";
 import type { EventResponse } from "../../mocks/types";
 import { useRecentEvents } from "./hooks";
@@ -20,6 +20,7 @@ const eventTone = (e: EventResponse): SemanticTone =>
  * 最近 5 条事件 VerticalTimeline，右上「进入事件流」入口；不足 5 条渲染实际条数）。
  */
 export function EventsTimeline() {
+  const navigate = useNavigate();
   const { data, isPending, error } = useRecentEvents();
   const items = data?.items ?? [];
 
@@ -41,8 +42,13 @@ export function EventsTimeline() {
           该面板暂不可用
         </div>
       ) : items.length === 0 ? (
-        <div className="text-xs text-muted-foreground py-6 text-center" data-dom-id="overview-events-empty">
-          暂无数据
+        <div data-dom-id="overview-events-empty">
+          <EmptyState
+            icon={<Zap className="w-7 h-7" />}
+            title="暂无事件回流"
+            description="接入适配器或回放历史事件后，最近事件将在此按时间线展示。"
+            primaryAction={{ label: "进入事件流", onClick: () => navigate("/admin/events") }}
+          />
         </div>
       ) : (
         <div data-dom-id="overview-events-list">

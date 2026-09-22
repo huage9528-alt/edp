@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "e2e": "playwright test --project=e2e",
+    "e2e:visual": "playwright test --project=visual"
   },
   "dependencies": {
     "@edp/api-sdk": "workspace:*",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
+    "@playwright/test": "^1.56.0",
     "@storybook/addon-a11y": "^8.4.0",
     "@storybook/addon-essentials": "^8.4.0",
     "@storybook/react": "^8.4.0",

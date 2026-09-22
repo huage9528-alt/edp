@@ -185,6 +185,15 @@ class TenantMemberItem(BaseModel):
     joined_at: datetime
 
 
+class AdminUserItem(BaseModel):
+    """平台用户目录简投影（GET /api/v1/admin/users；W5-11 收口——邀请成员
+    下拉真数据源）；display_name 可空透传。"""
+
+    user_id: UUID
+    username: str
+    display_name: str | None = None
+
+
 class TenantMemberCreateRequest(BaseModel):
     """POST members 请求（B.14）：user_id 须为目标租户内 ACTIVE 用户；
     member_roles 空数组的语义拒绝（422）由 service 判定。"""

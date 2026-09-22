@@ -234,3 +234,47 @@ Branch: feat/w5ï¼ˆè‡ª master 0e6bf76 åˆ‡å‡ºï¼‰
 æ”¶å£è®°å½•ï¼ˆ2026-09-21ï¼‰ï¼šfeat/w5 18 ä»»åŠ¡ + é€ä»»åŠ¡è¯„å®¡ + æ•´åˆ†æ”¯ç»ˆå®¡å…¨éƒ¨é—­ç¯ï¼›æµ‹è¯•åŸºçº¿ 618/302 â†’ **663/349**ï¼›å¥‘çº¦ 53 è·¯å¾„ 687b6cd7 â†’ **65 è·¯å¾„ 4b576ee5**ï¼›M5 å‡ºå£ä¸‰é¡¹ï¼šPatroni ä¸‰é¡¹æ¼”ç»ƒå½’æ¡£ï¼ˆW4 åˆ‡æ¢ + T15b PITR RTO 22.1s + T15c ç§Ÿæˆ·æ¢å¤ RTO 23.8sï¼‰ã€è´¨é‡è¦†ç›–ç‡ç«¯ç‚¹å¯ç”¨ã€å¤‡ä»½å¯æ¢å¤æ€§è¿ç»­ Nâ‰¥3 ç­‰ä»·è¯æ®ï¼ˆW5-07 åå·®ï¼‰ï¼›æ¼”ç»ƒè¯»æ•°ç»ˆç¨¿ w5-drills.md + drill-records.jsonï¼›ç¼ºå£æ¸…å• W5-01~21 ç»ˆç¨¿è½ m2-demo.mdã€‚ç¯å¢ƒå¤‡å¿˜ï¼šdev db é‡å»ºæ—¶é‡ FinalShellï¼ˆç”¨æˆ· SSH å·¥å…·ï¼‰å ç”¨å®¿ä¸» 5432 æ— æ³•ç»‘å®šï¼Œdev æ ˆ db/api å¾…ç«¯å£é‡Šæ”¾å `up -d db api` æ¢å¤ï¼ˆä¸å½±å“æœ¬åˆ†æ”¯äº¤ä»˜ä¸æµ‹è¯•â€”â€”æµ‹è¯•èµ° testcontainersï¼‰ã€‚
 
 åˆå¹¶è®°å½•ï¼ˆ2026-09-21ï¼‰ï¼š`git merge --no-ff feat/w5` è½ masterï¼ˆmerge commit è§ `git log -1`ï¼›åˆå¹¶æ ‘ä¸åˆ†æ”¯æ ‘å­—èŠ‚ä¸€è‡´ï¼‰ã€‚åˆå¹¶å verify-all å¤è·‘ï¼šbackend-lint / frontend-lintï¼ˆ0 errï¼‰/ frontend-testï¼ˆ231+22+96ï¼‰/ migrate-checkï¼ˆä¸€æ¬¡æ€§å®¹å™¨ 15433 ç»ˆæ€ 0013ï¼‰/ contract-export å­—èŠ‚ä¸å˜ / contract-gate 4b576ee5 å…¨ç»¿ï¼›backend-test å”¯ä¸€å¤±è´¥ä¸º W1 æ—¢æœ‰ç™»å½•æ—¶åºåŠ å›ºç”¨ä¾‹ï¼ˆtest_tenant_context.py::test_login_timing_user_enumeration_hardenedï¼Œå®¿ä¸»æ»¡è½½ 18:40 ä¸‹ argon2 æ—¶åºæŠ–åŠ¨ï¼šmissing 475ms vs wrong_pw 280msï¼‰â€”â€”éš”ç¦»å¤è·‘ 1 passedï¼ˆ11.7sï¼‰ç¡®è®¤è´Ÿè½½ flakeï¼ŒåŒæ ‘ pre-merge å…¨é‡ 663 passed å·²ç»¿ï¼Œéæœ¬åˆ†æ”¯å›å½’ï¼ˆW2 åŒç±» flake æœ‰åŸºçº¿å¤ç°å…ˆä¾‹ï¼‰ã€‚
+
+# SDD Progress Ledger ¡ª EDP W6£¨M6 ÊÔÔËĞĞÓëÑéÊÕ + W5 ÒÅÁôÊÕ±à£©
+
+Plan: docs/superpowers/plans/2026-09-22-edp-w6.md
+Spec: docs/superpowers/specs/2026-09-22-edp-w6-design.md£¨181bde5£©
+Branch: feat/w6£¨×Ô master be84ff4 ÇĞ³ö£©
+
+## Ö÷ÏßÈÎÎñ±í£¨×Ó´úÀíÖğÈÎÎñÊµÏÖ + ÖğÈÎÎñÆÀÉó£©
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T1 | PENDING | | |
+| T2 | PENDING | | |
+| T3 | PENDING | | |
+| T4 | PENDING | | |
+| T5 | PENDING | | |
+| T6 | PENDING | | |
+| T7 | PENDING | | |
+| T8 | PENDING | | |
+| T9 | PENDING | | |
+| T10 | PENDING | | |
+| T11 | PENDING | | |
+| T12 | PENDING | | |
+| T13 | PENDING | | |
+| T14 | PENDING | | |
+| T15 | PENDING | | |
+| T1 | DONE | 37c4b79+98231eb | search Èı±í¾ÛºÏ+events Ç°×º²ÎÊı£»+9 ÓÃÀı£¨23 ÂÌ£©£»ÆÀÉó Needs fixes¡úÒÑ±Õ»·£¨C1£ºÊÖ¶¯ 422 ĞÅ·â INTERNAL¡ú¸Ä 400 VALIDATION_ERROR ¶ÔÆë²Ö¿â¹ßÀı£¬cancel Í¬¹¹ÏÈÀı£©£»Minor ÁôºÛ£ºILIKE Í¨Åä·û²»×ªÒå£¨docstring ÓĞÒâÉùÃ÷£© |
+| T2 | DONE | 1a04f0c | outbox status£¨FILTER µ¥²éÎå¶ÁÊı£©/admin users£¨keyset£©/health Îå×Ö¶Î£»+9 ÓÃÀı¡¢È«Á¿ 680 ÂÌ£»ÆÀÉó Approved£¨¿Ú¾¶ a~d È« Accept£©£»**¸ú½øÏî**£º¢Ù¿ç×â»§ÓÃ»§Ä¿Â¼¶Ïµã£¨require_platform_admin ²»×ö act_tenant ¹éÎ»¡úcontext ÇĞ»»ºóÈÔ»ØÖ÷×â»§ÓÃ»§£»ºòÑ¡ ?tenant_id bind/effective_tenant_id/SECURITY DEFINER£©µÇ¼Ç T9 ¿¨+T14 ÆõÔ¼Çåµ¥£»¢ÚMSW PlatformUser[] ÂãÊı×é¡úÕæÊµ Page{items} ĞÎ×´ÊÊÅä£¨T9 ±Ø¸Ä£©£»¢ÛMinor£ºoutbox max(published_at) ÎŞ FILTER£¨¿¿Ğ´Â·¾¶²»±äÊ½£¬²âÊÔÖ±²å²»¿ÉÏÖĞĞ£© |
+| T3 | DONE | cafc0d1 | TaskMutex ×¨ÓÃÁ¬½Ó try-lock£¨¼ü ops.task:{type}[:ref_name]£¬±ÀÀ£×Ô¶¯½âËø£©+drills ÊÕ½ô quality:run+ingest internal »íÃâ bump_usage_daily+pg_stat ¹©¸ø£¨compose/pg-init/patroni£©£»+5 ÓÃÀıÈ«Á¿ 685 ÂÌ£»ÆÀÉó Approved£¨¾ö²ß a/b/c È« Accept£»W5-21-a ºËÊµ W5 ÒÑÂä½ö²¹¶ÏÑÔ£©£»Minor ÁôºÛ 4 Ìõ£ºBaseException È¡Ïû´°¿Ú/hint ²éÑ¯½µ¼¶/¿ç×â»§¼üÈ¡¼ò£¨spec ¿Ú¾¶£©/hashtext Åö×²ÀíÂÛ |
+| T4 | DONE | 5a70ab6 | ÆõÔ¼ 65¡ú68 Â·¾¶£¨search/outbox-status/admin-users + events prefix ²ÎÊı + ops_metrics 5 ×Ö¶Î + BackupMetric µÈ 8 schema£©£»Ö¸ÎÆ 4b576ee5¡úd1929b21£»SDK 22 ÂÌ£»½á¹¹»¯ diff ÖğÌõºË¶ÔÁãÔ¤ÆÚÍâ±ä»¯£»È±¿Ú W6-01~09£¨ÌõÄ¿ 92~100£©£»Ö÷Ïß¸´ºË contract-gate ÂÌ£»**ÁôºÛ**£ºquality ÈÎÎñ 409 TASK_CONFLICT Î´ÈëÆõÔ¼ÉùÃ÷£¨T3 ×ß error_responses ÍâÂ·¾¶£¬spec ¡ì9 Î´ÁĞ¡ª¡ªÔËĞĞÊ±¿É 409/SDK °´¿ÉÑ¡£¬W6+ »ò Go/No-Go ²Ã¶¨£© |
+| T5 | DONE | 6a9dc63 | seed --scale N£¨Ãªµã³Ö¾Ã»¯±£ UUIDv5 ÃİµÈ£»»î¶¯¶Î raw SQL Åú 1000 ²»Ğ´ outbox/Éó¼Æ¡ª¡ª·À»ıÑ¹ÎÛÈ¾¶ÁÊı£»ºó×º 6 Î»·ÀÎóÉË»ùÏß 5 Î»Î²¶Î£©£»»ùÏß 43/53/53£¬N=116¡ú4988/49503/10033£¨147s£©£»+5 ÓÃÀıÈ«Á¿ 690 ÂÌ£»ÆÀÉó Approved£¨Á½²Ã¶¨ºËÑé£ºoutbox Á÷Á¿ÓÉÑ¹²âĞ´Â·¾¶×ÔÇı¶¯¡¢6 Î»ºó×ºÈ«Á¿»ùÏß¼ü±È¶Ô£©£»Minor ÁôºÛ£ºN>1e6 ±ß½ç/Ë®Î»º¬·Å´óÆ«ÒÆ/usage duplicated Á¿¼¶ |
+| T6 | DONE | f4015f0+5a1ac15+629f47d | locust ÈıµµÊµ²â£¨9 ½Ó¿Ú P95 31ms~1.0s È«´ï±ê£»·åÖµ 46.9rps@50VU£»100VU DB ³Ø±¥ºÍ³¤Î²¡ª¡ªÈıÖØÖ¤¾İ¹éÒò£©+RLS Ë«¹ì£¨Ïà¶Ô +97.1%/¾ø¶Ô +3.3ms£¬¸º²î¶ÔÕÕ²â³ö ¡À0.5ms ÔëÉùµØ°å£©+pg_stat top20 ¹éµµ£¨tenant_usage_daily upsert ×ÜºÄÊ±µÚÒ»£©+±¨¸æ²¹ÏÔÊ½Ë«ÅĞ¶¨£¨T12 ÃÅ½û²É¾ø¶Ô¿Ú¾¶£¬²»´¥·¢²ğ¿âÌõ¿î£©£»27 ¸ñ P95 ¶ÀÁ¢ÖØËãÁãÆ«²î£»ÆÀÉó Approved£»Ñ¹²âÆÚ¼ä B.14 ÁÙÊ±Ìá¶îÏŞÁ÷£¨Éó¼ÆÁôºÛ+»Ö¸´£¬±ê×¼×ö·¨£©£»**T7 Ç°ÖÃ¸´ºËÏî**£ºevents count ¹éÒòÒÉµã£¨ÒÉÎª health ops_metrics ¶ø·Ç events ÁĞ±í£©£»»·¾³£ºËŞÖ÷ 8000 Õ¼ÓÃ×ß override Ó³Éä |
+| T7 | DONE | 2cc843e+27c6635 | count ¹éÒò¿±Îó£¨EXPLAIN ÊµÖ¤£ºevents count 0.096ms Ë÷ÒıÉ¨£¬10ms ×éÊµÎª health _ingest_peak/_p95_latency 3613 ´ÎÎÇºÏ£»¹éµµ explain-t7-count.txt£©+ÎŞ 0014 Ç¨ÒÆ£¨top20 ÎŞ >500ms£»usage upsert 9.65ms ÏµÖğÇëÇó¶Ì»á»°¹Ì¶¨¿ªÏú·ÇË÷ÒıÈ±Ê§£¬uq_usage_daily ×Ô 0001 ÒÑ½¨£©+³Ø 10+20 Ó²±àÂëÁôºÛ W7+ ÈİÁ¿¹æ»®+Redis ¡ì7 ÖÕ½Ú£¨ÈıµãÎ»È«²»ÒıÈë£¬ÖØÆô´¥·¢Ìõ¼şÁĞÃ÷£©+Ô¤¾ÛºÏ±ÕºÏ£¨reports P95 420ms@100VU<2s£¬m2-demo 73 Ìõ×¢¼Ç£©£»Ö÷Ïß³é²é²úÎïÆë |
+| T8 | DONE | 5d30209+b6037cc | ServerErrorPage+RouteErrorBoundary ËÄĞÎ×´¹éÒ»¹Ò¸ù errorElement£»RequireRoles ÊØÎÀ±í£¨/tenants* Æ½Ì¨ ADMIN¡¢drills ADMIN+ ¶ÔÆë T3£©£»SearchPage Èı×é+¿ÕÌ¬£¨MSW fixture ±àÒëÆÚËø Schemas ÀàĞÍ·ÀÆ¯ÒÆ£©£»ÆßÒ³¿ÕÌ¬ÊÕ¿Ú+Health ²Ã¶¨²»Éè£¨¶ÁÊıÃæ°å 0 »ıÑ¹=Ä¿±êÌ¬£©£»+12 ÓÃÀı£»ÆÀÉó Approved£¨Á½²Ã¶¨ Accept£ºÆõÔ¼Æ«²î½µ¼¶³ÊÏÖ¡ª¡ªrevision/risk/verify Î´Èë×îĞ¡Í¶Ó°Êô T1 ÓĞÒâÉè¼Æ£»Health ¿ÕÌ¬ÓïÒå£©£»Minor ĞŞ¸´Èı¼ş£¨b6037cc£ºdocstring ²¹¾ä+W6-10 µÇ¼Ç+³ÉÔ±¶Î isError£©£»ÁôºÛ£ºTopbar ²»»ØÌî URL q£¨µÍÓÅ£© |
+| T9 | DONE | 0189592+de40a5a | useCapabilities ¹²Ïí hook£¨ÈıÌ¬½µ¼¶ FALLBACK£¬fixture µÚËÄÄÜÁ¦×÷ÅĞ±ğÆ÷£©+InviteMemberModal Page ĞÅ·â/404 ÊÖÊä½µ¼¶+Bell event_type_prefix=quality.+switchover rto ¼Ó×¢£»+9 ÓÃÀı 371 ÂÌ£»ÆÀÉó Approved£¨Èı²Ã¶¨ Accept£ºtools Ò³ÎŞ capability UI ¿±ÎóÊôÊµ¡ª¡ªÊµÎª traces/memory+mocks label£»¼ÓÔØ»ØÍË²»ÑÚ¸Ç¹ÊÕÏ¿ÉÖ¤Î±£»362 »ùÏßÏµÇ°´Î±¨ÊıÎó²î·ÇÔàÎÄ¼ş£©£»Minor ĞŞÁ½¼ş£¨de40a5a£º¿ÕÁĞ±í½µ¼¶¶ÏÑÔ+ĞÅ·âÀàĞÍÍ³Ò»£©£»ÁôºÛ£º½µ¼¶ÎŞ UI ĞÅºÅ£¨ºóĞøÇáÁ¿ÌáÊ¾£©/È«Á¿ 4 Àı¼ÈÓĞ flaky£¨³¬Ê±ĞÍ£¬¸ôÀëÂÌ£©/MSW drills fixtures ÂäºóÕæÎÄ¼ş |
+| T10 | DONE | f5614c4+e81f061 | Playwright »ù×ù+closed-loop£¨¾Å¶ÎĞğÊÂ£¬×·ËİÂÊ¶ÏÑÔ=DOM ÊµÊıµü´úÖğÖ¤¾İ verify+²ĞÁô¹éÁãÈıÖØÊÕ½ô£»ĞĞ¶¯ API ½¨+UI ÁùÌ¬ÍÆ½ø¡ª¡ª³éÌë½¨ÈÎÎñÎª stub ²Ã¼ôÁôºÛ£©+tenant-isolation£¨5 API ¶ÏÑÔ+analyst1 ÕıÏò¶ÔÕÕ+UI Èı×é toHaveCount(0)£»B ×â»§½Å±¾ÄÚ¿ªÍ¨ 409 ¸´ÓÃ£©+e2e.yml ÕæÕ» job+README£»61 ´¦ locator 100% data-dom-id£»±¾µØ 3 ÂÖÂÌ£¨8.7s/1.6s£©£»CORS ½â·¨=Í¬Ô´¹¹½¨+preview.proxy£¨ÓëÉú²ú nginx Í¬¹¹£¬ÑéÖ¤ÈıÏîÈ«¹ı£©£»ÆÀÉó Needs fixes¡úÒÑĞŞ£¨html reporter ¸´»î artifact+ÈÕÖ¾ÉÏ´« e81f061£©£»CI ÂÌ´ı push ºóÖ÷ÏßÑéÖ¤£»±Õ»·²Ù×÷ÈË admin£¨13.8 µ¼º½×éÔ¼Êø£© |
+| T11 | DONE | 64c7bf4 | ÊÓ¾õ»Ø¹éË«²ã£º×é¼ş 34 story£¨storybook-static index.json ×Ô¶¯¸úËæ£©+Ò³Ãæ 18 Â·ÓÉ£¨ÕæÕ»ÕûÒ³£©£»È·¶¨ĞÔÈı¼şÌ×£¨seed ¹Ì¶¨Ãª --anchor ĞÂÔö+Ê±ÖÓ setFixedTime+¶¯Ì¬Çø mask£©£»win32/linux ¸÷ 52 »ùÏß£¨linux ÓÃ v1.63.0-noble ¹Ù·½¾µÏñÉú³É=Óë CI ubuntu-24.04 Í¬Ô´£»preview --host+allowedHosts ÅäÌ×£©£»±¾µØÁ½ÂÖÂÌ+ÈİÆ÷Á½ÂÖÂÌ£»CI ½ÓÈë£¨¹Ì¶¨ÃªÖØÖÃ seed¡úbuild-storybook¡úe2e:visual£©£»ÄÚÁªÖ´ĞĞ£¨×Ó´úÀíÏŞ¶î£©£¬web 253 ²âÊÔÂÌ |
+| T12 | DONE | ca8ac9b | ops_report.py£¨¾ÅÖ¸±ê£º¸²¸ÇÂÊ/×·ËİÂÊ/ÕÙ»ØÂÊ/±Õ»·ÂÊ/Ô½È¨/Éó¼ÆÍêÕûÂÊ/P95/¸ôÀë/HA£»BYPASSRLS Æ½Ì¨È«Á¿+locust Ö±·½Í¼ P95+drills/e2e-result JSON ¶ÁÈ¡£©+make ops-report+²úÎï JSON/Go-No-Go md+5 ²âÊÔ£¨¿Õ¿âÃ°ÑÌ+×°Åä+½âÎö£©£»dev Êµ²â¾ÅÏîÈ« PASS£¨closure 0/0 ¿Õ¼¯¿Ú¾¶ÈçÊµÏÔÊ¾¡ª¡ªT15 ÊÕ¿ÚÇ°ÅÜ E2E ±Õ»·²¹ÕæÊı¾İ£©£»ÄÚÁªÖ´ĞĞ |
+| T13 | DONE | (±¾ commit) | trial-patrol.ps1£¨5 Ì½Õë/P0~P3 ·Ö¼¶/TSV ÈÕÖ¾£©+staging ²¿Êğ£¨deploy-staging.ps1 ĞÂ´úÂë¾µÏñ£¬leader=staging-pg1£©+seed --reset+Êµ²â 3/3 ÖÜÆÚÈ« OK£¨healthz 200/18-57ms¡¢deep OK¡¢outbox 0 »ıÑ¹¡¢coverage 200£©¡ú µÈ¼ÛÊÕ¿Ú£»Æ«²î£º¡İ3 ÌìÒÔ N¡İ3 ÖÜÆÚµÈ¼Û£¨2min ¼ÓËÙ´°¿Ú£©/staging ¼æÈÎ/Ë²Ê±Ì½²âÁ£¶È£»w6-trial-run.md ¹éµµ£»ÄÚÁªÖ´ĞĞ |
+| T14 | DONE | (±¾ commit) | frontend/README.md£¨×é¼ş 9+Â·ÓÉ 18¡ÁÊØÎÀ+Ã¶¾Ù×Öµä+13 ´íÎóÂë×ß²é±í+MSW/E2E Î¬»¤+Memory ÖĞÊà½Ó¹ÜĞ¡½Ú£©+ops-runbook£¨ÍØÆË/ÈÕ³£/¼à¿ØÅĞ¾İ/¹ÊÕÏ´¦ÖÃ±í£©+drill-handbook£¨ÈıÑİÁ·¼ì²éµ¥£©+faq£¨12 ÎÊ£©+prod-deploy-design£¨HAProxy Ë«ÊµÀı+keepalived/VIP+ÊÔÔËĞĞ´°¿Ú+²îÒìÇåµ¥£¬½öÎÄµµ£©£»ÄÚÁªÖ´ĞĞ |
+| T15 | IN_PROGRESS | (¼ûÏÂ) | verify-all Ê×ÅÜ£ººó¶Ë 694 ¹ı 1 °Ü£¨ops-report Ã°ÑÌ¿Õ¿â¼ÙÉè¡ª¡ªÒÑĞŞ£º½á¹¹×ÔÇ¢¶ÏÑÔ+¸ôÀë¸´ÅÜ 5 ÂÌ£¬´ıÈ«Á¿¸´ÅÜ£©£»**Ê£Óà**£º¢Ùmake verify-all È«Á¿¸´ÅÜÂÌ£»¢ÚE2E closed-loop ÊµÅÜºóÖØÅÜ make ops-report£¨²¹ closure/audit ÕæÊı¾İ£¬Ìæ»» 0/0 ¿Õ¼¯£©£»¢ÛÈ±¿ÚÖÕ¸å¸´ºË£¨W6-01~10 ÒÑÈë m2-demo.md£©£»¢Ügit merge --no-ff feat/w6 ¡ú master ºó¸´ÅÜ verify-all+Ö¸ÎÆ²»±ä£»¢İÌ¨ÕËÖÕÉóĞĞ |
+| T15 | DONE | 0024c9a+ee0a6c3+£¨±¾ commit£© | verify-all µÈ¼ÛÈ«ÂÌ£ºbackend-lint ÂÌ£»backend-test **695 passed**£¨Ê×ÅÜ 1 °Ü=ops-report Ã°ÑÌ¿Õ¿â¼ÙÉè¡ú½á¹¹×ÔÇ¢¶ÏÑÔĞŞ¸´£©£»frontend 371£¨253+96+22£¬T11 ºóÎŞÇ°¶Ë´úÂë±ä¸ü£©£»migrate-check Ò»´ÎĞÔÈİÆ÷Èı¶Î£¨upgrade¡údowngrade base¡úupgrade£©È«¹ı£¨dev ¿â×²¼ÈÓĞ 0005 FK ĞĞÎªÊôÔ¤ÆÚ£¬Makefile ×¢ÊÍ¿Ú¾¶£©£»contract-export ×Ö½Ú²»±ä + gate Ö¸ÎÆ **d1929b21**£»E2E Á½½Å±¾¸´ÅÜÂÌ£¨±Õ»·+¸ôÀë£¬7.8s£©£»ops-report ÖÕ°æ closure/audit ÕæÊı¾İ 1/1£»ÊÔÔËĞĞ 3/3 µÈ¼ÛÊÕ¿Ú |
+
+**W6 ÊÕ¿Ú¼ÇÂ¼£¨2026-09-22£©**£ºfeat/w6 15 ÈÎÎñÈ«²¿±Õ»·£¨T1~T14 ×Ó´úÀí/ÄÚÁªÊµÏÖ + ÖğÈÎÎñÆÀÉó£¬T15 ÊÕ¿Ú£©£»²âÊÔ»ùÏß 663/349 ¡ú **695/371**£»ÆõÔ¼ 68 Â·¾¶Ö¸ÎÆ 4b576ee5 ¡ú **d1929b21**£»È±¿Ú W6-01~10£¨m2-demo.md ÌõÄ¿ 92~101£©£»M6 ³ö¿Ú£ºÑ¹²â P95 È« <2s + RLS Ë«¿Ú¾¶±¨¸æ¡¢ÔËÓª±¨¸æ¾ÅÖ¸±êÈ« PASS¡¢ÊÔÔËĞĞ 3/3 ÖÜÆÚµÈ¼Û¡¢ÎÄµµÎå¼ş¹éµµ£»ÒÅÁô£ºCI e2e.yml push ºóÑéÖ¤¡¢prod ÊÔÔËĞĞ´°¿Ú£¨¶şÆÚ£©¡£

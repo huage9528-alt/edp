@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ThemeProvider } from "../../app/providers/ThemeProvider";
 import { routes } from "../../app/router";
 import { useSessionStore, type AuthTokenResponse } from "../auth/session-store";
-import { TENANT_ACME_ID, USER_MANAGER1 } from "../../mocks/data/tenants";
+import { TENANT_ACME_ID, USER_ANALYST1, USER_MANAGER1 } from "../../mocks/data/tenants";
 import { platformUsers } from "../../mocks/data/tenants";
 import { server } from "../../mocks/server";
 
@@ -144,7 +144,7 @@ describe("TenantDetailPage 租户详情（MSW 模式渲染路由）", () => {
 
     fireEvent.click(document.querySelector('[data-dom-id="member-invite"]')!);
     await waitFor(() => expect(document.querySelector('[data-dom-id="invite-form"]')).not.toBeNull());
-    // 用户目录下拉来自 mock 扩展端点（fixtures 7 人）
+    // 用户目录下拉来自 GET /admin/users（Page 信封，fixtures 7 人）
     const userSelect = document.querySelector('[data-dom-id="invite-user"]')! as HTMLSelectElement;
     await waitFor(() => expect(userSelect.options.length).toBe(platformUsers.length + 1));
 
@@ -156,6 +156,89 @@ describe("TenantDetailPage 租户详情（MSW 模式渲染路由）", () => {
     expect(document.querySelector('[data-dom-id="invite-error"]')!.textContent).toContain(
       "该用户已是租户成员",
     );
+  });
+
+  // T9（W5-11 收口）：Page 信封渲染（display_name 空回退 username）+ 成功邀请 POST user_id 断言
+  it("邀请成员：Page 信封渲染（display_name 空 → username）+ 提交 POST members 带 user_id", async () => {
+    let postBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post("*/api/v1/tenants/:tenantId/members", async ({ request }) => {
+        postBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          {
+            member_id: "00000000-0000-4000-8000-000000000598",
+            user_id: USER_ANALYST1,
+            display_name: "李审计",
+            member_roles: (postBody?.member_roles as string[]) ?? [],
+            status: "INVITED",
+            joined_at: new Date().toISOString(),
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    renderDetail(TENANT_ACME_ID);
+    await waitFor(() => expect(memberRows().length).toBe(4));
+
+    fireEvent.click(document.querySelector('[data-dom-id="member-invite"]')!);
+    await waitFor(() => expect(document.querySelector('[data-dom-id="invite-form"]')).not.toBeNull());
+    const userSelect = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="invite-user"]') as HTMLSelectElement;
+      expect(el.options.length).toBe(platformUsers.length + 1);
+      return el;
+    });
+    // display_name 空透传（newhire）→ option label 回退 username
+    const newhireOption = Array.from(userSelect.options).find((o) => o.value.includes("0537"));
+    expect(newhireOption?.textContent).toBe("newhire");
+
+    fireEvent.change(userSelect, { target: { value: USER_ANALYST1 } });
+    fireEvent.click(document.querySelector('[data-dom-id="invite-role-ANALYST"]')!);
+    fireEvent.click(document.querySelector('[data-dom-id="modal-form-submit"]')!);
+
+    await waitFor(() => expect(postBody).toEqual({ user_id: USER_ANALYST1, member_roles: ["ANALYST"] }));
+    expect(await screen.findByText("邀请已发送")).toBeInTheDocument();
+  });
+
+  // T9 降级：真模式目录 404 → 下拉降级为手输 user_id，提交仍带手输值
+  it("邀请成员：目录 404 → 降级手输 user_id 提交", async () => {
+    let postBody: Record<string, unknown> | undefined;
+    server.use(
+      http.get("*/api/v1/admin/users", () =>
+        HttpResponse.json({ code: "NOT_FOUND", message: "资源不存在" }, { status: 404 }),
+      ),
+      http.post("*/api/v1/tenants/:tenantId/members", async ({ request }) => {
+        postBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          {
+            member_id: "00000000-0000-4000-8000-000000000598",
+            user_id: (postBody?.user_id as string) ?? "",
+            display_name: null,
+            member_roles: (postBody?.member_roles as string[]) ?? [],
+            status: "INVITED",
+            joined_at: new Date().toISOString(),
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    renderDetail(TENANT_ACME_ID);
+    await waitFor(() => expect(memberRows().length).toBe(4));
+
+    fireEvent.click(document.querySelector('[data-dom-id="member-invite"]')!);
+    const manual = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="invite-user-manual"]') as HTMLInputElement;
+      expect(el).not.toBeNull();
+      return el;
+    });
+    expect(document.querySelector('[data-dom-id="invite-user"]')).toBeNull();
+
+    fireEvent.change(manual, { target: { value: USER_ANALYST1 } });
+    fireEvent.click(document.querySelector('[data-dom-id="invite-role-MANAGER"]')!);
+    fireEvent.click(document.querySelector('[data-dom-id="modal-form-submit"]')!);
+
+    await waitFor(() => expect(postBody).toEqual({ user_id: USER_ANALYST1, member_roles: ["MANAGER"] }));
+    // 静态 message portal 跨用例残留 → findAllByText 兜底
+    expect((await screen.findAllByText("邀请已发送")).length).toBeGreaterThanOrEqual(1);
   });
 
   it("权限分配：勾选 ADMIN → PATCH member_roles 断言", async () => {
@@ -265,5 +348,42 @@ describe("TenantDetailPage 租户详情（MSW 模式渲染路由）", () => {
     fireEvent.click(document.querySelector('[data-dom-id="tenant-suspend"]')!);
     await waitFor(() => expect(suspendCalled).toBe(true));
     expect(await screen.findByText("暂停已受理")).toBeInTheDocument();
+  });
+
+  // EDP-601 空态收口：成员空段 → 三件套 + 邀请成员动作
+  it("成员空段：空态三件套（邀请成员动作）", async () => {
+    server.use(
+      http.get("*/api/v1/tenants/:tenantId/members", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+    );
+    renderDetail(TENANT_ACME_ID);
+
+    const empty = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="tenant-members-empty"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(empty.textContent).toContain("暂无成员");
+    expect(empty.textContent).toContain("邀请成员");
+    expect(memberRows().length).toBe(0);
+  });
+
+  // T8 评审 Minor-4：成员段请求失败 → 错误提示（非永久「加载中…」）
+  it("成员段请求失败：错误提示而非永久加载中", async () => {
+    server.use(
+      http.get("*/api/v1/tenants/:tenantId/members", () =>
+        HttpResponse.json({ code: "INTERNAL_ERROR" }, { status: 500 }),
+      ),
+    );
+    renderDetail(TENANT_ACME_ID);
+
+    const error = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="tenant-members-error"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(error.textContent).toContain("成员列表暂不可用");
+    expect(memberRows().length).toBe(0);
   });
 });

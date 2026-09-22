@@ -37,6 +37,7 @@ from edp_api.modules.tenantmgmt.models import (
     UserRow,
 )
 from edp_api.modules.tenantmgmt.schemas import (
+    AdminUserItem,
     TenantCreateRequest,
     TenantDetail,
     TenantMemberCreateRequest,
@@ -923,3 +924,69 @@ async def update_quota(
         )
     await sess.flush()
     return TenantQuotaDetail.model_validate(quota)
+
+
+# ---- W6 平台用户目录（W5-11 收口：GET /api/v1/admin/users） ----
+
+
+def _parse_user_anchor(decoded: dict) -> tuple[str, UUID] | None:
+    """cursor 载荷 → (username, user_id)；缺字段/格式非法 → None。"""
+    try:
+        return str(decoded["u"]), UUID(str(decoded["i"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+async def list_users(
+    sess: AsyncSession,
+    principal: Principal,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    cursor: str | None = None,
+) -> Page[AdminUserItem]:
+    """GET /admin/users：username ASC keyset 游标（user_id tiebreak，锚
+    ``{"u","i"}``；非法 cursor 视为首页）简投影——邀请成员下拉真数据源。
+
+    RLS：platform.users FORCE RLS——bind_tenant 到平台管理员主租户
+    （principal.tenant_id）。**W6 最小口径留痕**：目录范围 = 平台管理员
+    主租户内用户（B.14 未定义平台用户目录，跨租户目录与 RLS 语义待后续
+    契约裁定）；display_name 可空透传。
+    """
+    await bind_tenant(sess, principal.tenant_id)
+    limit = max(1, min(limit, MAX_LIMIT))
+    stmt = select(UserRow).where(UserRow.tenant_id == principal.tenant_id)
+    decoded = decode_cursor(cursor)
+    if decoded is not None:
+        anchor = _parse_user_anchor(decoded)
+        if anchor is not None:
+            username, anchor_user_id = anchor
+            stmt = stmt.where(
+                or_(
+                    UserRow.username > username,
+                    and_(
+                        UserRow.username == username,
+                        UserRow.user_id > anchor_user_id,
+                    ),
+                )
+            )
+    stmt = stmt.order_by(UserRow.username.asc(), UserRow.user_id.asc()).limit(
+        limit + 1
+    )
+    rows = (await sess.execute(stmt)).scalars().all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    next_cursor = None
+    if has_more and page_rows:
+        last = page_rows[-1]
+        next_cursor = encode_cursor({"u": last.username, "i": str(last.user_id)})
+    return Page(
+        items=[
+            AdminUserItem(
+                user_id=row.user_id,
+                username=row.username,
+                display_name=row.display_name,
+            )
+            for row in page_rows
+        ],
+        next_cursor=next_cursor,
+    )

@@ -1,0 +1,42 @@
+# EDP 运维手册（W6 归档，EDP-035）
+
+## 1. 拓扑
+
+| 环境 | 拓扑 | 入口 |
+|---|---|---|
+| dev | Docker Compose 单库（db/api/worker/web） | api 8000（宿主占用时 override 18000）、web 9080 |
+| staging | Patroni×2 + etcd + HAProxy + MinIO + pgbackrest + api/worker/web | api 18010（/healthz 探活）、web 9090、patroni restapi 8008/8009 |
+
+部署/回滚：`powershell -File deploy/scripts/deploy-staging.ps1 -Action deploy|rollback`（HA 层→账号→迁移→应用层→健康探测，失败自动回滚）。dev：`docker compose -f deploy/docker-compose.dev.yml up -d --build`。
+
+## 2. 日常操作
+
+- **迁移**：`cd backend && uv run alembic upgrade head`（迁移账号 `edp_migrator`；发布流程=迁移先行→滚动更新 api×2→worker→web）；
+- **备份**：pgbackrest 容器内 cron 每日 02:00 全量 → S3（MinIO）；手动验证 `deploy/scripts/backup-verify.ps1`（check+抽样恢复+行数断言，日志 deploy/logs/backup-verify.log）；
+- **恢复演练**：PITR `deploy/scripts/pitr-drill.ps1`；租户级 `deploy/scripts/tenant-restore-drill.ps1`（读数见 w5-drills.md）；
+- **试运行巡检**：`deploy/scripts/trial-patrol.ps1 -Cycles 3 -IntervalMin 30`（探活/深健康/outbox/覆盖；P0~P3 分级见 w6-trial-run.md）；
+- **演示数据**：`make seed-demo`（`RESET=1` 复位；`--scale N` 压测放大；`--anchor ISO` 视觉基线固定锚）。
+
+## 3. 监控与告警判据
+
+- `/healthz`（无认证）：非 200 = 服务不可用（P0）；
+- `/api/v1/health?deep=true`：status≠OK = P0；outbox_pending 持续增长 = worker 停摆嫌疑（P1）；
+- `/api/v1/admin/outbox/status`：pending/dlq/oldest 龄；`last_published_at` 不推进 = P1；
+- `/api/v1/admin/quality/coverage`：覆盖率周报数据源（≥95% 门槛）。
+
+## 4. 故障处置表
+
+| 症状 | 处置 |
+|---|---|
+| api 探活失败 | 查容器日志 → 回滚上一版镜像（deploy-staging.ps1 -Action rollback） |
+| DB 主库故障 | Patroni 自动选主；HAProxy 自动跟随（W5 实测零改配）；确认 leader：`/cluster` |
+| outbox 积压 | 查 worker 存活与日志；确认 DLQ（FAILED）计数；必要时重启 worker |
+| 429 配额打满 | 平台面 `PATCH /tenants/{id}/quotas` 临时提额（reason 必填，审计留痕；压测先例 100→20000） |
+| 慢查询 | `pg_stat_statements` top（mean_exec_time desc）；>500ms 建索引（tenant_id 前缀） |
+| 任务互斥 409 TASK_CONFLICT | 同 task_type 已有任务执行中（advisory lock）；等待或查 ops.tasks RUNNING 行 |
+
+## 5. 关键约束
+
+- 迁移失败阻断发布；契约变更走 `make contract-export` + api-sdk regen + `make contract-gate`；
+- 限流/缓存为单副本进程内语义（Redis 决策终局见 redis-evaluation.md §7，不引入）；
+- 备份「连续 3 天」以任务化连续 N≥3 次等价（W5-07 偏差口径）。

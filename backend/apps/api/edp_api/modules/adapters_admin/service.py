@@ -11,10 +11,14 @@ ref_name=适配器名、scope=mode）→ 202；后台执行体先按 T4 模式�
 事务尽力落库，回写失败仅告警）。ORM 映射 OpsTask 经 quality.service 引用
 （import-linter 跨模块仅准 service 路径）。
 
-**同一适配器并发触发 = 两行 RUNNING 并发执行、无互斥（单副本执行语义，
-留痕）**：任务行各自登记、终态各自回写互不干扰；执行互斥不保证——
-并发全量同步可重复拉取（registry 幂等去重兜底），分布式锁 Redis 方案
-评估 T17 覆盖（同 quality recheck / evidence reindex 口径）。
+**任务互斥（W6 T3 / Redis B 轻量项）**：同一适配器并发触发 → 入口
+``quality.service.try_acquire_task_lock``（键 ops.task:adapter_sync:
+{adapter}——同一适配器互斥、不同适配器并行）被占方 409 CONFLICT，不登记
+行；拿到锁才建行/派发，锁句柄随后台执行体走（执行体 finally 释放；锁
+语义与连接生命周期见 ``quality.service.TaskMutex`` docstring）。多副本
+安全（advisory lock 服务端串行）；进程崩溃连接断开即解锁。W5-21-a：
+整批级异常置 FAILED 时 stats 置空 ``{}``（「FAILED 即无最终计数」——
+单条失败仍逐条隔离计数于 stats.failed，仅整批级异常无最终计数）。
 
 执行策略/RLS/水位：engine 经 core_db.get_engine() 取 API 进程全局引擎
 （模块属性引用，便于测试 monkeypatch），RLS 依赖 bind_tenant 在
@@ -54,10 +58,15 @@ from edp_api.modules.adapters_admin.schemas import (
 from edp_api.modules.ingest import service as ingest_service
 
 # 跨模块仅准 service（import-linter）——OpsTask 映射经 quality.service 透出；
-# wait_task_visible 为 T5 评审移交、T6 收口的公共单一实现（原本地复制件已删）
+# wait_task_visible 为 T5 评审移交、T6 收口的公共单一实现（原本地复制件已删）；
+# TaskMutex/raise_task_conflict 为 W6 T3 任务互斥公共实现
 from edp_api.modules.quality.service import (
     TASK_VISIBILITY_ATTEMPTS,
     OpsTask,
+    TaskMutex,
+    raise_task_conflict,
+    task_lock_key,
+    try_acquire_task_lock,
     wait_task_visible,
 )
 
@@ -124,35 +133,52 @@ async def trigger_sync(
 ) -> OpsTask:
     """登记 ops.tasks 行并派发后台同步（须在事件循环内调用）→ 202 语义。
 
+    **任务互斥（W6 T3）**：入口先 ``try_acquire_task_lock``（键
+    ops.task:adapter_sync:{adapter_name}——同一适配器互斥）——被占 →
+    409 CONFLICT（不登记行）；拿到锁才建行/派发，锁句柄随后台执行体走
+    （执行体 finally 释放，见 ``quality.service.TaskMutex`` docstring）。
+
     行随请求事务落库（审计 TASK_CREATE 同事务派生）；后台先等行可见再
     执行（见 ``_run``）。since 仅 replay 语义消费（重放窗口下界），其余
     模式透传忽略。
     """
     adapter = get_adapter(adapter_name)  # LookupError → router 转 404
-    task = OpsTask(
-        task_id=uuid4(),
-        tenant_id=tenant_id,
-        task_type=ADAPTER_TASK_TYPE,
-        status="RUNNING",
-        scope=mode,
-        ref_name=adapter_name,
-        started_at=datetime.now(UTC),
-        created_by=actor,
+    mutex = await try_acquire_task_lock(
+        task_lock_key(ADAPTER_TASK_TYPE, ref_name=adapter_name)
     )
-    sess.add(task)
-    await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
-    background = asyncio.create_task(
-        _run(
-            task_id=task.task_id,
-            tenant_id=tenant_id,
-            adapter=adapter,
-            mode=mode,
-            since=since,
-            actor=actor,
+    if mutex is None:
+        await raise_task_conflict(
+            sess, tenant_id, ADAPTER_TASK_TYPE, ref_name=adapter_name
         )
-    )
-    _tasks.add(background)
-    background.add_done_callback(_tasks.discard)
+    try:
+        task = OpsTask(
+            task_id=uuid4(),
+            tenant_id=tenant_id,
+            task_type=ADAPTER_TASK_TYPE,
+            status="RUNNING",
+            scope=mode,
+            ref_name=adapter_name,
+            started_at=datetime.now(UTC),
+            created_by=actor,
+        )
+        sess.add(task)
+        await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
+        background = asyncio.create_task(
+            _run(
+                task_id=task.task_id,
+                tenant_id=tenant_id,
+                adapter=adapter,
+                mode=mode,
+                since=since,
+                actor=actor,
+                mutex=mutex,
+            )
+        )
+        _tasks.add(background)
+        background.add_done_callback(_tasks.discard)
+    except Exception:
+        await mutex.release()  # 登记/派发失败就地释放（后台未接手）
+        raise
     return task
 
 
@@ -164,55 +190,63 @@ async def _run(
     mode: SyncMode,
     since: datetime | None = None,
     actor: str | None = None,
+    mutex: TaskMutex | None = None,
 ) -> None:
     """后台执行体：等行可见 → 逐记录独立事务同步 → 终态回写。
+
+    互斥锁：入口已取得的 ``mutex`` 句柄随执行体走——**finally 释放**
+    （任务终态/提前退出均达；缺省 None 容忍无锁直调）。
 
     行可见性按 T4 模式有界重试（``quality.service.wait_task_visible``
     公共单一实现）：READ COMMITTED 下请求事务未提交的 INSERT 行不可见，
     deadline 后仍不可见 = 请求事务已
     回滚（行不存在 → 提前退出，无处回写终态）。单条记录失败由
     run_sync_per_record 逐条隔离（failed+1），仅整批级异常才置 FAILED
-    （错误信息落 ERROR 日志行——任务行无独立 error 列，status 端点从
-    logs 末条 ERROR 行提取）。
+    （stats 置空 {}——W5-21-a「FAILED 即无最终计数」；错误信息落 ERROR
+    日志行——任务行无独立 error 列，status 端点从 logs 末条 ERROR 行提取）。
     """
     factory = core_db.get_session_local()
     logs = [_log_line("INFO", f"任务启动：mode={mode}")]
-    async with factory() as sess:
-        if not await wait_task_visible(sess, tenant_id, task_id):
-            logger.warning(
-                "同步任务行 %d 次探测均不可见（deadline 后仍不可见，"
-                "请求事务已回滚）：%s",
-                TASK_VISIBILITY_ATTEMPTS,
+    try:
+        async with factory() as sess:
+            if not await wait_task_visible(sess, tenant_id, task_id):
+                logger.warning(
+                    "同步任务行 %d 次探测均不可见（deadline 后仍不可见，"
+                    "请求事务已回滚）：%s",
+                    TASK_VISIBILITY_ATTEMPTS,
+                    task_id,
+                )
+                return
+        try:
+            stats = await ingest_service.run_sync_per_record(
+                core_db.get_engine(), tenant_id, adapter, mode, since
+            )
+        except Exception as exc:
+            logger.error(
+                "适配器同步任务失败：%s(%s, %s)",
+                adapter.name,
                 task_id,
+                mode,
+                exc_info=True,
+            )
+            logs.append(_log_line("ERROR", f"任务失败：{str(exc)[:ERROR_MAX_LEN]}"))
+            await _finish_task(
+                factory, tenant_id, task_id, status="FAILED", stats={}, logs=logs, actor=actor
             )
             return
-    try:
-        stats = await ingest_service.run_sync_per_record(
-            core_db.get_engine(), tenant_id, adapter, mode, since
-        )
-    except Exception as exc:
-        logger.error(
-            "适配器同步任务失败：%s(%s, %s)",
-            adapter.name,
-            task_id,
-            mode,
-            exc_info=True,
-        )
-        logs.append(_log_line("ERROR", f"任务失败：{str(exc)[:ERROR_MAX_LEN]}"))
+        logs.append(_log_line("INFO", "任务完成：SUCCEEDED"))
         await _finish_task(
-            factory, tenant_id, task_id, status="FAILED", stats={}, logs=logs, actor=actor
+            factory,
+            tenant_id,
+            task_id,
+            status="SUCCEEDED",
+            stats=asdict(stats),
+            logs=logs,
+            actor=actor,
         )
-        return
-    logs.append(_log_line("INFO", "任务完成：SUCCEEDED"))
-    await _finish_task(
-        factory,
-        tenant_id,
-        task_id,
-        status="SUCCEEDED",
-        stats=asdict(stats),
-        logs=logs,
-        actor=actor,
-    )
+    finally:
+        if mutex is not None:
+            await mutex.release()  # 互斥窗 = 入口取锁至执行体收尾（终态/提前退出均达）
 
 
 async def _finish_task(

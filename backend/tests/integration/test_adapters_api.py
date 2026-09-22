@@ -649,7 +649,7 @@ async def test_sync_batch_failure_marks_failed_with_error(
     row = (
         await db_session.execute(
             text(
-                "SELECT status, finished_at, logs FROM ops.tasks"
+                "SELECT status, finished_at, logs, stats FROM ops.tasks"
                 " WHERE task_type = 'adapter_sync' AND task_id = :id"
             ),
             {"id": UUID(sync_id)},
@@ -657,5 +657,6 @@ async def test_sync_batch_failure_marks_failed_with_error(
     ).one()
     assert row.status == "FAILED"
     assert row.finished_at is not None
+    assert row.stats == {}  # W5-21-a：FAILED 即无最终计数（DB 行级直证）
     error_lines = [line for line in row.logs if line.get("level") == "ERROR"]
     assert error_lines and "boom" in error_lines[-1]["message"]

@@ -8,7 +8,8 @@ import { eventsApi } from "../features/events/api";
 
 /** 未读水位 localStorage 键（ISO 时间戳——最近一次已读事件的 occurred_at）。 */
 const LAST_READ_KEY = "edp.bell.lastReadTs";
-/** 拉取窗口：最近 N 条事件（客户端过滤 quality. 前缀后取前 20）。 */
+/** 拉取窗口（W5-12 收口后为后端前缀过滤下的兜底窗口：请求携带 event_type_prefix，
+ *  客户端 quality. 前缀过滤仅作降级兜底——旧契约/代理剥参时仍正确截断）。 */
 const FEED_WINDOW = 50;
 const FEED_LIMIT = 20;
 
@@ -46,8 +47,8 @@ function fmtTime(iso: string): string {
 /**
  * 顶栏 Bell 最小消息中心（T13）：最近 20 条 quality.* 事件下拉面板。
  * 拉取策略取简——仅按需（挂载取一次供徽标计数 + 打开时重拉），不轮询。
- * 留痕：GET /events 的 event_type 契约为精确匹配（无前缀过滤）→ 取最近
- * FEED_WINDOW 条客户端过滤 quality. 前缀。
+ * W5-12 收口：查询携带 event_type_prefix=quality. 走后端前缀过滤；客户端
+ * 前缀过滤降为兜底（FEED_WINDOW 兜底窗口，见常量注释）。
  */
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -55,7 +56,7 @@ export function NotificationBell() {
 
   const feedQuery = useQuery({
     queryKey: ["bell", "quality-feed"],
-    queryFn: () => eventsApi.list({ limit: FEED_WINDOW }),
+    queryFn: () => eventsApi.list({ limit: FEED_WINDOW, event_type_prefix: "quality." }),
     select: (page) =>
       page.items.filter((e) => e.event_type.startsWith("quality.")).slice(0, FEED_LIMIT),
   });

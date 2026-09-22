@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ThemeProvider } from "../../app/providers/ThemeProvider";
 import { routes } from "../../app/router";
 import { useSessionStore, type AuthTokenResponse } from "../auth/session-store";
+import { CAP_SUPPLIER_WATCH } from "../../mocks/data/catalog";
+import { FALLBACK_CAPABILITIES } from "../capabilities/hooks";
 import { server } from "../../mocks/server";
 
 function sessionOf(username: string, roles: string[]): AuthTokenResponse {
@@ -71,6 +74,65 @@ describe("TracesPage 轨迹检索（MSW 模式渲染路由）", () => {
     });
 
     await waitFor(() => expect(rows().length).toBe(5));
+  });
+
+  // T9（W5-13 收敛）：下拉选项来自 GET /capabilities 接口（fixtures 四能力，含无轨迹的第四能力）
+  it("capability 下拉选项来自 capabilities 接口（fixtures 四能力）", async () => {
+    renderTraces();
+    await waitFor(() => expect(rows().length).toBe(8));
+
+    const select = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="traces-capability"]') as HTMLSelectElement;
+      expect(el.options.length).toBe(5); // 全部能力 + fixtures 四项
+      return el;
+    });
+    expect(Array.from(select.options).some((o) => o.textContent === "供应商延期监控")).toBe(true);
+    expect(
+      Array.from(select.options).find((o) => o.value === CAP_SUPPLIER_WATCH)?.textContent,
+    ).toBe("供应商延期监控");
+  });
+
+  // T9 降级序列：接口失败 → 回退兜底三能力（label/UUID 与演示数据一致，筛选仍可用）
+  it("capabilities 接口失败 → 下拉降级兜底三能力且筛选可用", async () => {
+    server.use(
+      http.get("*/api/v1/capabilities", () =>
+        HttpResponse.json({ code: "INTERNAL_ERROR" }, { status: 500 }),
+      ),
+    );
+    renderTraces();
+    await waitFor(() => expect(rows().length).toBe(8));
+
+    const select = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="traces-capability"]') as HTMLSelectElement;
+      expect(el.options.length).toBe(4); // 全部能力 + 兜底三项
+      return el;
+    });
+    expect(Array.from(select.options).some((o) => o.textContent === "供应商延期监控")).toBe(false);
+
+    fireEvent.change(select, { target: { value: "00000000-0000-4000-8000-000000000801" } });
+    await waitFor(() => expect(rows().length).toBe(5));
+  });
+
+  // T9 Minor：接口空列表（Page 信封 items=[]，200）→ 同降级序列回退 FALLBACK_CAPABILITIES
+  it("capabilities 接口空列表 → 下拉回退 FALLBACK_CAPABILITIES 四选项", async () => {
+    server.use(
+      http.get("*/api/v1/capabilities", () =>
+        HttpResponse.json({ items: [], next_cursor: null, total: 0 }),
+      ),
+    );
+    renderTraces();
+    await waitFor(() => expect(rows().length).toBe(8));
+
+    const select = await waitFor(() => {
+      const el = document.querySelector('[data-dom-id="traces-capability"]') as HTMLSelectElement;
+      expect(el.options.length).toBe(4); // 全部能力 + FALLBACK_CAPABILITIES 三项
+      return el;
+    });
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      "",
+      ...FALLBACK_CAPABILITIES.map((c) => c.capability_id),
+    ]);
+    expect(Array.from(select.options).some((o) => o.textContent === "供应商延期监控")).toBe(false);
   });
 
   it("status 下拉筛选（契约无 status 参数 → 本地过滤）SUCCEEDED 5 条", async () => {

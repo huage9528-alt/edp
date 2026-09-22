@@ -5,14 +5,8 @@ import { CursorPagination, EmptyState, MonoId, StatusPill } from "@edp/shared";
 import { fmtDateTime } from "../../lib/labels";
 import { TRACES_PAGE_LIMIT, TRACE_STATUS_OPTIONS } from "./api";
 import { TraceDetailDrawer, traceLatencyLabel, traceStatusTone } from "./TraceDetailDrawer";
+import { useCapabilities } from "../capabilities/hooks";
 import { useTracesList } from "./hooks";
-
-/** 能力下拉（与演示 fixtures 三能力 UUID 对齐；真实租户能力清单待 capabilities 联调接入）。 */
-const CAPABILITY_OPTIONS = [
-  { value: "00000000-0000-4000-8000-000000000801", label: "订单风险评估" },
-  { value: "00000000-0000-4000-8000-000000000802", label: "产品就绪度" },
-  { value: "00000000-0000-4000-8000-000000000803", label: "数据质量检查" },
-];
 
 /**
  * Trace 检索页（EDP-503，无设计稿——13.7 表格/抽屉模式）：筛选（capability 下拉 +
@@ -26,6 +20,7 @@ export function TracesPage() {
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { options: capabilityOptions } = useCapabilities();
 
   const pageIndex = cursorStack.length - 1;
   const cursor = cursorStack[pageIndex];
@@ -81,7 +76,7 @@ export function TracesPage() {
             className="h-9 px-3 text-xs bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">全部能力</option>
-            {CAPABILITY_OPTIONS.map((o) => (
+            {capabilityOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label || o.value}
               </option>

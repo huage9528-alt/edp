@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { CursorPagination, EmptyState, MonoId, StatusPill, type StatusPillTone } from "@edp/shared";
 import { fmtDateTime } from "../../lib/labels";
 import { MEMORY_PAGE_LIMIT, type MemoryListItem, type MemoryStatus } from "./api";
+import { useCapabilities } from "../capabilities/hooks";
 import { useMemoriesList } from "./hooks";
 
 /** 评审状态 → pill tone（CANDIDATE info / APPROVED success / REJECTED error）。 */
@@ -21,14 +22,6 @@ const STATUS_CHIPS: { value: "" | MemoryStatus; label: string }[] = [
   { value: "CANDIDATE", label: "候选 CANDIDATE" },
   { value: "APPROVED", label: "已采纳 APPROVED" },
   { value: "REJECTED", label: "已驳回 REJECTED" },
-];
-
-/** 能力筛选 chips（与演示 fixtures 三能力 UUID 对齐；真实清单待 capabilities 联调接入）。 */
-const CAPABILITY_CHIPS = [
-  { value: "", label: "全部能力" },
-  { value: "00000000-0000-4000-8000-000000000801", label: "订单风险评估" },
-  { value: "00000000-0000-4000-8000-000000000802", label: "产品就绪度" },
-  { value: "00000000-0000-4000-8000-000000000803", label: "数据质量检查" },
 ];
 
 /** 内容摘要：content.summary 截断（无 summary 回退 JSON 首行）。 */
@@ -77,6 +70,11 @@ export function MemoryPage() {
   const [status, setStatus] = useState<"" | MemoryStatus>("");
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { options: capabilityOptions } = useCapabilities();
+  const capabilityChips: { value: string; label: string }[] = [
+    { value: "", label: "全部能力" },
+    ...capabilityOptions,
+  ];
 
   const pageIndex = cursorStack.length - 1;
   const cursor = cursorStack[pageIndex];
@@ -114,7 +112,7 @@ export function MemoryPage() {
       <section className="bg-card border border-border rounded-xl p-3 space-y-3" data-dom-id="memory-toolbar">
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="能力筛选">
           <span className="text-[11px] text-muted-foreground">能力</span>
-          {CAPABILITY_CHIPS.map((chip) => (
+          {capabilityChips.map((chip) => (
             <button
               key={chip.value || "all"}
               type="button"

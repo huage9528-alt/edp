@@ -1,5 +1,5 @@
-import { User } from "lucide-react";
-import type { SemanticTone } from "@edp/shared";
+import { ListOrdered, User } from "lucide-react";
+import { EmptyState, type SemanticTone } from "@edp/shared";
 import { fmtDateTime } from "../../lib/labels";
 import type { CaseStepItem } from "./api";
 
@@ -38,8 +38,12 @@ export interface StepsTimelineProps {
 export function StepsTimeline({ steps }: StepsTimelineProps) {
   if (steps.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground py-6 text-center" data-dom-id="case-steps-empty">
-        暂无步骤数据
+      <div data-dom-id="case-steps-empty">
+        <EmptyState
+          icon={<ListOrdered className="w-7 h-7" />}
+          title="暂无闭环步骤"
+          description="案例推进记录（事件 → 决策 → 行动）将按时间升序在此沉淀。"
+        />
       </div>
     );
   }

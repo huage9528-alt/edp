@@ -29,11 +29,28 @@ SNAPSHOT_RECORDS 全局序（数据集本为依赖序）归并，逐条独立事
 案例创建说明（T10 起）：_ensure_demo_case 经 decisions_service.find_case_by_source/
 create_case（ORM + 审计切面，替代 T7 的 raw SQL 直写——评审 Important）；context
 按 B.5 并入 source_event_id（T5 评审 Minor-4，seed 时由派生 event_id 回填）。
+
+放大段（W6 T5，EDP-033 压测前置）：seed(scale=N)，N>1 时在基线外**追加**
+确定性放大实体——每单元（1..N-1）= 基线快照数据集的自洽副本：source_id 与
+payload 内 *_code 引用统一追加 scale_suffix(unit)（6 位数字，见 dataset 尾段
+约定——T12 运营报告按 ``source_id ~ '-[0-9]{6}$'`` 在 SQL 侧排除放大实体，
+事件/证据经 object_id join business_objects 同式过滤）；occurred_at 按单元
++unit 分钟确定性平移 → 同锚重放恒同 UUIDv5 → 幂等（duplicated 收敛）。
+每放大对象另追加 SCALE_ACTIVITY_PER_OBJECT 条活动事件（event_type=
+``{类型小写}.activity``，risk_level 稀疏 P0/P1 分布）与 checksum 证据
+（verify 场景）。十类场景本体（RESULT_EVENTS/DEMO_CASE/management 段）
+不放大。写入分批：快照段沿用逐条独立事务（最细分批）；活动段批量 INSERT
+每批 ≤ SCALE_BATCH_SIZE 行（防单事务过大）。量级换算：基线 43 对象 /
+53 事件 / 53 证据，每单元追加 43 对象 + 430 事件（43 快照 + 43×9 活动）+
+86 证据（+稀疏风险证据）——目标量级 ≈5k 对象 / 50k 事件 / 10k 证据对应
+**N=116**（≈4988 对象 / 49503 事件 / 10033 证据）。
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid5
@@ -57,11 +74,16 @@ from edp_api.modules.demo.dataset import (
     MGMT_KPI_VALUES,
     MGMT_OBJECTIVES,
     RESULT_EVENTS,
+    SCALE_ACTIVITY_PER_OBJECT,
     ResultEventSpec,
+    scale_suffix,
+    scaled_activity_event_type,
+    scaled_risk_level,
 )
 from edp_api.modules.events import service as events_service
 from edp_api.modules.events.schemas import EventIn
 from edp_api.modules.events.uuidv5 import derive_event_id
+from edp_api.modules.evidence import service as evidence_service
 from edp_api.modules.ingest import service as ingest_service
 from edp_api.modules.projections import service as projections_service
 from edp_api.modules.tenantmgmt import service as tenantmgmt_service
@@ -84,6 +106,12 @@ LATENCY_SPAN_MS = 240
 MGMT_ACTOR_ID = "adapter:erp"
 # kpi_values.source 标记（演示 seed 来源）
 MGMT_VALUE_SOURCE = "seed-mgmt"
+# 放大段批量 INSERT 每批行数上限（防单事务过大；快照段沿用逐条独立事务）
+SCALE_BATCH_SIZE = 1000
+# 放大风险活动事件的确定性评分（对齐基线场景 P0/P1 量级）
+_SCALE_RISK_SCORES = {"P0": 0.93, "P1": 0.86}
+# 放大活动事件相对对象快照时刻的回溯步长（30 分钟 × (k+1)，保持发生于过去）
+_SCALE_ACTIVITY_STEP_MINUTES = 30
 
 
 @dataclass(slots=True)
@@ -147,6 +175,54 @@ def merged_snapshot_records(anchor: datetime) -> list[SourceRecord]:
     return [by_system[spec.source_system][spec.source_id] for spec in SNAPSHOT_RECORDS]
 
 
+def _scaled_payload(payload: dict, suffix: str) -> dict:
+    """payload 副本 + ``*_code`` 自然键引用统一追加后缀（含 lines/items 行内）。
+
+    单元内自洽引用图：放大订单引用同单元放大客户/产品/物料——领域投影 FK
+    在单元内解析（依赖序与 SNAPSHOT_RECORDS 全局序一致）。
+    """
+    scaled: dict = {}
+    for key, value in payload.items():
+        if key.endswith("_code") and isinstance(value, str):
+            scaled[key] = f"{value}{suffix}"
+        elif isinstance(value, list):
+            scaled[key] = [
+                _scaled_payload(item, suffix) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            scaled[key] = value
+    return scaled
+
+
+def scaled_source_records(anchor: datetime, scale: int) -> list[SourceRecord]:
+    """--scale N 放大快照记录（单元 1..N-1 × SNAPSHOT_RECORDS 依赖序）。
+
+    每单元 = 基线数据集的自洽副本：source_id / *_code 引用追加
+    scale_suffix(unit)；occurred_at 按单元 +unit 分钟确定性平移（UUIDv5
+    输入确定性 + 产能快照 uq(tenant, line, period, snapshot_at) 逐单元错开）。
+    """
+    if scale <= 1:
+        return []
+    records: list[SourceRecord] = []
+    for unit in range(1, scale):
+        suffix = scale_suffix(unit)
+        shift = timedelta(minutes=unit)
+        for spec in SNAPSHOT_RECORDS:
+            records.append(
+                SourceRecord(
+                    source_system=spec.source_system,
+                    object_type=spec.object_type,
+                    source_id=f"{spec.source_id}{suffix}",
+                    occurred_at=anchor
+                    + timedelta(minutes=spec.offset_minutes)
+                    + shift,
+                    payload=_scaled_payload(spec.payload, suffix),
+                )
+            )
+    return records
+
+
 # 逆依赖序清场（子表 → 父表）：management（W4 独立段——kpi_values →
 # kpi_definitions 先于 objectives 无 FK 关联，且 management 无 FK 到领域表，
 # 放最前自成一段）→ decision/action → evidence → event → sales →
@@ -200,41 +276,71 @@ async def purge_tenant_business_data(sess: AsyncSession, tenant_id: UUID) -> Non
         await sess.execute(text(sql), {"t": tenant_id})
 
 
-async def _reset_tenant_data(sess: AsyncSession, tenant_id: UUID) -> None:
-    """清场 + 重锚（now 截整点）；后续 resolve_anchor 复用该锚。"""
+async def _reset_tenant_data(
+    sess: AsyncSession, tenant_id: UUID, *, anchor: datetime | None = None
+) -> None:
+    """清场 + 重锚（缺省 now 截整点；显式 anchor 供 E2E visual 固定基线，W6 T11）。
+
+    显式 anchor 不截整点（调用方传确定值，如 CI seed --anchor）；后续
+    resolve_anchor 复用该锚。
+    """
     await purge_tenant_business_data(sess, tenant_id)
     await tenantmgmt_service.set_demo_anchor(
-        sess, tenant_id, _truncate_to_hour(datetime.now(UTC))
+        sess,
+        tenant_id,
+        _truncate_to_hour(datetime.now(UTC)) if anchor is None else anchor,
     )
 
 
 async def seed(
-    engine: AsyncEngine, tenant_id: UUID, *, reset: bool = False
+    engine: AsyncEngine,
+    tenant_id: UUID,
+    *,
+    reset: bool = False,
+    scale: int = 1,
+    anchor: datetime | None = None,
 ) -> SeedStats:
-    """演示数据 seed（幂等重放 / reset 复位重建）。
+    """演示数据 seed（幂等重放 / reset 复位重建 / scale 放大）。
 
-    事务边界：快照段逐条独立事务（单条失败隔离）；水位按适配器独立短事务；
-    回流段（batch + 案例）单事务；接入耗时回填独立短事务。
+    anchor（W6 T11，EDP-603）：显式演示锚（配合 --reset 使用）——E2E 视觉
+    回归要求跨环境/跨次运行的页面时间文本确定：锚固定则全部 occurred_at/
+    updated_at 派生展示（relTime 超过 30 天回退绝对日期）逐字节一致。缺省
+    不传保持既有语义（reset 重锚 now 截整点；非 reset 复用存量锚）。
+
+    事务边界：快照段（基线 + 放大）逐条独立事务（单条失败隔离）；水位按
+    适配器独立短事务；回流段（batch + 案例）单事务；放大活动段批量 INSERT
+    每批 ≤ SCALE_BATCH_SIZE 行独立事务；接入耗时回填独立短事务。
+
+    scale（W6 T5）：1 = 十类场景基线（行为不变）；N>1 在基线外追加 N-1 份
+    确定性放大实体（模块 docstring「放大段」），十类场景本体不放大。幂等：
+    同 scale 重放计数不变（UUIDv5 + 确定性 evidence_id 收敛为 duplicated）；
+    --reset 清场后按请求 scale 重建（降 scale 即回到较小规模）。
     """
+    if scale < 1:
+        raise ValueError(f"scale 必须 ≥ 1：{scale}")
+    if anchor is not None and not reset:
+        raise ValueError("anchor 仅在 --reset 时生效（非 reset 复用存量锚）")
     token = current_principal.set(ingest_service.service_principal(tenant_id))
     try:
         factory = async_sessionmaker(engine, expire_on_commit=False)
         if reset:
             async with factory.begin() as sess:
                 await bind_tenant(sess, tenant_id)
-                await _reset_tenant_data(sess, tenant_id)
+                await _reset_tenant_data(sess, tenant_id, anchor=anchor)
 
         async with factory.begin() as sess:
             anchor = await resolve_anchor(sess, tenant_id)
 
         stats = SeedStats()
         records = merged_snapshot_records(anchor)
-        stats.fetched = len(records)
-        await _run_snapshot(factory, tenant_id, records, stats)
-        await _advance_watermarks(factory, tenant_id, records)
+        scaled = scaled_source_records(anchor, scale)
+        stats.fetched = len(records) + len(scaled)
+        await _run_snapshot(factory, tenant_id, records + scaled, stats)
+        await _advance_watermarks(factory, tenant_id, records + scaled)
         await _run_result_events(factory, tenant_id, anchor, stats)
+        await _run_scale_activity(factory, tenant_id, anchor, scale, stats)
         await _run_management_seed(factory, tenant_id, anchor, stats)
-        await _apply_demo_latency(factory, tenant_id, anchor)
+        await _apply_demo_latency(factory, tenant_id, records + scaled)
         return stats
     finally:
         current_principal.reset(token)
@@ -342,6 +448,299 @@ async def _build_result_events(
             continue
         events.append(_to_event_in(spec, object_id, anchor))
     return events
+
+
+# ---- 放大活动段（W6 T5，EDP-033 压测前置）----
+
+_SCALE_OBJECTS_SQL = text("""
+    SELECT source_system, source_id, object_id
+    FROM master.business_objects
+    WHERE tenant_id = :t
+""")
+
+_SCALE_EVENT_COLUMNS = (
+    "event_id",
+    "tenant_id",
+    "event_type",
+    "object_id",
+    "source_system",
+    "occurred_at",
+    "actor_type",
+    "actor_id",
+    "result_type",
+    "risk_level",
+    "score",
+    "data",
+    "ingest_latency_ms",
+    "created_by",
+    "updated_by",
+)
+
+_SCALE_EVIDENCE_COLUMNS = (
+    "evidence_id",
+    "tenant_id",
+    "source_system",
+    "source_record_id",
+    "object_id",
+    "event_id",
+    "checksum",
+    "snapshot",
+    "captured_at",
+    "created_by",
+    "updated_by",
+)
+
+_SCALE_LINK_COLUMNS = (
+    "link_id",
+    "tenant_id",
+    "evidence_id",
+    "ref_type",
+    "ref_id",
+    "created_by",
+    "updated_by",
+)
+
+
+async def _resolve_scaled_object_ids(
+    factory: async_sessionmaker[AsyncSession],
+    tenant_id: UUID,
+    records: list[SourceRecord],
+) -> dict[tuple[str, str], UUID]:
+    """放大记录自然键 → object_id（快照段注册产物；缺行者跳过其活动事件）。"""
+    wanted = {(record.source_system, record.source_id) for record in records}
+    async with factory() as sess:
+        await bind_tenant(sess, tenant_id)
+        rows = (await sess.execute(_SCALE_OBJECTS_SQL, {"t": tenant_id})).all()
+    return {
+        (row.source_system, row.source_id): row.object_id
+        for row in rows
+        if (row.source_system, row.source_id) in wanted
+    }
+
+
+async def _bulk_insert_conflict_skip(
+    sess: AsyncSession,
+    table: str,
+    columns: tuple[str, ...],
+    rows: list[dict],
+    *,
+    jsonb_columns: frozenset[str],
+    returning: str,
+) -> int:
+    """单语句多 VALUES 批量 INSERT ... ON CONFLICT DO NOTHING RETURNING。
+
+    返回实际插入行数（RETURNING 计数——executemany 的 rowcount 在
+    asyncpg 下不可靠）；jsonb 列经 CAST 绑定（与 _INSERT_EVENT_SQL 同法）。
+    """
+    placeholders: list[str] = []
+    params: dict[str, object] = {}
+    for row_index, row in enumerate(rows):
+        row_ph: list[str] = []
+        for col_index, column in enumerate(columns):
+            name = f"p{row_index}_{col_index}"
+            row_ph.append(f"CAST(:{name} AS jsonb)" if column in jsonb_columns else f":{name}")
+            params[name] = row[column]
+        placeholders.append(f"({', '.join(row_ph)})")
+    sql = (
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES {', '.join(placeholders)}"
+        f" ON CONFLICT DO NOTHING RETURNING {returning}"
+    )
+    result = await sess.execute(text(sql), params)
+    return len(result.fetchall())
+
+
+def _scaled_activity_rows(
+    tenant_id: UUID,
+    anchor: datetime,
+    scale: int,
+    object_ids: dict[tuple[str, str], UUID],
+) -> Iterator[tuple[dict, list[dict], list[dict]]]:
+    """放大活动事件行生成器：逐 (unit, record, k) 产出 (事件行, 证据行集, link 行集)。
+
+    - event_id = derive_event_id(tenant, source_system, str(object_id),
+      occurred_at, event_type)——与 events.ingest_batch 同派生式（object_id
+      充当 source_id 槽位；对象行持久存在 → 同锚重放恒同 id）；
+    - risk = scaled_risk_level(全局序号)——稀疏 P0/P1，多数为空；
+    - 证据两路独立（evidence_id 含类型段，互不冲突）：k=0 恒落 checksum
+      证据（verify 场景，snapshot 经 evidence_service.compute_checksum
+      单一实现）；risk 非空恒落结果证据（source_record_id=result:{event_id}
+      + RESULT link，与 ingest 路径同构）——uuid5(NIL, ...) 确定性幂等键。
+    """
+    actor = ingest_service.SERVICE_ACTOR_ID
+    snapshot_count = len(SNAPSHOT_RECORDS)
+    for unit in range(1, scale):
+        suffix = scale_suffix(unit)
+        shift = timedelta(minutes=unit)
+        for record_index, spec in enumerate(SNAPSHOT_RECORDS):
+            source_id = f"{spec.source_id}{suffix}"
+            object_id = object_ids.get((spec.source_system, source_id))
+            if object_id is None:
+                logger.warning("seed 放大对象缺失，跳过活动事件：%s", source_id)
+                continue
+            base_seq = (
+                (unit - 1) * snapshot_count + record_index
+            ) * SCALE_ACTIVITY_PER_OBJECT
+            base_at = anchor + timedelta(minutes=spec.offset_minutes) + shift
+            event_type = scaled_activity_event_type(spec.object_type)
+            for k in range(SCALE_ACTIVITY_PER_OBJECT):
+                seq = base_seq + k
+                risk = scaled_risk_level(seq)
+                occurred_at = base_at - timedelta(
+                    minutes=_SCALE_ACTIVITY_STEP_MINUTES * (k + 1)
+                )
+                event_id = derive_event_id(
+                    tenant_id, spec.source_system, str(object_id), occurred_at, event_type
+                )
+                data = {"unit": unit, "object_type": spec.object_type, "seq": k}
+                event_row = {
+                    "event_id": event_id,
+                    "tenant_id": tenant_id,
+                    "event_type": event_type,
+                    "object_id": object_id,
+                    "source_system": spec.source_system,
+                    "occurred_at": occurred_at,
+                    "actor_type": "SERVICE",
+                    "actor_id": actor,
+                    "result_type": None,
+                    "risk_level": risk,
+                    "score": _SCALE_RISK_SCORES.get(risk),
+                    "data": json.dumps(data, ensure_ascii=False),
+                    "ingest_latency_ms": LATENCY_FLOOR_MS + seq % LATENCY_SPAN_MS,
+                    "created_by": actor,
+                    "updated_by": actor,
+                }
+                evidences: list[dict] = []
+                links: list[dict] = []
+                if k == 0:
+                    snapshot = {"source_id": source_id, "unit": unit}
+                    evidences.append(
+                        {
+                            "evidence_id": uuid5(
+                                _NIL, f"seed-scale:evidence:activity:{event_id}"
+                            ),
+                            "tenant_id": tenant_id,
+                            "source_system": spec.source_system,
+                            "source_record_id": f"{source_id}#activity",
+                            "object_id": object_id,
+                            "event_id": event_id,
+                            "checksum": evidence_service.compute_checksum(snapshot),
+                            "snapshot": json.dumps(snapshot, ensure_ascii=False),
+                            "captured_at": occurred_at,
+                            "created_by": actor,
+                            "updated_by": actor,
+                        }
+                    )
+                if risk is not None:
+                    evidences.append(
+                        {
+                            "evidence_id": uuid5(
+                                _NIL, f"seed-scale:evidence:result:{event_id}"
+                            ),
+                            "tenant_id": tenant_id,
+                            "source_system": spec.source_system,
+                            "source_record_id": f"result:{event_id}",
+                            "object_id": object_id,
+                            "event_id": event_id,
+                            "checksum": evidence_service.compute_checksum(data),
+                            "snapshot": json.dumps(data, ensure_ascii=False),
+                            "captured_at": occurred_at,
+                            "created_by": actor,
+                            "updated_by": actor,
+                        }
+                    )
+                    links.append(
+                        {
+                            "link_id": uuid5(_NIL, f"seed-scale:link:{event_id}"),
+                            "tenant_id": tenant_id,
+                            "evidence_id": evidences[-1]["evidence_id"],
+                            "ref_type": "RESULT",
+                            "ref_id": event_id,
+                            "created_by": actor,
+                            "updated_by": actor,
+                        }
+                    )
+                yield event_row, evidences, links
+
+
+async def _run_scale_activity(
+    factory: async_sessionmaker[AsyncSession],
+    tenant_id: UUID,
+    anchor: datetime,
+    scale: int,
+    stats: SeedStats,
+) -> None:
+    """放大活动段：活动事件 + checksum/结果证据批量落库（幂等重放收敛 duplicated）。
+
+    事件 → 证据 → RESULT link 同批事务提交（FK 依赖前批已落）；批大小
+    ≤ SCALE_BATCH_SIZE。raw SQL 批量路径不走 events.ingest_batch——不写
+    幂等存档/outbox/逐行审计（防 50k 级演示数据撑爆 outbox PENDING 积压
+    与 append-only 审计表；与 management 段 raw SQL 同口径），计量仍按
+    实际写入逐批累加 tenant_usage_daily。
+    """
+    if scale <= 1:
+        return
+    records = scaled_source_records(anchor, scale)
+    object_ids = await _resolve_scaled_object_ids(factory, tenant_id, records)
+    event_chunk: list[dict] = []
+    evidence_chunk: list[dict] = []
+    link_chunk: list[dict] = []
+    accepted = duplicated = 0
+
+    async def _flush() -> None:
+        nonlocal accepted, duplicated
+        if not event_chunk:
+            return
+        async with factory.begin() as sess:
+            await bind_tenant(sess, tenant_id)
+            inserted = await _bulk_insert_conflict_skip(
+                sess,
+                "event.events",
+                _SCALE_EVENT_COLUMNS,
+                event_chunk,
+                jsonb_columns=frozenset({"data"}),
+                returning="event_id",
+            )
+            accepted += inserted
+            duplicated += len(event_chunk) - inserted
+            if evidence_chunk:
+                await _bulk_insert_conflict_skip(
+                    sess,
+                    "evidence.records",
+                    _SCALE_EVIDENCE_COLUMNS,
+                    evidence_chunk,
+                    jsonb_columns=frozenset({"snapshot"}),
+                    returning="evidence_id",
+                )
+            if link_chunk:
+                await _bulk_insert_conflict_skip(
+                    sess,
+                    "evidence.links",
+                    _SCALE_LINK_COLUMNS,
+                    link_chunk,
+                    jsonb_columns=frozenset(),
+                    returning="link_id",
+                )
+            await tenantmgmt_service.bump_usage_daily(
+                sess,
+                tenant_id,
+                events_in=inserted,
+                events_duplicated=len(event_chunk) - inserted,
+            )
+        event_chunk.clear()
+        evidence_chunk.clear()
+        link_chunk.clear()
+
+    for event_row, evidences, links in _scaled_activity_rows(
+        tenant_id, anchor, scale, object_ids
+    ):
+        event_chunk.append(event_row)
+        evidence_chunk.extend(evidences)
+        link_chunk.extend(links)
+        if len(event_chunk) >= SCALE_BATCH_SIZE:
+            await _flush()
+    await _flush()
+    stats.events_accepted += accepted
+    stats.events_duplicated += duplicated
 
 
 # ---- management 段（W4，EDP-012 残余）----
@@ -573,12 +972,12 @@ _LATENCY_SQL = text("""
 """).bindparams(bindparam("ids", expanding=True))
 
 
-def demo_snapshot_event_ids(tenant_id: UUID, anchor: datetime) -> list[UUID]:
-    """演示快照段事件的确定性 event_id 集合。
+def snapshot_event_ids(tenant_id: UUID, records: list[SourceRecord]) -> list[UUID]:
+    """记录集 → 确定性 SNAPSHOT event_id 集合（基线与放大段共用派生式）。
 
     与 process_record 同派生式（derive_event_id + {object_type}_SNAPSHOT，
-    occurred_at 用适配器输出原值）——只按 event_id 精确圈定演示事件，
-    不误伤同类型（``*_SNAPSHOT``）的真实 ErpMock 管道事件。
+    occurred_at 用记录原值）——只按 event_id 精确圈定演示事件，不误伤同
+    类型（``*_SNAPSHOT``）的真实 ErpMock 管道事件。
     """
     return [
         derive_event_id(
@@ -588,20 +987,29 @@ def demo_snapshot_event_ids(tenant_id: UUID, anchor: datetime) -> list[UUID]:
             record.occurred_at,
             ingest_service.SNAPSHOT_EVENT_TYPE(record.object_type),
         )
-        for record in merged_snapshot_records(anchor)
+        for record in records
     ]
 
 
+def demo_snapshot_event_ids(tenant_id: UUID, anchor: datetime) -> list[UUID]:
+    """演示快照段事件的确定性 event_id 集合（基线数据集；放大段经
+    snapshot_event_ids(records) 圈定）。"""
+    return snapshot_event_ids(tenant_id, merged_snapshot_records(anchor))
+
+
 async def _apply_demo_latency(
-    factory: async_sessionmaker[AsyncSession], tenant_id: UUID, anchor: datetime
+    factory: async_sessionmaker[AsyncSession],
+    tenant_id: UUID,
+    records: list[SourceRecord],
 ) -> None:
     """确定性覆盖演示事件的接入耗时（60~299ms，spec §6.2「seed 用确定性值」）。
 
-    覆盖范围 = 演示数据集事件：快照段（按 anchor 复算的 event_id 集合）与
-    seed 回流事件（幂等键前缀 ``seed-demo:results:v1:``）。T9 起管道/批量
-    会写实测耗时（亚毫秒级），若不覆盖则演示 KPI（P95 接入延迟）退化为
-    0——故此处对演示事件确定性覆盖；非演示事件（真实 ErpMock 管道、真实
-    批量入库等）的实测值一律不动。
+    覆盖范围 = 演示数据集事件：快照段（基线 + 放大，按 anchor 复算的
+    event_id 集合）与 seed 回流事件（幂等键前缀 ``seed-demo:results:v1:``）；
+    放大活动事件在批量插入时即写确定性耗时（60 + seq % 240），不在本段。
+    T9 起管道/批量会写实测耗时（亚毫秒级），若不覆盖则演示 KPI（P95 接入
+    延迟）退化为 0——故此处对演示事件确定性覆盖；非演示事件（真实
+    ErpMock 管道、真实批量入库等）的实测值一律不动。
     """
     async with factory.begin() as sess:
         await bind_tenant(sess, tenant_id)
@@ -611,7 +1019,7 @@ async def _apply_demo_latency(
                 "t": tenant_id,
                 "floor": LATENCY_FLOOR_MS,
                 "span": LATENCY_SPAN_MS,
-                "ids": demo_snapshot_event_ids(tenant_id, anchor),
+                "ids": snapshot_event_ids(tenant_id, records),
                 "result_prefix": f"{DEMO_RESULTS_IDEM_KEY}:%",
             },
         )

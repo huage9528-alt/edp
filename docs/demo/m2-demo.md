@@ -288,7 +288,7 @@ erp            ORDER        48      43       48      48        True
 
 71. **W5-01 usage 双轨取 /tenants/current/usage 新路径**：B.14「租户内 ADMIN 查本租户使用量」经新路径 `GET /tenants/current/usage` 落地（W3R-04 收口）——复用平台面 `query_usage`（`GET /tenants/{id}/usage` 平台面契约不变）；`require_tenant_admin` 下 MANAGER 及以下 403。B.14 原文路径语义按此双轨口径消费（平台面照旧、租户面走 current）。
 72. **W5-02 context token 经响应体返回**：`POST /tenants/{id}/context` 切换成功后重签 access token（claims 附加 `act_tenant`，复用既有签发参数与过期语义）**经响应体 `access_token` 字段返回**——B.14 未定义 token 交付通道，此为最小可行口径；前端持有后替换本地凭据、全站缓存清空重拉（设计 13.8，T10 对接），后续业务请求由 tenant_scoped 按 act_tenant 优先解析（SUSPENDED 目标复用状态墙即时拦截）。
-73. **W5-03 quality reports 实时计算无预聚合**：`GET /admin/quality/reports` 四段聚合（对账/覆盖率/孤儿/checksum 抽检）+ kpi/dimensions **恒实时计算**——`date` 参数接受并原样回显（缺省=请求日），**不回溯**（传历史 date 不产生历史快照，仅回显）；预聚合/物化 W6。另 reconciliation 行 `source_count` 可空（None = real/无水位降级：deviation_pct=0.0、ok=true，不计覆盖率分母）——SDK 消费方按可选处理（T3 评审裁定 T9 留痕项）。
+73. **W5-03 quality reports 实时计算无预聚合**：`GET /admin/quality/reports` 四段聚合（对账/覆盖率/孤儿/checksum 抽检）+ kpi/dimensions **恒实时计算**——`date` 参数接受并原样回显（缺省=请求日），**不回溯**（传历史 date 不产生历史快照，仅回显）；预聚合/物化 W6。另 reconciliation 行 `source_count` 可空（None = real/无水位降级：deviation_pct=0.0、ok=true，不计覆盖率分母）——SDK 消费方按可选处理（T3 评审裁定 T9 留痕项）。**W6 闭合（T7/EDP-033）**：压测实测 P95 = 69/77/420 ms（20/50/100 VU，最差 420 ms@100 VU）<2s——条件不触发，预聚合登记不做（读数 `docs/demo/w6-loadtest.md` §1；条件项口径见 W6-04）。
 74. **W5-04 异步任务执行互斥单副本**：quality recheck / evidence reindex / adapter sync 三类后台任务**状态落库**（ops.tasks 行级回写、终态幂等）多副本安全；**执行互斥不保证**——多副本并发同租户触发可并行执行（无分布式锁，两行 RUNNING），单副本部署语义可接受（W3-41/W4-03 同类；Redis 外置 T17 评估）。
 75. **W5-05 GET /admin/outbox/status 未做**：细粒度 outbox 状态端点（oldest_pending/published_last_hour 等）W5 仍未实现（沿 W3R-14 口径：系统健康页 Outbox 卡以 `/health` 的 `outbox_pending`/`dlq` 近似）——W6 EDP-034 评估。
 76. **W5-06 prod 试运行缺口**：M5 可靠性演练（HA switchover/备份任务化/PITR/租户级恢复）以 staging 环境兼任（etcd×1+patroni 双节点、pgbackrest 本地双仓），无独立 prod 试运行——用户批准口径，prod 上线前需补试运行窗口（W6+）。
@@ -309,3 +309,16 @@ erp            ORDER        48      43       48      48        True
 90. **W5-20 租户恢复演练断言口径**：T15c api 层断言降为 DB 层等价（tenant-b 成员 JWT 未配置，脚本头/readings 已注）；后续补 tenant-b 凭据配置后恢复 api 层端到端断言。
 
 91. **W5-21 终审 Minor 三项**：adapter sync FAILED 时 stats 置空（quality/evidence 保留已完成段/批进度，语义可辩护，统一留 W6）；switchover `rto_seconds=0` 为 healthz 零中断口径（DB 写面 3.6s 在 readings，前端展示建议加注）；`GET /admin/drills` 用 quality:read（含租户 MANAGER/ANALYST，内容为基础设施元数据、无凭据，低风险）。
+
+**W6 试运行与验收轮（W6，2026-09-22；初稿——波 1 后端 T1~T3 契约冻结实测（T4），68 路径，指纹前 8 位 `d1929b21`；波 2 续记终稿）**
+
+92. **W6-01 试运行 ≥3 天以连续 N≥3 巡检周期等价**：M6 出口「试运行 ≥3 天」以 `trial-patrol.ps1` 连续 N≥3 个巡检周期无 P0/P1 任务化等价收口（W5-07「备份验证连续 3 天」同款口径：任务化 + 日志归档，非自然日）——读数追加 `deploy/logs/trial-run.log`、缺陷分级登记 `docs/demo/w6-trial-run.md`；日历 3 天后续自然累计（spec §10.1 批准口径）。
+93. **W6-02 RLS 开销以 DB 层双会话计时为口径**：租户隔离 RLS 性能开销以 DB 层同查询双会话（RLS 绑定会话 vs bypass 会话）计时对比为等价证据——API 层无 bypass 通道（鉴权边界不允许绕过路径），spec §10.2 批准口径；压测报告与 Go/No-Go「接口响应 <2s」读数按此口径呈现。
+94. **W6-03 视觉回归 26 稿以双层合计覆盖**：「26 设计稿关键状态」以组件层 11 story（storybook-static 逐 story `toHaveScreenshot`）+ 页面层 18 路由（E2E 真栈逐路由截图基线）合计覆盖，不逐稿建页面 story（工作量与收益不匹配，spec §10.3）；基线快照入库 `e2e/__screenshots__/`，偏差 CI 失败 → `--update-snapshots` 走 PR 评审。
+95. **W6-04 预聚合/限流外置（UPSERT）为压测后条件项**：quality reports 预聚合（W5-03）与限流外置 UPSERT（W3R-01 单副本语义）均为条件工作项——压测结论达标（接口 P95 <2s 等）即登记不做，不达标再启动（spec §10.4 闭合口径）；运营报告（T12）以压测 JSON 为数据源。
+96. **W6-05 prod 形态仅设计文档**：HAProxy 双实例 + keepalived/VIP 生产形态与 prod 试运行窗口仅落 `docs/prod-deploy-design.md` 设计文档（W5-06 延续），实施留二期——本轮交付不含 prod 环境搭建（spec §10.5）。
+97. **W6-06 Redis 不引入**：任务互斥以 PG advisory lock 落地（同 task_type 单执行 + 409 TASK_CONFLICT，多副本安全）；限流令牌桶/审计策略缓存维持进程内单副本语义 + 文档化——Redis 本轮不引入（视压测结论记 W6+ 工作项，spec §10.6）。
+98. **W6-07 跨租户用户目录通道未定（T2 评审裁定）**：`GET /admin/users` 挂 require_platform_admin（平台级、无租户绑定）；RLS 下 bind_tenant 到平台管理员**主租户**——目录范围 = 主租户内用户，act_tenant 会话无租户归位语义。跨租户目录候选方案（`?tenant_id` 显式 bind / effective_tenant_id / SECURITY DEFINER）T9 前端对接与 T14 归档时裁定（B.14 未定义平台用户目录，W6 不扩契约）。
+99. **W6-08 /admin/users 响应为 Page 信封**：响应为 `Page[AdminUserItem]`（`items/next_cursor/total`，username ASC keyset 游标、user_id tiebreak，display_name 可空透传）——MSW 旧 fixture（W5-11 邀请成员下拉 mock）为**裸数组**，T9 前端接线按 Page 信封适配（MSW 数据形状同步修正）。
+100. **W6-09 events 互斥双参 400 VALIDATION_ERROR（非 422）**：`GET /events` 新增 `event_type_prefix`（LIKE prefix% 前缀过滤）与 `event_type` 精确匹配**互斥**，双参同传语义校验返 400 `VALIDATION_ERROR`——B.0 权威映射、仓库惯例（W3-03/W3-19 同款；spec §8 原文 422，按 T1 评审 C1 修正落地）；OpenAPI 沿 events.get 既有 400 声明（W3 起冻结，本轮契约无响应形态变化）。
+101. **W6-10 搜索结果行 revision/risk_level/verify 状态契约未含**：T1 search 最小投影有意设计（`5a70ab6` 冻结）——前端降级呈现（updated_at/类型 pill/来源+source_record_id），空态文案自设计稿 21 证据库语境改编（「未找到相关结果/清除搜索」）；如需原字段须契约变更+api-sdk regen，Go/No-Go 裁定留痕。

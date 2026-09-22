@@ -230,6 +230,56 @@ async def record_outbox_result(
     return "failed" if status == "FAILED" else "retry"
 
 
+# ---- outbox 状态聚合（W5-05 收口：/admin/outbox/status 数据源） ----
+
+
+@dataclass(slots=True)
+class OutboxStatus:
+    """outbox 聚合读数（裸 DB 值——ISO 串化归调用方响应层）。
+
+    oldest_pending_age_seconds / last_published_at 无对应行 → None。
+    """
+
+    pending_count: int
+    oldest_pending_age_seconds: int | None
+    published_last_hour: int
+    dlq_count: int
+    last_published_at: datetime | None
+
+
+_OUTBOX_STATUS_SQL = text(
+    "SELECT"
+    " count(*) FILTER (WHERE status = 'PENDING') AS pending_count,"
+    " min(created_at) FILTER (WHERE status = 'PENDING') AS oldest_pending_at,"
+    " now() AS taken_at,"
+    " count(*) FILTER (WHERE status = 'PUBLISHED'"
+    "   AND published_at >= now() - interval '1 hour') AS published_last_hour,"
+    " count(*) FILTER (WHERE status = 'FAILED') AS dlq_count,"
+    " max(published_at) AS last_published_at"
+    " FROM event.outbox"
+)
+
+
+async def outbox_status(sess: AsyncSession) -> OutboxStatus:
+    """outbox 状态单条聚合 SQL（RLS 会话已 bind_tenant → 天然限本租户）：
+    pending 计数 / 最老 PENDING 积压龄（DB now() - min(created_at)，无
+    PENDING → None）/ 近 1h PUBLISHED 计数 / DLQ=FAILED 计数（DLQ 语义
+    同 _DELIVERY_STATUS：FAILED 即死信）/ 最近发布时刻。"""
+    row = (await sess.execute(_OUTBOX_STATUS_SQL)).one()
+    oldest_age = (
+        int((row.taken_at - row.oldest_pending_at).total_seconds())
+        if row.oldest_pending_at is not None
+        else None
+    )
+    return OutboxStatus(
+        pending_count=int(row.pending_count),
+        oldest_pending_age_seconds=oldest_age,
+        published_last_hour=int(row.published_last_hour),
+        dlq_count=int(row.dlq_count),
+        last_published_at=row.last_published_at,
+    )
+
+
 # ---- 批量入库 ----
 
 
@@ -238,6 +288,8 @@ async def ingest_batch(
     principal: Principal,
     idem_key: str,
     events: list[EventIn],
+    *,
+    internal: bool = False,
 ) -> BatchResponse:
     """批量入库（三层幂等；逐事件校验，不整批失败）。
 
@@ -247,7 +299,13 @@ async def ingest_batch(
       captured_at=occurred_at）+ ``RESULT`` link；duplicated 路径不建；
     - 批次末 upsert ``tenant_usage_daily``（events_in/events_duplicated）；
     - EDP-025 批量限额：事件数 > ``tenant_quotas.batch_max_events`` →
-      400 VALIDATION_ERROR（不落库、不占幂等存档）。
+      400 VALIDATION_ERROR（不落库、不占幂等存档）；
+    - ``internal=True``（W5-09）：内部来源写事件（quality 抽检
+      checksum_failed / recheck 完成事件、evidence reindex 失配与完成
+      事件——平台自身写入）**豁免 usage 计量 upsert**（内部写入不占
+      租户用量口径；事件落库/证据/outbox/审计/幂等存档副作用不变）；
+      外部调用方（/events/batch 路由、demo seed、适配器管道）不传——
+      照常计量。
 
     Returns:
         {accepted, duplicated, rejected, deduplicated, errors?}——rejected 的
@@ -366,10 +424,12 @@ async def ingest_batch(
             actor=actor,
         )
 
-    # 计量（spec §5.1）：与事件行同事务累加（批次回滚则计数一并回滚）
-    await tenantmgmt_service.bump_usage_daily(
-        sess, tenant_id, events_in=accepted, events_duplicated=duplicated
-    )
+    # 计量（spec §5.1）：与事件行同事务累加（批次回滚则计数一并回滚）；
+    # internal=True 豁免（W5-09——内部来源写事件不占租户用量口径）
+    if not internal:
+        await tenantmgmt_service.bump_usage_daily(
+            sess, tenant_id, events_in=accepted, events_duplicated=duplicated
+        )
 
     response = BatchResponse(
         accepted=accepted,
@@ -434,22 +494,27 @@ async def query_events(
     *,
     object_id: UUID | None = None,
     event_type: str | None = None,
+    event_type_prefix: str | None = None,
     risk_level: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
 ) -> Page[EventResponse]:
-    """过滤（object_id/event_type/risk_level/since/until，时间闭区间）+ 同过滤
-    计数（``total``，不含 cursor）+ 游标分页（occurred_at DESC, event_id DESC
-    tiebreak）；主查询左连 outbox 派生 ``delivery_status``、左连
-    business_objects 派生 ``object_source_id``；非法 cursor 视为首页。"""
+    """过滤（object_id/event_type 精确、event_type_prefix 前缀 LIKE
+    ``prefix%``（与 event_type 互斥，路由层拦）/risk_level/since/until，
+    时间闭区间）+ 同过滤计数（``total``，不含 cursor）+ 游标分页
+    （occurred_at DESC, event_id DESC tiebreak）；主查询左连 outbox 派生
+    ``delivery_status``、左连 business_objects 派生 ``object_source_id``；
+    非法 cursor 视为首页。"""
     limit = max(1, min(limit, MAX_LIMIT))
     conditions = []
     if object_id is not None:
         conditions.append(Event.object_id == object_id)
     if event_type:
         conditions.append(Event.event_type == event_type)
+    if event_type_prefix:
+        conditions.append(Event.event_type.like(f"{event_type_prefix}%"))
     if risk_level:
         conditions.append(Event.risk_level == risk_level)
     if since is not None:

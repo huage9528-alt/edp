@@ -47,12 +47,15 @@ export function useTenantMembers(tenantId: string | undefined) {
   });
 }
 
-/** 平台用户目录（邀请成员下拉；mock 扩展端点，真实后端缺省时回退空列表）。 */
+/** 平台用户目录（邀请成员下拉，GET /admin/users 真端点——W5-11 收口；
+ *  已知断点 W6-07：目录范围为平台管理员主租户用户，跨租户通道待契约裁定）。
+ *  降级：真模式 404/失败 → Modal 切手输 user_id。 */
 export function usePlatformUsers() {
   return useQuery({
     queryKey: ["tenants", "platform-users"],
     queryFn: () => tenantsApi.platformUsers(),
     retry: 0,
+    select: (page) => page.items,
   });
 }
 

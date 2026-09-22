@@ -26,6 +26,7 @@ dev = [
     "testcontainers[postgresql]>=4",
     "httpx>=0.27",
     "asgi-lifespan>=2",
+    "locust>=2.32",
 ]
 
 [tool.ruff]

@@ -10,8 +10,8 @@ import { server } from "../../mocks/server";
 
 function sessionOf(): AuthTokenResponse {
   return {
-    access_token: "t-manager1",
-    refresh_token: "r-manager1",
+    access_token: "t-admin1",
+    refresh_token: "r-admin1",
     expires_in: 7200,
     tenant: {
       tenant_id: "00000000-0000-0000-0000-000000000001",
@@ -21,8 +21,8 @@ function sessionOf(): AuthTokenResponse {
     },
     user: {
       user_id: "00000000-0000-0000-0000-000000000002",
-      username: "manager1",
-      roles: ["MANAGER"],
+      username: "admin1",
+      roles: ["ADMIN"],
       is_platform_admin: false,
     },
   };
@@ -67,6 +67,10 @@ describe("DrillsPage 演练回放（MSW 模式渲染路由）", () => {
 
     // SUCCEEDED 卡：RTO/RPO 实测数字 + 绿 pill + readings 键值 + 拓扑 + 手册
     expect(card("drills-card-switchover-rto")!.textContent).toContain("0 秒");
+    // T9（W5-21-b）：switchover rto=0 加注「healthz 零中断口径，DB 写面见 readings」
+    expect(card("drills-card-switchover-rto-note")!.textContent).toContain(
+      "healthz 零中断口径，DB 写面见 readings",
+    );
     expect(card("drills-card-switchover-rpo")!.textContent).toContain("0 ms");
     expect(card("drills-card-switchover-pill")!.querySelector("span")!.className).toContain(
       "bg-state-success",
@@ -134,5 +138,7 @@ describe("DrillsPage 演练回放（MSW 模式渲染路由）", () => {
     await waitFor(() => expect(card("drills-card-switchover-rto")).not.toBeNull());
     expect(card("drills-card-switchover-rto")!.textContent).toContain("1,234 秒");
     expect(card("drills-card-switchover-rpo")!.textContent).toContain("2,000 ms");
+    // rto≠0 → 零中断加注不渲染
+    expect(card("drills-card-switchover-rto-note")).toBeNull();
   });
 });

@@ -50,13 +50,11 @@ export interface TenantMembersPageData {
   total: number;
 }
 
-/** 邀请成员用户目录项（mock 扩展端点 GET /admin/users；契约冻结未含，缺口留痕）。 */
-export interface PlatformUserOption {
-  user_id: string;
-  username: string;
-  display_name: string;
-  email: string;
-}
+/** 邀请成员用户目录项（GET /admin/users 真契约 AdminUserItem——W5-11 收口；display_name 可空透传）。 */
+export type PlatformUserOption = Schemas["AdminUserItem"];
+
+/** 平台用户目录分页信封（真契约 Page 信封，口径同 capabilities 侧 Page_*——T9 统一）。 */
+export type PlatformUsersPageData = Schemas["Page_AdminUserItem_"];
 
 export const tenantsApi = {
   list: (
@@ -115,7 +113,7 @@ export const tenantsApi = {
       body,
     }),
 
-  /** mock 扩展：平台用户目录（真实后端交付前仅 MSW 支持）。 */
-  platformUsers: (): Promise<PlatformUserOption[]> =>
-    apiClient.get<PlatformUserOption[]>(`${BASE}/admin/users`),
+  /** 平台用户目录（真契约 Page 信封——W6-08；username ASC keyset，演示量级单页取全）。 */
+  platformUsers: (): Promise<PlatformUsersPageData> =>
+    apiClient.get<PlatformUsersPageData>(`${BASE}/admin/users?limit=100`),
 };

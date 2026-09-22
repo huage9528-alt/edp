@@ -155,3 +155,14 @@ class DrillRecordsOut(BaseModel):
     （只读归档面不报错，前端空态）。"""
 
     items: list[DrillRecord] = Field(default_factory=list)
+
+
+class OutboxStatusOut(BaseModel):
+    """GET /admin/outbox/status 响应（B.13 Outbox 积压卡；W5-05 收口）：
+    event.outbox 聚合；空表 → pending 0 / age 与 last_published_at null。"""
+
+    pending_count: int
+    oldest_pending_age_seconds: int | None = None
+    published_last_hour: int
+    dlq_count: int
+    last_published_at: str | None = None

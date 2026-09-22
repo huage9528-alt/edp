@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useSessionStore, type AuthTokenResponse } from "../features/auth/session-store";
+import { RouteErrorBoundary } from "../features/placeholder/RouteErrorBoundary";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { routes } from "./router";
 
@@ -105,4 +106,99 @@ describe("路由守卫与壳层渲染", () => {
     });
     expect(useSessionStore.getState().accessToken).toBeNull();
   }, 20_000);
+});
+
+/** EDP-601：错误页可达 + 根 errorElement 收口 + 路由角色守卫（13 错误码走查锚点）。 */
+describe("错误页与路由角色守卫", () => {
+  it("/403、/404 路由可达；未知路径走兜底 404", async () => {
+    useSessionStore.getState().setSession(sessionOf("analyst1", ["ANALYST"]));
+
+    renderAt("/403");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-403"]')).not.toBeNull();
+    });
+
+    renderAt("/404");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-404"]')).not.toBeNull();
+    });
+
+    renderAt("/no-such-route");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-404"]')).not.toBeNull();
+    });
+  });
+
+  it("RouteErrorBoundary：渲染抛 Error → 500 页；未匹配路由 404 状态 → NotFound", async () => {
+    function Boom(): never {
+      throw new Error("kaboom");
+    }
+    const errorRouter = createMemoryRouter(
+      [{ path: "/", element: <Boom />, errorElement: <RouteErrorBoundary /> }],
+      { initialEntries: ["/"] },
+    );
+    render(
+      <ThemeProvider>
+        <RouterProvider router={errorRouter} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-500"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-dom-id="server-error-retry"]')).not.toBeNull();
+    cleanup();
+
+    const notFoundRouter = createMemoryRouter(
+      [{ path: "/", element: <div />, errorElement: <RouteErrorBoundary /> }],
+      { initialEntries: ["/nope"] },
+    );
+    render(
+      <ThemeProvider>
+        <RouterProvider router={notFoundRouter} />
+      </ThemeProvider>,
+    );
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-404"]')).not.toBeNull();
+    });
+  });
+
+  it("守卫：MANAGER/ANALYST 访问 /admin/drills → /403；ADMIN 正常渲染", async () => {
+    useSessionStore.getState().setSession(sessionOf("manager1", ["MANAGER"]));
+    const managerRouter = renderAt("/admin/drills");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-403"]')).not.toBeNull();
+    });
+    expect(managerRouter.state.location.pathname).toBe("/403");
+
+    cleanup();
+    useSessionStore.getState().setSession(sessionOf("analyst1", ["ANALYST"]));
+    renderAt("/admin/drills");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-403"]')).not.toBeNull();
+    });
+
+    cleanup();
+    useSessionStore.getState().setSession(sessionOf("admin1", ["ADMIN"]));
+    renderAt("/admin/drills");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="drills-page"]')).not.toBeNull();
+    });
+  });
+
+  it("守卫：租户面非平台管理员（ADMIN）→ /403；PLATFORM_ADMIN 放行", async () => {
+    useSessionStore.getState().setSession(sessionOf("admin1", ["ADMIN"]));
+    const adminRouter = renderAt("/tenants");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="page-403"]')).not.toBeNull();
+    });
+    expect(adminRouter.state.location.pathname).toBe("/403");
+
+    cleanup();
+    useSessionStore.getState().setSession(sessionOf("root", ["PLATFORM_ADMIN"]));
+    renderAt("/tenants");
+    await waitFor(() => {
+      expect(document.querySelector('[data-dom-id="tenants-page"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-dom-id="page-403"]')).toBeNull();
+  });
 });

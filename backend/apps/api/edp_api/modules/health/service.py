@@ -1,9 +1,26 @@
-"""health 服务：基础健康 + 运行指标（B.13 子集 / spec §6.3）。
+"""health 服务：基础健康 + 运行指标（B.13 子集 / spec §6.3 + W6 扩展 5 字段）。
 
 ``GET /api/v1/health`` 的 KPI 真数据源（事件流页 KPI 带）：探活 +
 ``ops_metrics``（近 24h 窗口，字段名与 MSW ``HealthResponse.ops_metrics``
 逐字一致）；``deep=true`` 追加 ``db_ha``（pg_is_in_recovery /
 pg_stat_replication）。
+
+W6 扩展 5 可选字段（总览页 KPI 真数据源；全 ``| None``，exclude_none 下
+无数据不出现；派生口径）：
+- ``backup``：drills JSON（quality.service.list_drills）最近一项已执行的
+  备份相关演练（drill_type ∈ {pitr, tenant_restore}——从备份集恢复/回放
+  即备份可验证性的实测读数；switchover 为 HA 演练不计）→
+  {last_backup_at=executed_at, status=result, source="drills"}；无记录 null；
+- ``audit_events_7d``：platform.audit_logs 近 7d 计数（控制面表无 RLS——
+  显式 tenant_id 过滤）；
+- ``policy_hits_today``：审计策略命中当日计数——audit_policies 命中**不打
+  独立动作行**（实测口径：审计切面在命中行 detail 打 ``policy_hits`` 键，
+  audit/aspect.py），故 = 当日（UTC 日起）本租户含该键的审计行数；
+- ``adapters_success_rate``：ops.tasks 最近 20 条 task_type=adapter_sync 的
+  SUCCEEDED 占比（0.0~1.0；无记录 null）；
+- ``evidence_valid_rate``：最近一次 quality_recheck（scope 含 CHECKSUM 或
+  ALL）stats.checksum 派生 ``1 - failed/sampled``（无任务/无 checksum 段/
+  sampled=0 → null）。
 
 口径与已知偏差（T9 评审遗留，记入 T14 契约偏差清单，本轮不修）：
 - ``idempotency_hit_rate`` 取 ``tenant_usage_daily`` 近两日行
@@ -16,9 +33,11 @@ pg_stat_replication）。
   审计写入耗时。
 
 跨模块表（event.events/outbox、evidence.records、platform.systems/
-tenant_usage_daily）以 core ``table()`` 构造参与纯 SQL 读——模块间仅可
-import 对方 service，ORM 不可直接引用（口径同 ebms/ingest）；RLS 会话已
-bind_tenant，跨租户行不可见。
+tenant_usage_daily/audit_logs、ops.tasks）以 core ``table()`` 构造参与纯
+SQL 读——模块间仅可 import 对方 service，ORM 不可直接引用（口径同
+ebms/ingest）；RLS 会话已 bind_tenant，跨租户行不可见（audit_logs 无 RLS
+故显式 tenant 条件）。drills 读取经 quality.service.list_drills（文件读，
+无 DB 访问）。
 """
 
 from __future__ import annotations
@@ -40,9 +59,11 @@ from sqlalchemy import (
     table,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from edp_api.modules.health.schemas import DbHa, HealthResponse, OpsMetrics
+from edp_api.modules.health.schemas import BackupMetric, DbHa, HealthResponse, OpsMetrics
+from edp_api.modules.quality import service as quality_service
 
 HEALTH_VERSION = "2.0.0"
 WINDOW_HOURS = 24
@@ -51,6 +72,11 @@ REPLICATION_LAG_MB = 0.0
 
 _STATUS_PENDING = "PENDING"
 _STATUS_FAILED = "FAILED"
+_STATUS_PUBLISHED = "PUBLISHED"
+_STATUS_SUCCEEDED = "SUCCEEDED"
+
+# 备份相关演练类型（backup 字段口径，见模块 docstring）
+BACKUP_DRILL_TYPES = frozenset({"pitr", "tenant_restore"})
 
 _EVENTS = table(
     "events",
@@ -92,6 +118,27 @@ _USAGE_DAILY = table(
     column("events_in", BigInteger),
     column("events_duplicated", BigInteger),
     schema="platform",
+)
+
+_AUDIT_LOGS = table(
+    "audit_logs",
+    column("audit_id", BigInteger),
+    column("tenant_id", Uuid),
+    column("occurred_at", DateTime(timezone=True)),
+    column("detail", JSONB),
+    schema="platform",
+)
+
+_TASKS = table(
+    "tasks",
+    column("task_id", Uuid),
+    column("tenant_id", Uuid),
+    column("task_type", Text),
+    column("status", Text),
+    column("scope", Text),
+    column("stats", JSONB),
+    column("created_at", DateTime(timezone=True)),
+    schema="ops",
 )
 
 
@@ -136,6 +183,11 @@ async def build_health(
             idempotency_hit_rate=await _hit_rate(sess, tenant_id),
             dlq=dlq,
             evidence_count=evidence_count,
+            backup=_backup_metric(),
+            audit_events_7d=await _audit_events_7d(sess, tenant_id),
+            policy_hits_today=await _policy_hits_today(sess, tenant_id),
+            adapters_success_rate=await _adapters_success_rate(sess, tenant_id),
+            evidence_valid_rate=await _evidence_valid_rate(sess, tenant_id),
         ),
     )
 
@@ -232,3 +284,97 @@ async def _db_ha(sess: AsyncSession) -> DbHa:
         replication_lag_mb=REPLICATION_LAG_MB,
         replicas=replicas,
     )
+
+
+# ---- W6 扩展 5 字段派生（口径见模块 docstring） ----
+
+
+def _backup_metric() -> BackupMetric | None:
+    """备份读数（drills JSON 派生，无 DB 访问）：最近一项已执行的备份相关
+    演练（drill_type ∈ BACKUP_DRILL_TYPES 且 executed_at 非空——pitr/
+    tenant_restore 均为从备份集恢复/回放的实测归档）→
+    {last_backup_at=executed_at, status=result, source="drills"}；
+    无已执行记录 → None（exclude_none 下该键不出现）。"""
+    executed = sorted(
+        (
+            record
+            for record in quality_service.list_drills()
+            if record.drill_type in BACKUP_DRILL_TYPES
+            and record.executed_at is not None
+        ),
+        key=lambda record: record.executed_at,
+    )
+    if not executed:
+        return None
+    latest = executed[-1]
+    return BackupMetric(
+        last_backup_at=latest.executed_at.isoformat(),
+        status=latest.result,
+        source="drills",
+    )
+
+
+async def _audit_events_7d(sess: AsyncSession, tenant_id: UUID) -> int:
+    """audit 表 7d 计数（platform.audit_logs；控制面表无 RLS → 显式
+    tenant_id 过滤；空库 → 0 为合法计数仍返回）。"""
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    return await _count(
+        sess,
+        _AUDIT_LOGS,
+        _AUDIT_LOGS.c.tenant_id == tenant_id,
+        _AUDIT_LOGS.c.occurred_at >= cutoff,
+    )
+
+
+async def _policy_hits_today(sess: AsyncSession, tenant_id: UUID) -> int:
+    """审计策略命中当日计数：audit_policies 命中不打独立动作行——审计
+    切面在命中行 detail 打 ``policy_hits`` 键（实测 audit/aspect.py 口径），
+    故 = 当日（UTC 日起）本租户 detail 含该键的审计行数（昨日命中不计）。"""
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    return await _count(
+        sess,
+        _AUDIT_LOGS,
+        _AUDIT_LOGS.c.tenant_id == tenant_id,
+        _AUDIT_LOGS.c.occurred_at >= today_start,
+        _AUDIT_LOGS.c.detail.has_key("policy_hits"),
+    )
+
+
+async def _adapters_success_rate(sess: AsyncSession, tenant_id: UUID) -> float | None:
+    """ops.tasks 最近 20 条 task_type=adapter_sync 的 SUCCEEDED 占比
+    （0.0~1.0；created_at DESC, task_id DESC tiebreak 取最近；无记录 → None）。"""
+    stmt = (
+        select(_TASKS.c.status)
+        .where(_TASKS.c.tenant_id == tenant_id, _TASKS.c.task_type == "adapter_sync")
+        .order_by(_TASKS.c.created_at.desc(), _TASKS.c.task_id.desc())
+        .limit(20)
+    )
+    statuses = [row[0] for row in (await sess.execute(stmt)).all()]
+    if not statuses:
+        return None
+    return statuses.count(_STATUS_SUCCEEDED) / len(statuses)
+
+
+async def _evidence_valid_rate(sess: AsyncSession, tenant_id: UUID) -> float | None:
+    """最近一次 quality_recheck（scope ∈ {CHECKSUM, ALL}——仅这两档执行
+    checksum 段）stats.checksum 派生 ``1 - failed/sampled``；无任务 / 无
+    checksum 段 / sampled=0 → None。"""
+    stmt = (
+        select(_TASKS.c.stats)
+        .where(
+            _TASKS.c.tenant_id == tenant_id,
+            _TASKS.c.task_type == "quality_recheck",
+            _TASKS.c.scope.in_(["CHECKSUM", "ALL"]),
+        )
+        .order_by(_TASKS.c.created_at.desc(), _TASKS.c.task_id.desc())
+        .limit(1)
+    )
+    stats = (await sess.execute(stmt)).scalar_one_or_none()
+    checksum = stats.get("checksum") if isinstance(stats, dict) else None
+    if not isinstance(checksum, dict):
+        return None
+    sampled, failed = checksum.get("sampled"), checksum.get("failed")
+    if not isinstance(sampled, (int, float)) or sampled <= 0:
+        return None
+    failed_value = failed if isinstance(failed, (int, float)) else 0
+    return 1 - failed_value / sampled

@@ -19,9 +19,10 @@ ops.tasks 行（task_type=evidence_reindex）→ 202；后台执行体
 checksum（复用本模块 compute_checksum）——**重算与原值不一致仅计数 +
 落 ``quality.reindex_mismatch`` 事件，保留原值不回写**（checksum 语义
 不变：存储值 = 入库时快照的指纹，篡改探测依赖该不变量；修复动作留给
-人工/后续任务）。执行语义（会话/事务/可见性重试/单副本无互斥/终态与
-完成事件移出终态事务）沿 T4 quality recheck 口径，详见 ``_run_reindex``
-docstring。
+  人工/后续任务）。执行语义（会话/事务/可见性重试/任务互斥 advisory
+  lock（W6 T3，锁句柄经 ``quality.service.TaskMutex`` 复用）/终态与完成
+  事件移出终态事务）沿 T4 quality recheck 口径，详见 ``_run_reindex``
+  docstring。
 """
 
 import asyncio
@@ -316,35 +317,48 @@ async def start_reindex(
 ) -> "quality_service.OpsTask":
     """登记 evidence_reindex 任务行并派发后台执行（路由层 202 语义）。
 
-    **单副本执行语义（留痕，同 quality recheck / adapter sync）**：状态
-    落库（ops.tasks 行级回写、终态幂等）多副本安全；执行互斥不保证——
-    并发 reindex 可并行执行（读侧任务，无写冲突面；分布式锁 Redis 方案
-    评估 T17 覆盖）。任务行可见性由请求级 commit 兜底，后台执行体先等行
-    可见再执行（``_run_reindex`` docstring）。
+    **任务互斥（W6 T3）**：入口先 ``quality_service.try_acquire_task_lock``
+    （evidence_reindex 键）——被占 → 409 CONFLICT（不登记行）；拿到锁才
+    建行/派发，锁句柄随后台执行体走（执行体 finally 释放；锁语义与连接
+    生命周期见 ``quality_service.TaskMutex`` docstring）。状态落库多副本
+    安全（行级回写、终态幂等）。任务行可见性由请求级 commit 兜底，后台
+    执行体先等行可见再执行（``_run_reindex`` docstring）。
     """
-    started_at = datetime.now(UTC)
-    task = quality_service.OpsTask(
-        task_id=uuid4(),
-        tenant_id=principal.tenant_id,
-        task_type=REINDEX_TASK_TYPE,
-        status="RUNNING",
-        scope=scope,
-        started_at=started_at,
-        created_by=principal.id,
+    mutex = await quality_service.try_acquire_task_lock(
+        quality_service.task_lock_key(REINDEX_TASK_TYPE)
     )
-    sess.add(task)
-    await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
-    background = asyncio.create_task(
-        _run_reindex(
-            task_id=task.task_id,
+    if mutex is None:
+        await quality_service.raise_task_conflict(
+            sess, principal.tenant_id, REINDEX_TASK_TYPE
+        )
+    try:
+        started_at = datetime.now(UTC)
+        task = quality_service.OpsTask(
+            task_id=uuid4(),
             tenant_id=principal.tenant_id,
-            principal=principal,
+            task_type=REINDEX_TASK_TYPE,
+            status="RUNNING",
             scope=scope,
             started_at=started_at,
+            created_by=principal.id,
         )
-    )
-    _reindex_tasks.add(background)
-    background.add_done_callback(_reindex_tasks.discard)
+        sess.add(task)
+        await sess.flush()  # 审计 TASK_CREATE 随请求事务落库
+        background = asyncio.create_task(
+            _run_reindex(
+                task_id=task.task_id,
+                tenant_id=principal.tenant_id,
+                principal=principal,
+                scope=scope,
+                started_at=started_at,
+                mutex=mutex,
+            )
+        )
+        _reindex_tasks.add(background)
+        background.add_done_callback(_reindex_tasks.discard)
+    except Exception:
+        await mutex.release()  # 登记/派发失败就地释放（后台未接手）
+        raise
     return task
 
 
@@ -355,10 +369,14 @@ async def _run_reindex(
     principal: Principal,
     scope: str,
     started_at: datetime,
+    mutex: "quality_service.TaskMutex | None" = None,
 ) -> None:
     """后台执行体：等行可见（``quality.service.wait_task_visible`` 公共
     helper）→ 全量分批重算 checksum → stats/logs 落 ops.tasks → 终态 +
     事件。
+
+    互斥锁：入口已取得的 ``mutex`` 句柄随执行体走——**finally 释放**
+    （任务终态/提前退出均达；缺省 None 容忍无锁直调）。
 
     会话与事务：不复用请求会话（随请求关闭）——经 get_session_local 开
     独立会话；bind_tenant 事务级（set_config is_local）→ 每扫描批次独立
@@ -485,6 +503,9 @@ async def _run_reindex(
             )
         except Exception:
             logger.error("reindex FAILED 终态回写失败：%s", task_id, exc_info=True)
+    finally:
+        if mutex is not None:
+            await mutex.release()  # 互斥窗 = 入口取锁至执行体收尾（终态/提前退出均达）
 
 
 async def _apply_reindex_task(
@@ -530,8 +551,10 @@ async def _record_reindex_events(
     error: str | None = None,
 ) -> None:
     """事件移出终态事务（沿 T4 语义）：终态已先行 commit，失配事件 +
-    完成事件经独立会话/事务**尽力**写入——ingest 抛错仅告警不回滚，已落
-    的终态不因事件通道异常改判（失配明细同时由任务行 stats/logs 留痕）。
+    完成事件经独立会话/事务**尽力**写入（ingest 均 internal=True——
+    W5-09 内部写入豁免计量；审计/outbox 副作用不变）——ingest 抛错仅
+    告警不回滚，已落的终态不因事件通道异常改判（失配明细同时由任务行
+    stats/logs 留痕）。
 
     失配事件 ``quality.reindex_mismatch``（仅 mismatched>0）：**聚合一条**
     （实现取简并留痕——逐条事件的 per-evidence 幂等可由 T3
@@ -581,6 +604,7 @@ async def _record_reindex_events(
                             },
                         )
                     ],
+                    internal=True,
                 )
             event_type = (
                 REINDEX_FAILED_EVENT_TYPE if error is not None
@@ -604,6 +628,7 @@ async def _record_reindex_events(
                         data=data,
                     )
                 ],
+                internal=True,
             )
             await sess.commit()
     except Exception:

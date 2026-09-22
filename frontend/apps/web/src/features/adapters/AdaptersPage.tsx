@@ -1,5 +1,5 @@
 import { Skeleton } from "antd";
-import { StatusPill } from "@edp/shared";
+import { EmptyState, StatusPill } from "@edp/shared";
 import { Cable, Plug, Plus, RefreshCw, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { relTime } from "../../lib/labels";
@@ -85,16 +85,24 @@ export function AdaptersPage() {
         </div>
       </section>
 
-      <section className="bg-card border border-border rounded-xl overflow-hidden">
-        {adaptersQuery.isError ? (
+      {adaptersQuery.isError ? (
+        <section className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 text-xs text-muted-foreground" data-dom-id="adapters-error">
             适配器清单暂不可用
           </div>
-        ) : rows.length === 0 && !adaptersQuery.isPending ? (
-          <div className="p-4 text-xs text-muted-foreground" data-dom-id="adapters-empty">
-            暂无适配器
-          </div>
-        ) : (
+        </section>
+      ) : rows.length === 0 && !adaptersQuery.isPending ? (
+        <div data-dom-id="adapters-empty">
+          <EmptyState
+            icon={<Plug className="w-7 h-7" />}
+            title="暂无适配器"
+            description="尚未接入任何源系统适配器；新增后可测试连接并查看同步日志。"
+            primaryAction={{ label: "新增适配器", onClick: () => setCreateOpen(true) }}
+            secondaryAction={{ label: "数据源连接向导", onClick: () => setWizardOpen(true) }}
+          />
+        </div>
+      ) : (
+        <section className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse min-w-[880px]" data-dom-id="adapters-table">
               <thead>
@@ -154,13 +162,13 @@ export function AdaptersPage() {
               </tbody>
             </table>
           </div>
-        )}
-        {adaptersQuery.isPending && (
-          <div className="p-4" data-dom-id="adapters-skeleton">
-            <Skeleton active paragraph={{ rows: 4 }} />
-          </div>
-        )}
-      </section>
+          {adaptersQuery.isPending && (
+            <div className="p-4" data-dom-id="adapters-skeleton">
+              <Skeleton active paragraph={{ rows: 4 }} />
+            </div>
+          )}
+        </section>
+      )}
 
       <CreateAdapterModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <TestConnectionModal

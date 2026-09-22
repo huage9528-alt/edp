@@ -18,8 +18,9 @@ export interface InviteMemberModalProps {
 
 /**
  * 邀请成员弹窗（视觉基线 `邀请成员 - 弹窗.html`）：
- * 用户选择（fixtures 用户目录下拉）+ 成员角色多选 → POST members → 201；
- * 409 已在册 → 行内错误。
+ * 用户选择（GET /admin/users 真端点 Page 信封——W5-11 收口；目录范围为平台管理员
+ * 主租户用户，跨租户通道待契约裁定 W6-07，UI 正常渲染返回数据）+ 成员角色多选 →
+ * POST members → 201；409 已在册 → 行内错误；目录 404/失败 → 降级手输 user_id。
  */
 export function InviteMemberModal({ open, onClose, tenantId }: InviteMemberModalProps) {
   const [userId, setUserId] = useState("");
@@ -81,25 +82,40 @@ export function InviteMemberModal({ open, onClose, tenantId }: InviteMemberModal
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
             用户 <span className="text-state-error">*</span>
           </div>
-          <select
-            data-dom-id="invite-user"
-            aria-label="选择用户"
-            value={userId}
-            onChange={(e) => {
-              setUserId(e.target.value);
-              setError(null);
-            }}
-            className="h-9 w-full px-3 text-xs bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">
-              {users.isError ? "用户目录暂不可用" : users.isLoading ? "加载用户目录…" : "请选择用户"}
-            </option>
-            {users.data?.map((user) => (
-              <option key={user.user_id} value={user.user_id}>
-                {user.display_name}（{user.username}）
+          {users.isError ? (
+            <input
+              type="text"
+              data-dom-id="invite-user-manual"
+              aria-label="手动输入用户 ID"
+              placeholder="用户目录暂不可用，请输入用户 user_id"
+              value={userId}
+              onChange={(e) => {
+                setUserId(e.target.value.trim());
+                setError(null);
+              }}
+              className="h-9 w-full px-3 text-xs bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          ) : (
+            <select
+              data-dom-id="invite-user"
+              aria-label="选择用户"
+              value={userId}
+              onChange={(e) => {
+                setUserId(e.target.value);
+                setError(null);
+              }}
+              className="h-9 w-full px-3 text-xs bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">
+                {users.isLoading ? "加载用户目录…" : "请选择用户"}
               </option>
-            ))}
-          </select>
+              {users.data?.map((user) => (
+                <option key={user.user_id} value={user.user_id}>
+                  {user.display_name ? `${user.display_name}（${user.username}）` : user.username}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>

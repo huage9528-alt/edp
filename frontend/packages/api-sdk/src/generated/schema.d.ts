@@ -209,7 +209,9 @@ export interface paths {
         };
         /**
          * 演练记录（W5 三项：HA 切换/PITR/租户级恢复——只读归档）
-         * @description quality:read：读 drill-records.json（默认仓库相对路径，相对 cwd
+         * @description quality:run（W5-21-c 收紧：PLATFORM_ADMIN/ADMIN——MANAGER/ANALYST
+         *     403；内容为基础设施元数据、无凭据，最小权限原则收口，W5 终审裁定）：
+         *     读 drill-records.json（默认仓库相对路径，相对 cwd
          *     解析；EDP_DRILLS_FILE 可覆盖——容器内经卷挂载 + env 指向，staging
          *     compose 注释 T14 处理）→ {items}；文件缺失/坏 JSON → {items: []}
          *     （不报错，前端空态）。executed_at null = 未执行（PLANNED）。
@@ -242,6 +244,28 @@ export interface paths {
          *     完成写 quality.reindex_succeeded/failed（执行语义见 service docstring）。
          */
         post: operations["evidence_reindex_api_v1_admin_evidence_reindex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/outbox/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 事务性发件箱状态（积压/近 1h 发布/死信聚合）
+         * @description quality:read：event.outbox 聚合（W5-05 收口）——运营报告/健康页
+         *     Outbox 积压卡数据源；RLS 会话限本租户，空表 → pending 0 /
+         *     oldest_pending_age_seconds 与 last_published_at null。
+         */
+        get: operations["outbox_status_api_v1_admin_outbox_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -325,6 +349,28 @@ export interface paths {
          *     存在性）。
          */
         get: operations["quality_task_api_v1_admin_quality_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 平台用户目录简投影（邀请成员下拉真数据源；W5-11 收口）
+         * @description 平台 ADMIN：username ASC keyset 游标简投影 {user_id, username,
+         *     display_name}；目录范围口径见 service.list_users docstring（W6 最小
+         *     口径 = 平台管理员主租户，B.14 未定义留痕）。
+         */
+        get: operations["list_admin_users_api_v1_admin_users_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -640,8 +686,9 @@ export interface paths {
         };
         /**
          * 查询事件列表（过滤 + 游标分页）
-         * @description 过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页
-         *     （occurred_at DESC, event_id tiebreak）。
+         * @description 过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/
+         *     since/until 闭区间）+ 游标分页（occurred_at DESC, event_id tiebreak）；
+         *     event_type 与 event_type_prefix 同传 → 400（互斥），空前缀串按 None。
          */
         get: operations["list_events_api_v1_events_get"];
         put?: never;
@@ -881,6 +928,28 @@ export interface paths {
          * @description revision 变更轨迹（W1 源 event.outbox，W2 切审计日志）。
          */
         get: operations["object_history_api_v1_objects__object_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 全局搜索（对象/事件/证据三组聚合）
+         * @description objects（source_id/object_type）/ events（event_type 或
+         *     data->>'summary'）/ evidence（source_record_id/source_system）三组
+         *     ILIKE 聚合，各组时间序 DESC LIMIT limit；total = 三组返回行数合计。
+         */
+        get: operations["global_search_api_v1_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1670,6 +1739,22 @@ export interface components {
             sync_id: string;
         };
         /**
+         * AdminUserItem
+         * @description 平台用户目录简投影（GET /api/v1/admin/users；W5-11 收口——邀请成员
+         *     下拉真数据源）；display_name 可空透传。
+         */
+        AdminUserItem: {
+            /** Display Name */
+            display_name?: string | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Username */
+            username: string;
+        };
+        /**
          * AuditLogItem
          * @description GET /audit-logs 列表项（B.6）。
          */
@@ -1695,6 +1780,18 @@ export interface components {
             resource_id?: string | null;
             /** Resource Type */
             resource_type: string;
+        };
+        /**
+         * BackupMetric
+         * @description 备份读数派生（drills JSON 备份相关演练；source 恒 "drills"）。
+         */
+        BackupMetric: {
+            /** Last Backup At */
+            last_backup_at: string;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
         };
         /**
          * BatchRequest
@@ -2300,6 +2397,24 @@ export interface components {
             message: string;
         };
         /**
+         * EventHit
+         * @description 事件命中（event.events 简投影）。
+         */
+        EventHit: {
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
+        /**
          * EventIn
          * @description 批量入库事件项（B.3）。
          *
@@ -2482,6 +2597,26 @@ export interface components {
              * Format: uuid
              */
             object_id: string;
+        };
+        /**
+         * EvidenceHit
+         * @description 证据命中（evidence.records 简投影；source_system 充当来源 kind）。
+         */
+        EvidenceHit: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /**
+             * Evidence Id
+             * Format: uuid
+             */
+            evidence_id: string;
+            /** Source Record Id */
+            source_record_id: string;
+            /** Source System */
+            source_system: string;
         };
         /**
          * EvidenceLinkIn
@@ -2915,6 +3050,26 @@ export interface components {
             status: string;
         };
         /**
+         * ObjectHit
+         * @description 对象命中（master.business_objects 简投影）。
+         */
+        ObjectHit: {
+            /**
+             * Object Id
+             * Format: uuid
+             */
+            object_id: string;
+            /** Object Type */
+            object_type: string;
+            /** Source Id */
+            source_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * ObjectResponse
          * @description GET /objects/{id} 与列表项（全字段）。
          */
@@ -2995,21 +3150,31 @@ export interface components {
         };
         /**
          * OpsMetrics
-         * @description 运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致）。
+         * @description 运行指标（近 24h 窗口；字段名与 MSW ``HealthResponse.ops_metrics`` 逐字一致；
+         *     W6 扩展 5 字段可选——无数据不出现（exclude_none））。
          */
         OpsMetrics: {
+            /** Adapters Success Rate */
+            adapters_success_rate?: number | null;
+            /** Audit Events 7D */
+            audit_events_7d?: number | null;
+            backup?: components["schemas"]["BackupMetric"] | null;
             /** Dlq */
             dlq: number;
             /** Events 24H */
             events_24h: number;
             /** Evidence Count */
             evidence_count: number;
+            /** Evidence Valid Rate */
+            evidence_valid_rate?: number | null;
             /** Idempotency Hit Rate */
             idempotency_hit_rate: number;
             /** Ingest Peak 24H */
             ingest_peak_24h: number;
             /** P95 Latency Ms */
             p95_latency_ms: number;
+            /** Policy Hits Today */
+            policy_hits_today?: number | null;
         };
         /**
          * OrderDetail
@@ -3097,10 +3262,36 @@ export interface components {
             /** Evidence Orphans */
             evidence_orphans: number;
         };
+        /**
+         * OutboxStatusOut
+         * @description GET /admin/outbox/status 响应（B.13 Outbox 积压卡；W5-05 收口）：
+         *     event.outbox 聚合；空表 → pending 0 / age 与 last_published_at null。
+         */
+        OutboxStatusOut: {
+            /** Dlq Count */
+            dlq_count: number;
+            /** Last Published At */
+            last_published_at?: string | null;
+            /** Oldest Pending Age Seconds */
+            oldest_pending_age_seconds?: number | null;
+            /** Pending Count */
+            pending_count: number;
+            /** Published Last Hour */
+            published_last_hour: number;
+        };
         /** Page[ActionListItem] */
         Page_ActionListItem_: {
             /** Items */
             items: components["schemas"]["ActionListItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Total */
+            total?: number | null;
+        };
+        /** Page[AdminUserItem] */
+        Page_AdminUserItem_: {
+            /** Items */
+            items: components["schemas"]["AdminUserItem"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /** Total */
@@ -3548,6 +3739,22 @@ export interface components {
             period?: string | null;
             /** Recent Changes Summary */
             recent_changes_summary?: string[];
+        };
+        /**
+         * SearchResponse
+         * @description GET /api/v1/search 响应：三组命中 + total（三组返回行数合计）。
+         */
+        SearchResponse: {
+            /** Events */
+            events?: components["schemas"]["EventHit"][];
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceHit"][];
+            /** Objects */
+            objects?: components["schemas"]["ObjectHit"][];
+            /** Query */
+            query: string;
+            /** Total */
+            total: number;
         };
         /**
          * SkillCreateRequest
@@ -5297,6 +5504,44 @@ export interface operations {
             };
         };
     };
+    outbox_status_api_v1_admin_outbox_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxStatusOut"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足）；TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     quality_coverage_api_v1_admin_quality_coverage_get: {
         parameters: {
             query?: never;
@@ -5476,6 +5721,56 @@ export interface operations {
             };
             /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AdminUserItem_"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description FORBIDDEN：权限不足（scope/权限不满足） */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6473,6 +6768,8 @@ export interface operations {
             query?: {
                 object_id?: string | null;
                 event_type?: string | null;
+                /** @description 事件类型前缀过滤（LIKE prefix%；与 event_type 互斥） */
+                event_type_prefix?: string | null;
                 risk_level?: ("P0" | "P1" | "P2" | "P3") | null;
                 since?: string | null;
                 until?: string | null;
@@ -7342,6 +7639,67 @@ export interface operations {
             };
             /** @description NOT_FOUND：资源不存在（跨租户统一 404，不泄露存在性） */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    global_search_api_v1_search_get: {
+        parameters: {
+            query?: {
+                /** @description 关键词（trim 后至少 1 个字符，否则 400） */
+                q?: string | null;
+                /** @description 每组返回上限 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description VALIDATION_ERROR：参数缺失或格式错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description UNAUTHENTICATED：未认证或凭据无效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description TENANT_SUSPENDED：租户已暂停或状态异常 */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

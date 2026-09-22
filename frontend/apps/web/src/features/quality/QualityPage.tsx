@@ -1,7 +1,7 @@
 import { Skeleton, message } from "antd";
 import { AlertTriangle, ListChecks, RefreshCw, ShieldAlert } from "lucide-react";
 import { useState } from "react";
-import { KpiCard, StatusPill } from "@edp/shared";
+import { EmptyState, KpiCard, StatusPill } from "@edp/shared";
 import type { ExceptionItem } from "../../mocks/types";
 import { useQualityExceptions, useQualityReport } from "./hooks";
 import { RecheckModal } from "./RecheckModal";
@@ -157,8 +157,17 @@ export function QualityPage() {
               <h2 className="text-xs font-semibold text-foreground mb-3">全部异常</h2>
               {exceptionsQuery.isError ? (
                 <p className="text-xs text-muted-foreground">异常列表暂不可用</p>
+              ) : exceptions.length === 0 && exceptionsQuery.isSuccess ? (
+                <div data-dom-id="quality-exceptions-empty">
+                  <EmptyState
+                    icon={<ListChecks className="w-7 h-7" />}
+                    title="当前无待处理异常"
+                    description="各维度校验通过；可运行重校验刷新最新报告。"
+                    primaryAction={{ label: "运行重校验", onClick: () => setRecheckOpen(true) }}
+                  />
+                </div>
               ) : exceptions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">当前无待处理异常</p>
+                <p className="text-xs text-muted-foreground">加载中…</p>
               ) : (
                 <ul className="space-y-2">
                   {exceptions.map((item: ExceptionItem) => (

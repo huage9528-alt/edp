@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowLeft, Ban, PlayCircle, UserPlus, X } from "lucide-r
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { MonoId, StatusPill, roleLabel, planLabel, TENANT_STATUS_LABELS } from "@edp/shared";
+import { EmptyState, MonoId, StatusPill, roleLabel, planLabel, TENANT_STATUS_LABELS } from "@edp/shared";
 import { fmtDateTime } from "../../lib/labels";
 import type { TenantDetailData, TenantMemberRow } from "./api";
 import { InviteMemberModal } from "./InviteMemberModal";
@@ -157,10 +157,24 @@ export function TenantDetailPage() {
               </span>
             </header>
             <div className="overflow-x-auto" data-dom-id="tenant-members-table">
-              {members.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-8 text-center" data-dom-id="tenant-members-empty">
-                  暂无成员
+              {members.length === 0 && membersQuery.isSuccess ? (
+                <div data-dom-id="tenant-members-empty">
+                  <EmptyState
+                    icon={<UserPlus className="w-7 h-7" />}
+                    title="暂无成员"
+                    description="邀请成员并分配角色后，将在此列出租户成员。"
+                    primaryAction={{ label: "邀请成员", onClick: () => setInviteOpen(true) }}
+                  />
                 </div>
+              ) : membersQuery.isError ? (
+                <div
+                  className="text-xs text-muted-foreground py-8 text-center"
+                  data-dom-id="tenant-members-error"
+                >
+                  成员列表暂不可用，请稍后重试
+                </div>
+              ) : members.length === 0 ? (
+                <div className="text-xs text-muted-foreground py-8 text-center">加载中…</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>

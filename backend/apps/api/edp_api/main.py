@@ -31,8 +31,11 @@ from edp_api.modules.health.router import router as health_router
 from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
 from edp_api.modules.quality.router import drills_router as quality_drills_router
+from edp_api.modules.quality.router import outbox_router as quality_outbox_router
 from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
+from edp_api.modules.search.router import router as search_router
+from edp_api.modules.tenantmgmt.platform_router import admin_router as tenant_admin_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
 from edp_api.modules.tools.router import router as tools_router
@@ -82,6 +85,9 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     # 恢复/注销）——require_platform_admin 守卫，平台级无租户绑定（不挂
     # tenant_scoped）；后于 /current 注册，避免 /{tenant_id} 先匹配吞并
     app.include_router(tenant_platform_router)
+    # tenantmgmt 平台用户目录（W5-11 收口）：GET /admin/users——邀请成员
+    # 下拉真数据源（require_platform_admin，简投影游标分页）
+    app.include_router(tenant_admin_router)
     # audit 路由（B.6）：查询面，统一挂 tenant_scoped（租户收敛见 service）
     app.include_router(audit_router)
     # audit_policies 路由（EDP-032 最小版）：/admin/audit-policies CRUD，
@@ -115,6 +121,11 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     # quality drills 路由（EDP-502 / W5 T7）：/admin/drills 演练记录只读归档
     # （drill-records.json；复用 quality:read 口径，无 DB 访问）
     app.include_router(quality_drills_router)
+    # quality outbox 路由（W5-05 收口）：/admin/outbox/status——event.outbox
+    # 聚合（quality:read；运营报告/健康页 Outbox 积压卡数据源）
+    app.include_router(quality_outbox_router)
+    # search 路由（W6 T1）：全局搜索三组聚合（对象/事件/证据，RLS 收敛）
+    app.include_router(search_router)
     for router in extra_routers:
         app.include_router(router)
 
