@@ -50,15 +50,44 @@
 
 - **达标判定：全部 9 个接口在三档 VU 下 P95 均 <2s，达标。** 100 VU 档最慢为 POST /events/batch 1000 ms 与 admin/quality/coverage 710 ms（均受池排队长尾抬升；50 VU 及以下全部 ≤110 ms）。
 - **T12 输出口径（Go/No-Go RLS 行）**：按双口径呈现——相对口径不达标（+97.1% > 5%）/ 绝对口径无实际影响（+3.3 ms）；门禁判定采绝对口径（P95 <2s 含 RLS 全达标），不触发「按租户组拆库」条款（设计文档 V2.0 L420）。
-- **Redis 决策输入（热点接口 QPS 观测）**：峰值可持续吞吐 ≈47 req/s（50 VU）；按量排序热点为 events risk 过滤（≈18 req/s）、objects（≈9 req/s）、tools/orders 与 health（≈6 req/s）。health 的 ops_metrics 每调用执行多条 count/percentile 聚合 SQL（pg_stat 中 3713 次调用、mean 5.1~10 ms），events 列表每次执行全量 count（mean 10 ms）——若 QPS 上探（>100 req/s），这两类是 Redis 缓存的首选候选；当前 47 req/s 峰值下 DB 未过载（除池容量），暂无必须引入缓存的读数依据。
-- **T7 治理线索（pg_stat_statements top20，见 `deploy/loadtest/pg_stat_top20.txt`）**：
+- **Redis 决策输入（热点接口 QPS 观测）**：峰值可持续吞吐 ≈47 req/s（50 VU）；按量排序热点为 events risk 过滤（≈18 req/s）、objects（≈9 req/s）、tools/orders 与 health（≈6 req/s）。health 的 ops_metrics 每调用固定执行四条 count/percentile 聚合 SQL（pg_stat 中 3713 次调用组、mean 3.2~10 ms，其中 24h 小时桶 max 聚合 mean 10.03 ms——**T7 勘误**：该 mean 10 ms 原误归因于「events 列表全量 count」，复核证实 events 列表 count 为索引仅扫描 ≈0.1 ms、未入 top20，详见 §5.1）——若 QPS 上探（>100 req/s），health ops_metrics 聚合（随 events 总量线性放大，见 §5.2 条目 5）是 Redis 缓存的首选候选；当前 47 req/s 峰值下 DB 未过载（除池容量），暂无必须引入缓存的读数依据。
+- **T7 治理线索（pg_stat_statements top20，见 `deploy/loadtest/pg_stat_top20.txt`；处置决策见 §5.2）**：
   1. `platform.tenant_usage_daily` 计量 upsert 为总耗时第一（37267 次 / 359.7 s / mean 9.65 ms）——api_calls 逐请求独立会话写入在压测流量下成为最大单点，建议合并批量/异步化；
   2. DB 连接池 10+20 在 100 并发打满（30s 超时排队）——建议按目标并发上调 pool 或引入池排队度量；
   3. quality reports/coverage 的覆盖率/孤儿聚合（mean 12~13 ms）与 health 的 ops_metrics count 查询为均值最慢的读路径。
+
+## 5. T7 复核与治理（慢查询收口）
+
+### 5.1 勘误：events count 归因（§4「Redis 决策输入」段）
+
+§4 原句「events 列表每次执行全量 count（mean 10 ms）」归因有误，T7 复核（T6 评审 Minor-2）证实如下：
+
+- **调用次数对账**（locust 三份单档 + 全三档归档 vs `pg_stat_top20.txt`）：
+  - events 列表请求合计 10653 次（1306+3218+1627+4502），每次页查询 + 同过滤 count 各一条；其页查询两形态（首页 / 游标页）在 pg_stat 中为 5407+5330 = 10737 次（含少量基线重放），与之吻合；**count 查询（≈10653 次）不在 top20**——top20 按 mean DESC 排序、末位 mean 3.23 ms，即 events count mean <3.23 ms。
+  - health 请求合计 3660 次（439+1075+584+1562）+ 作废首轮 429 放行部分（估 ≈50）≈ **3713 次**，与 top20 中四条 calls=3713 的查询组精确吻合（`_ingest_peak` 10.03 / `_p95_latency` 8.40 / events_24h count 5.14 / audit_7d count 3.23，`health/service.py:195-229`）——即 health ops_metrics 每调用固定执行的四条聚合，mean 10 ms 者为 `_ingest_peak`（24h 小时桶 max）。
+- **EXPLAIN (ANALYZE, BUFFERS) 实测**（dev 栈 51059 行，edp_app + 事务级 `app.tenant_id` 绑定，原始输出归档 `deploy/loadtest/explain-t7-count.txt`）：
+  - events 列表 count（`WHERE risk_level='P1'`）：Index Only Scan `idx_events_risk`（tenant_id+risk_level 条件），Execution **0.096 ms**、shared hit 2——亚毫秒，未入 top20 属实；
+  - health `_ingest_peak`：**Seq Scan**（created_at 无索引，全表 1778 块顺序扫描），Execution **28.8 ms**（pg_stat mean 10.03 ms 为压测窗口多次调用均值，含表更小/缓存更热阶段）。
+- **勘误结论**：mean 10 ms 的 count 属 health ops_metrics 的 `_ingest_peak`，非 events 列表；§4 该句已按此改写。对 §4 结论无影响（缓存候选判定本就以 QPS 上探为条件，且 health 聚合线性放大的判断因此更成立）。
+
+### 5.2 慢查询治理决策
+
+| # | 事项 | 判定 | 依据 |
+|---|---|---|---|
+| 1 | 0014 索引迁移（计划条件项：pg_stat 出现 mean>500 ms 查询才建） | **不建——条件不触发** | top20 无 mean>500 ms 查询：最大为 seed 放大单次 UPDATE 76.6 ms（1 次）与批量 INSERT 55.99 ms（44 次，均为写入瞬态）；稳态最大 mean = health `_ingest_peak` 10.03 ms |
+| 2 | `tenant_usage_daily` upsert（总耗时第一：37267 次 / 359.7 s / mean 9.65 ms）是否索引缺失 | **非索引问题，不建** | 表自 0001 baseline 即有唯一索引 `uq_usage_daily(tenant_id, usage_date)`（`backend/migrations/versions/platform/0001_platform_baseline.py:127-130`），upsert ON CONFLICT 走该索引；mean 9.65 ms 为**逐请求独立短会话 + 立即 commit**（`ratelimit.py:145-164` record_api_call，W3R-02 权衡的既定代价——避免行锁串行互等）的固定开销 ×37267 次累计 |
+| 3 | upsert 计量批量 / 异步化 | **不做，留痕 W6+** | 结构性改动（攒批窗口、崩溃丢计量的口径变化），超出 W6 最小治理范围；P95 已达标且 DB 未过载，仅总耗时长 |
+| 4 | DB 连接池 10+20 调大（100 VU 饱和） | **不动代码，留痕** | `core/db.py:37` 硬编码，`core/config.py` 无 `EDP_DB_POOL_SIZE` 类现成 env——按最小动作原则（env 已存在才调默认值，新增配置面超范围）不动代码；100 VU 池饱和定性为容量规划项（编排层调参或引入池排队度量，W7+） |
+| 5 | health ops_metrics 24h 聚合 Seq Scan（created_at 无索引） | **不建索引，留痕** | mean 10 ms << 500 ms 阈值；但随 events 总量线性放大（5.1 万行 ≈10~29 ms，50 万行外推 ≈100~300 ms 量级），数据规模上台阶后与「QPS>100 引缓存」（§4）一并复评 |
+
+### 5.3 复测归档
+
+- 本轮治理**无代码 / 迁移改动**（全部为「不做 + 留痕」），无复测项；唯一实测为 §5.1 的 count 归因 EXPLAIN，原始输出归档 `deploy/loadtest/explain-t7-count.txt`（2026-09-22，dev 栈 51059 行）。
 
 ## 附：产物清单（deploy/loadtest/）
 
 - `locust.json` / `locust.html`——全三档连跑（20→50→100 VU）归档；
 - `locust-20vu.json|.html`、`locust-50vu.json|.html`、`locust-100vu.json|.html`——单档读数（报告表格数据源，P95 由 response_times 直方图计算）；
 - `rls-probe.txt`——RLS 双轨探针原始输出；
-- `pg_stat_top20.txt`——压测后 pg_stat_statements top20 快照（mean_exec_time DESC）。
+- `pg_stat_top20.txt`——压测后 pg_stat_statements top20 快照（mean_exec_time DESC）；
+- `explain-t7-count.txt`——T7 count 归因复核 EXPLAIN (ANALYZE, BUFFERS) 归档（events count vs health `_ingest_peak`）。
