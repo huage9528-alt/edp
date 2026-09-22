@@ -11,7 +11,10 @@
   id）；
 - MGMT_OBJECTIVES / MGMT_KPI_DEFINITIONS / MGMT_KPI_VALUES → management 段
   （W4，EDP-012 残余）：objectives period = 锚当月（YYYY-MM）、kpi_values
-  period = 锚 ISO 周（YYYY-Www）± 偏移。
+  period = 锚 ISO 周（YYYY-Www）± 偏移；
+- 放大段常量与纯函数（W6 T5）：SCALE_* / scale_suffix /
+  scaled_activity_event_type / scaled_risk_level——seed --scale N 的确定性
+  扩展口径（见文件尾段约定）。
 
 确定性：无随机数、无 now()；值对齐 frontend MSW data/events.ts 逐字段与
 data/ebms.ts 的 summary/order_no 文案逐字；重放幂等键 seed-demo:results:v1；
@@ -299,3 +302,46 @@ MGMT_KPI_VALUES: tuple[KpiValueSpec, ...] = (
     KpiValueSpec("risk_closure_rate", 0, 85.0),
     KpiValueSpec("risk_closure_rate", -1, 82.5),
 )
+
+
+# ---- seed 放大段（W6 T5，EDP-033 压测前置）：--scale N 确定性扩展 ----
+#
+# scale>1 时在十类场景基线外**追加**确定性放大实体（对象/事件/证据）；
+# 十类场景本体（RESULT_EVENTS/DEMO_CASE/management 段）不参与放大——
+# 评估与召回统计（T12）基于基线场景。放大实体正常落库（真实数据形状），
+# coverage/orphan/对账统计自然包含；T12 运营报告如需剔除，SQL 侧按
+# source_id 后缀模式 ``source_id ~ '-[0-9]{6}$'`` 排除（事件/证据经
+# object_id join master.business_objects 后同式过滤）——本约定以
+# 6 位数字后缀为界：基线 ORDER/PO 自然键尾段已是 5 位数字
+# （SO-2026-00122 / PO-2026-00771），5 位后缀会让排除模式误伤基线对象。
+
+# 放大单元后缀零填充位数（scale_suffix）
+SCALE_SUFFIX_DIGITS = 6
+
+# 每个放大对象在快照事件外追加的活动事件数（W6 压测量级换算系数）
+SCALE_ACTIVITY_PER_OBJECT = 9
+
+# 活动事件 risk_level 稀疏分布（压测过滤场景需要少量 P0/P1，其余为空）：
+# 全局序号 seq % 1000 == 0 → P0、== 500 → P1
+SCALE_RISK_PERIOD = 1000
+SCALE_P1_OFFSET = 500
+
+
+def scale_suffix(unit: int) -> str:
+    """放大单元后缀（unit ≥ 1）：``-{unit:06d}``（确定性；位数见上约定）。"""
+    return f"-{unit:0{SCALE_SUFFIX_DIGITS}d}"
+
+
+def scaled_activity_event_type(object_type: str) -> str:
+    """放大活动事件类型：``{object_type 小写}.activity``——与十类场景的
+    capability.result.* / adapter.sync.failed 本体完全区隔。"""
+    return f"{object_type.lower()}.activity"
+
+
+def scaled_risk_level(seq: int) -> str | None:
+    """活动事件全局序号 → risk_level（确定性稀疏分布，无随机数；多数为空）。"""
+    if seq % SCALE_RISK_PERIOD == 0:
+        return "P0"
+    if seq % SCALE_RISK_PERIOD == SCALE_P1_OFFSET:
+        return "P1"
+    return None

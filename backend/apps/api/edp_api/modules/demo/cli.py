@@ -1,12 +1,18 @@
-"""演示数据 seed CLI（T7）：python -m edp_api.modules.demo.cli seed [--reset]。
+"""演示数据 seed CLI（T7）：python -m edp_api.modules.demo.cli seed [--reset]
+[--scale N]。
 
 dev 环境（compose db 映射宿主 15432，edp_app 应用角色）用法：
     cd backend && uv run python -m edp_api.modules.demo.cli seed
     uv run python -m edp_api.modules.demo.cli seed --reset --tenant-slug default
+    uv run python -m edp_api.modules.demo.cli seed --scale 116   # W6 压测量级
 
 连接：环境变量 EDP_DATABASE_URL（get_settings 读的同一变量），缺省 dev
 compose 的 edp_app 连接串——seed 必须以应用角色运行让 RLS 生效，不用
 migrator 超级用户。进程自装审计切面（与 create_app 同一入口，幂等）。
+
+--scale N（W6 T5，EDP-033 压测前置）：1 = 十类场景基线（缺省，行为不变）；
+N>1 在基线外追加 N-1 份确定性放大实体（量级换算见 demo.service 模块
+docstring：目标 ≈5k 对象 / 50k 事件 / 10k 证据对应 N=116）。
 
 输出/退出码：stdout 打印 SeedStats（fetched/registered/duplicated/failed +
 events_accepted/events_duplicated/case_created）；0 = 成功（failed>0 → 1）；
@@ -44,9 +50,11 @@ async def _resolve_tenant_id(engine: AsyncEngine, slug: str) -> UUID | None:
     return tenant.tenant_id if tenant is not None else None
 
 
-async def _cmd_seed(engine: AsyncEngine, tenant_id: UUID, *, reset: bool) -> int:
+async def _cmd_seed(
+    engine: AsyncEngine, tenant_id: UUID, *, reset: bool, scale: int
+) -> int:
     """seed：打印 SeedStats；存在失败记录 → 退出码 1。"""
-    stats = await demo_service.seed(engine, tenant_id, reset=reset)
+    stats = await demo_service.seed(engine, tenant_id, reset=reset, scale=scale)
     print(
         f"fetched={stats.fetched} registered={stats.registered} "
         f"duplicated={stats.duplicated} failed={stats.failed} "
@@ -83,10 +91,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="复位：逆依赖序清本租户业务数据（审计保留）+ 重锚后重建",
     )
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=1,
+        help="数据放大倍数（1=基线十场景；N>1 追加 N-1 份确定性放大实体，"
+        "目标 ≈5k/50k/10k 对应 N=116）",
+    )
     return parser
 
 
-async def _run(url: str, command: str, tenant_slug: str, *, reset: bool) -> int:
+async def _run(
+    url: str, command: str, tenant_slug: str, *, reset: bool, scale: int
+) -> int:
     install_audit_aspect()
     engine = create_async_engine(url)
     try:
@@ -94,7 +111,7 @@ async def _run(url: str, command: str, tenant_slug: str, *, reset: bool) -> int:
         if tenant_id is None:
             print(f"错误：租户不存在：{tenant_slug}", file=sys.stderr)
             return EXIT_NOT_FOUND
-        return await _cmd_seed(engine, tenant_id, reset=reset)
+        return await _cmd_seed(engine, tenant_id, reset=reset, scale=scale)
     finally:
         await engine.dispose()
 
@@ -108,7 +125,15 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     url = os.environ.get("EDP_DATABASE_URL") or DEFAULT_DATABASE_URL
     try:
-        return asyncio.run(_run(url, args.command, args.tenant_slug, reset=args.reset))
+        return asyncio.run(
+            _run(
+                url,
+                args.command,
+                args.tenant_slug,
+                reset=args.reset,
+                scale=args.scale,
+            )
+        )
     except Exception:
         logging.getLogger(__name__).exception("CLI 执行失败")
         return EXIT_FAILURE
