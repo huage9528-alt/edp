@@ -1,7 +1,7 @@
 import { App as AntdApp, Dropdown } from "antd";
 import { ChevronDown, Command, Search } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { useMatches, useNavigate } from "react-router-dom";
+import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import { useSessionStore } from "../features/auth/session-store";
 import { initials } from "../lib/labels";
 import { NotificationBell } from "./NotificationBell";
@@ -10,6 +10,7 @@ import { NotificationBell } from "./NotificationBell";
 export function Topbar() {
   const { message } = AntdApp.useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   const matches = useMatches();
   const user = useSessionStore((s) => s.user);
   const clearSession = useSessionStore((s) => s.clearSession);
@@ -31,6 +32,14 @@ export function Topbar() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [message]);
+
+  // URL q 回填（W6 跟进 D-14）：直接进入/回退到 /search?q=xxx 时输入框同步；
+  // 从搜索页「清除搜索」跳回 /search（无 q）时输入框随之清空。
+  useEffect(() => {
+    if (location.pathname === "/search") {
+      setKeyword(new URLSearchParams(location.search).get("q") ?? "");
+    }
+  }, [location.pathname, location.search]);
 
   function onSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     const q = keyword.trim();
