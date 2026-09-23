@@ -9,6 +9,8 @@
 
 部署/回滚：`powershell -File deploy/scripts/deploy-staging.ps1 -Action deploy|rollback`（HA 层→账号→迁移→应用层→健康探测，失败自动回滚）。dev：`docker compose -f deploy/docker-compose.dev.yml up -d --build`。
 
+**staging 部署前置（W6 安全剔除后）**：创建 `deploy/.env`（gitignored，模板见 `deploy/.env.example`）提供 `MINIO_ROOT_PASSWORD`/`EDP_JWT_SECRET`——compose 无默认值，缺失将拒绝启动；密钥经 `PGBACKREST_REPO1_S3_KEY_SECRET` 环境变量注入备份链路（配置文件中不再含密钥）。
+
 ## 2. 日常操作
 
 - **迁移**：`cd backend && uv run alembic upgrade head`（迁移账号 `edp_migrator`；发布流程=迁移先行→滚动更新 api×2→worker→web）；
