@@ -45,6 +45,10 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
         ErrorCode.FORBIDDEN,
         ErrorCode.TENANT_SUSPENDED,
         ErrorCode.NOT_FOUND,
+        ErrorCode.CONFLICT,
+        descriptions={
+            ErrorCode.CONFLICT: "任务冲突（TASK_CONFLICT——同 task_type 已有任务执行中）"
+        },
     ),
 )
 async def trigger_sync(
