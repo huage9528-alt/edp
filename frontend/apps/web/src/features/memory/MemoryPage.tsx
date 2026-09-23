@@ -70,7 +70,7 @@ export function MemoryPage() {
   const [status, setStatus] = useState<"" | MemoryStatus>("");
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { options: capabilityOptions } = useCapabilities();
+  const { options: capabilityOptions, isFallback: capabilityFallback } = useCapabilities();
   const capabilityChips: { value: string; label: string }[] = [
     { value: "", label: "全部能力" },
     ...capabilityOptions,
@@ -131,6 +131,15 @@ export function MemoryPage() {
               {chip.label}
             </button>
           ))}
+          {capabilityFallback && (
+            <span
+              data-dom-id="memory-capability-fallback"
+              title="能力清单接口不可用或为空，筛选已回退内置清单"
+              className="text-[10px] text-muted-foreground"
+            >
+              能力清单：内置
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="状态筛选">
           <span className="text-[11px] text-muted-foreground">状态</span>

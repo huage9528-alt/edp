@@ -20,7 +20,7 @@ export function TracesPage() {
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { options: capabilityOptions } = useCapabilities();
+  const { options: capabilityOptions, isFallback: capabilityFallback } = useCapabilities();
 
   const pageIndex = cursorStack.length - 1;
   const cursor = cursorStack[pageIndex];
@@ -82,6 +82,15 @@ export function TracesPage() {
               </option>
             ))}
           </select>
+          {capabilityFallback && (
+            <span
+              data-dom-id="traces-capability-fallback"
+              title="能力清单接口不可用或为空，筛选已回退内置清单"
+              className="text-[10px] text-muted-foreground"
+            >
+              能力清单：内置
+            </span>
+          )}
           <select
             data-dom-id="traces-status"
             aria-label="状态筛选"

@@ -90,6 +90,8 @@ describe("TracesPage 轨迹检索（MSW 模式渲染路由）", () => {
     expect(
       Array.from(select.options).find((o) => o.value === CAP_SUPPLIER_WATCH)?.textContent,
     ).toBe("供应商延期监控");
+    // 正常态（真数据）不显示降级信号
+    expect(document.querySelector('[data-dom-id="traces-capability-fallback"]')).toBeNull();
   });
 
   // T9 降级序列：接口失败 → 回退兜底三能力（label/UUID 与演示数据一致，筛选仍可用）
@@ -108,6 +110,9 @@ describe("TracesPage 轨迹检索（MSW 模式渲染路由）", () => {
       return el;
     });
     expect(Array.from(select.options).some((o) => o.textContent === "供应商延期监控")).toBe(false);
+
+    // W6 跟进 D-15：降级轻量信号可见
+    expect(document.querySelector('[data-dom-id="traces-capability-fallback"]')).not.toBeNull();
 
     fireEvent.change(select, { target: { value: "00000000-0000-4000-8000-000000000801" } });
     await waitFor(() => expect(rows().length).toBe(5));
@@ -133,6 +138,8 @@ describe("TracesPage 轨迹检索（MSW 模式渲染路由）", () => {
       ...FALLBACK_CAPABILITIES.map((c) => c.capability_id),
     ]);
     expect(Array.from(select.options).some((o) => o.textContent === "供应商延期监控")).toBe(false);
+    // W6 跟进 D-15：空列表同属降级态，轻量信号可见
+    expect(document.querySelector('[data-dom-id="traces-capability-fallback"]')).not.toBeNull();
   });
 
   it("status 下拉筛选（契约无 status 参数 → 本地过滤）SUCCEEDED 5 条", async () => {
