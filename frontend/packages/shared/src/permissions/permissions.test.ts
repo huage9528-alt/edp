@@ -29,7 +29,7 @@ describe("canSeeGroup", () => {
     expect(canSeeGroup("platform_config", [], false)).toBe(false);
   });
 
-  it("闭环与 Agent：PLATFORM_ADMIN/ADMIN 可见，MANAGER/ANALYST 不可见", () => {
+  it("智能闭环：PLATFORM_ADMIN/ADMIN 可见，MANAGER/ANALYST 不可见", () => {
     expect(canSeeGroup("closed_loop", ["ADMIN"], false)).toBe(true);
     expect(canSeeGroup("closed_loop", ["PLATFORM_ADMIN"], false)).toBe(true);
     expect(canSeeGroup("closed_loop", ["MANAGER", "ANALYST"], false)).toBe(false);

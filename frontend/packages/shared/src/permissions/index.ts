@@ -2,7 +2,7 @@
  * 13.8 导航权限：侧边栏分组可见角色矩阵（设计文档 13.6.5 导航权限行）。
  * - 数据工作台 / 运维监控：全角色（ANALYST 只读，写按钮隐藏，后端 RBAC 兜底）；
  * - 平台配置（租户管理）：仅 PLATFORM_ADMIN；
- * - 闭环与 Agent：PLATFORM_ADMIN / ADMIN（13.5）。
+ * - 智能闭环：PLATFORM_ADMIN / ADMIN（13.5）。
  * is_platform_admin（平台运营）通行全组。
  */
 
