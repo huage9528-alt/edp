@@ -34,6 +34,7 @@
 | 429 配额打满 | 平台面 `PATCH /tenants/{id}/quotas` 临时提额（reason 必填，审计留痕；压测先例 100→20000） |
 | 慢查询 | `pg_stat_statements` top（mean_exec_time desc）；>500ms 建索引（tenant_id 前缀） |
 | 任务互斥 409 TASK_CONFLICT | 同 task_type 已有任务执行中（advisory lock）；等待或查 ops.tasks RUNNING 行 |
+| 全栈重启后 staging api 连库 500（haproxy 无可用后端） | haproxy 先于 patroni 就绪时健康检查卡在「Connection refused」不自动回挂（W6 跟进实测）——**重启顺序：先 patroni 节点、后 haproxy**；或对 haproxy 再执行一次 `restart`（≤10s 恢复） |
 
 ## 5. 关键约束
 
