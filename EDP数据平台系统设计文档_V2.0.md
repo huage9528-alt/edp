@@ -947,7 +947,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
   └─ 系统健康  /admin/systems         （HA 状态 + 备份 + 告警渠道）
 平台配置
   └─ 租户管理  /tenants               （列表/详情/成员/配额 + 4 弹窗）
-闭环与 Agent（无高保真稿，按 13.6.5 规范）
+智能闭环（无高保真稿，按 13.6.5 规范）
   ├─ 闭环案例  /cases  /cases/:id     （M4 演示关键页）
   ├─ 决策      /decisions
   ├─ 行动      /actions
@@ -1055,7 +1055,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 |---|---|
 | 侧边栏·Logo 区 | 高 70px，Logo + 产品名 |
 | 侧边栏·租户切换器 | 常驻卡片按钮：租户头像 + 名称 + 套餐·环境副标题 + 下拉箭头；点击弹出租户切换弹窗（13.6.4）；当前租户高亮 + "当前"徽标 |
-| 侧边栏·导航 | 分四组（13.3），项 = 图标 + 文字（12px），激活态 primary 底色圆角块；`闭环与 Agent` 组仅 PLATFORM_ADMIN/ADMIN 可见 |
+| 侧边栏·导航 | 分四组（13.3），项 = 图标 + 文字（12px），激活态 primary 底色圆角块；`智能闭环` 组仅 PLATFORM_ADMIN/ADMIN 可见 |
 | 侧边栏·用户区 | 头像 + 姓名 + 角色名 + 设置按钮（设置含主题切换） |
 | 顶栏·面包屑 | `EDP / {当前页名}`（`data-slot="crumb"`） |
 | 顶栏·全局搜索 | 330px 输入框，placeholder"搜索对象、事件、证据…"；回车跳 `/search?q=`，跨 objects/events/evidence 三索引查询 |
@@ -1159,7 +1159,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 - **租户注销为强确认**（13.7 模式 10）：输入租户 slug 解锁确认按钮 + 原因必填 + 双人复核提示 → `POST /tenants/{id}/cancel {confirm:true, reason}`；
 - 生命周期操作：暂停/恢复（`POST /tenants/{id}/suspend|resume`，SUSPENDED 租户徽标即时变 warning）。
 
-#### 13.6.5 闭环与 Agent 页（无高保真稿，按本规范实现，复用 13.7 模式）
+#### 13.6.5 智能闭环页（无高保真稿，按本规范实现，复用 13.7 模式）
 
 | 页面 | 规格 | API |
 |---|---|---|
@@ -1198,7 +1198,7 @@ frontend/packages/api-sdk/src/   # 生成产物 + 拦截器（Cookie/CSRF/401 �
 
 - **租户上下文**：登录响应的 `tenant` 写入上下文；非平台运营用户租户固定（切换器只读展示）；PLATFORM_ADMIN 经租户切换弹窗调 `POST /tenants/{id}/context`，切换后全站 Query 缓存清空重拉（`queryClient.clear()`），页面数据即时切至目标租户，面包屑旁显示当前租户徽标；
 - **SUSPENDED 呈现**：任何接口返回 `403 TENANT_SUSPENDED` → 顶栏横幅"当前租户已暂停，请联系平台管理员"，写操作全部禁用；
-- **导航权限**：侧边栏分组按角色渲染——`平台配置`（租户管理）仅 PLATFORM_ADMIN；`闭环与 Agent` 组 ADMIN+；`数据工作台/运维监控` 全角色（ANALYST 只读：所有写按钮隐藏，依赖后端 RBAC 兜底）；
+- **导航权限**：侧边栏分组按角色渲染——`平台配置`（租户管理）仅 PLATFORM_ADMIN；`智能闭环` 组 ADMIN+；`数据工作台/运维监控` 全角色（ANALYST 只读：所有写按钮隐藏，依赖后端 RBAC 兜底）；
 - **Human-Only 呈现**：决策审批、Action 执行/验证、记忆评审等 Human-Only 操作按钮带"人形"图标 + tooltip"仅人工可执行"；服务 principal（AI）请求被拒的记录在审计页 GUARD_DENIED 高亮。
 
 ### 13.9 前后端契约与状态处理

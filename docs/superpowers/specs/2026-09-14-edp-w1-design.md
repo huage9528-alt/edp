@@ -118,7 +118,7 @@ frontend/
 ### 4.2 壳层与登录（EDP-103，视觉基线 = 原型各页公共壳）
 
 - 登录 `/login`：卡片式（原型无登录稿，按壳层规范实现：Logo + 租户/用户名/密码 + 错误提示），对接真实 `/auth/login`；
-- 壳层：250px 侧边栏（Logo 区 70px / 租户切换器静态卡片 / 四组导航含"闭环与 Agent"组按角色可见 / 用户区）+ 66px 顶栏（面包屑 `data-slot="crumb"` / 330px 全局搜索 / 通知铃铛 / ⌘K 按钮 / 用户菜单）；
+- 壳层：250px 侧边栏（Logo 区 70px / 租户切换器静态卡片 / 四组导航含"智能闭环"组按角色可见 / 用户区）+ 66px 顶栏（面包屑 `data-slot="crumb"` / 330px 全局搜索 / 通知铃铛 / ⌘K 按钮 / 用户菜单）；
 - 路由守卫：未认证 → /login；受保护路由 + 403/404 兜底页；
 - W1 未开发页面统一占位页（"建设中"，复用空态模式）；
 - `data-dom-id` 锚点沿用原型命名（tenant-switch/nav-overview/nav-objects/nav-events/nav-evidence/nav-quality/nav-governance/nav-systems/nav-tenants/global-search/notifications-btn/command-palette/settings-btn）。
