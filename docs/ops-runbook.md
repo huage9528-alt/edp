@@ -9,6 +9,8 @@
 
 部署/回滚：`powershell -File deploy/scripts/deploy-staging.ps1 -Action deploy|rollback`（HA 层→账号→迁移→应用层→健康探测，失败自动回滚）。dev：`docker compose -f deploy/docker-compose.dev.yml up -d --build`。
 
+**staging 部署前置（W6 安全剔除后）**：创建 `deploy/.env`（gitignored，模板见 `deploy/.env.example`）提供 `MINIO_ROOT_PASSWORD`/`EDP_JWT_SECRET`——compose 无默认值，缺失将拒绝启动；密钥经 `PGBACKREST_REPO1_S3_KEY_SECRET` 环境变量注入备份链路（配置文件中不再含密钥）。
+
 ## 2. 日常操作
 
 - **迁移**：`cd backend && uv run alembic upgrade head`（迁移账号 `edp_migrator`；发布流程=迁移先行→滚动更新 api×2→worker→web）；
@@ -34,6 +36,7 @@
 | 429 配额打满 | 平台面 `PATCH /tenants/{id}/quotas` 临时提额（reason 必填，审计留痕；压测先例 100→20000） |
 | 慢查询 | `pg_stat_statements` top（mean_exec_time desc）；>500ms 建索引（tenant_id 前缀） |
 | 任务互斥 409 TASK_CONFLICT | 同 task_type 已有任务执行中（advisory lock）；等待或查 ops.tasks RUNNING 行 |
+| 全栈重启后 staging api 连库 500（haproxy 无可用后端） | haproxy 先于 patroni 就绪时健康检查卡在「Connection refused」不自动回挂（W6 跟进实测）——**重启顺序：先 patroni 节点、后 haproxy**；或对 haproxy 再执行一次 `restart`（≤10s 恢复） |
 
 ## 5. 关键约束
 

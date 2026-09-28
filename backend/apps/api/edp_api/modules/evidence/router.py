@@ -188,6 +188,10 @@ async def verify_evidence(
         ErrorCode.UNAUTHENTICATED,
         ErrorCode.FORBIDDEN,
         ErrorCode.TENANT_SUSPENDED,
+        ErrorCode.CONFLICT,
+        descriptions={
+            ErrorCode.CONFLICT: "任务冲突（TASK_CONFLICT——同 task_type 已有任务执行中）"
+        },
     ),
 )
 async def evidence_reindex(

@@ -18,3 +18,6 @@ coverage/
 deploy/logs/
 
 # 注意：uv.lock 与 pnpm-lock.yaml 属于锁定交付物，必须提交（勿加入忽略）
+
+# IDE 配置（工作区残留 .idea/ 不入库）
+.idea/

@@ -60,13 +60,12 @@ describe("HealthPage 系统健康（MSW 模式渲染路由）", () => {
     expect(card("health-ha-card")!.textContent).toContain("0.4 MB");
     expect(card("health-ha-card")!.textContent).toContain("1");
 
-    // 备份卡读数取 GET /admin/drills（switchover readings + executed_at）
-    await waitFor(() => expect(card("health-backup-card")!.textContent).toContain("32.3MB"));
+    // 备份卡读数取 GET /admin/drills（switchover readings + executed_at；W6 跟进：
+    // fixtures 对齐真文件——真数据无「全量备份」读数 → 大小呈现「—」，可恢复性取「切换成功率」）
+    await waitFor(() => expect(card("health-backup-card")!.textContent).toContain("2/2"));
     expect(card("health-backup-card")!.textContent).toContain("最近备份时间");
-    expect(card("health-backup-card")!.textContent).toContain("2026-09-18 08:19");
-    expect(card("health-backup-card")!.textContent).toContain("2/2");
-    // pitr 未执行（executed_at=null）→ 副行
-    expect(card("health-backup-pitr-planned")!.textContent).toContain("恢复演练未执行");
+    expect(card("health-backup-card")!.textContent).toContain("2026-09-21 13:22");
+    expect(card("health-backup-card")!.textContent).toContain("可恢复性");
 
     expect(card("health-outbox-card")!.textContent).toContain("待分发");
     expect(card("health-outbox-card")!.textContent).toContain("3");
@@ -96,10 +95,44 @@ describe("HealthPage 系统健康（MSW 模式渲染路由）", () => {
 
     await waitFor(() => expect(card("health-backup-card")).not.toBeNull());
     // /health 无 backup 扩展字段——备份读数独立来自 /admin/drills（真实端点）
-    await waitFor(() => expect(card("health-backup-card")!.textContent).toContain("32.3MB"));
-    expect(card("health-backup-pitr-planned")).not.toBeNull();
+    await waitFor(() => expect(card("health-backup-card")!.textContent).toContain("2/2"));
     expect(card("health-ha-card")!.textContent).toContain("—");
     expect(card("health-outbox-card")!.textContent).toContain("2");
+  });
+
+  it("pitr 未执行（executed_at=null）→ 备份卡副行「恢复演练未执行」", async () => {
+    server.use(
+      http.get("*/api/v1/admin/drills", () =>
+        HttpResponse.json({
+          items: [
+            {
+              drill_type: "switchover",
+              executed_at: "2026-09-21T13:22:47+08:00",
+              topology: "etcd×1 + patroni×2 + haproxy + pgbackrest(repo=MinIO S3)",
+              rto_seconds: 0,
+              rpo_seconds: 0,
+              result: "SUCCEEDED",
+              readings: { 切换成功率: "2/2（pg1→pg2→pg1 双向往返）" },
+              manual_url: "docs/demo/w5-drills.md",
+            },
+            {
+              drill_type: "pitr",
+              executed_at: null,
+              topology: "etcd×1 + patroni×2 + pgbackrest(repo=MinIO S3)",
+              rto_seconds: null,
+              rpo_seconds: null,
+              result: "PLANNED",
+              readings: {},
+              manual_url: "docs/demo/w5-drills.md",
+            },
+          ],
+        }),
+      ),
+    );
+    renderHealth();
+
+    await waitFor(() => expect(card("health-backup-pitr-planned")).not.toBeNull());
+    expect(card("health-backup-pitr-planned")!.textContent).toContain("恢复演练未执行");
   });
 
   it("drills 端点空列表 → 备份卡降级提示", async () => {

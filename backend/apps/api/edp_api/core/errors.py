@@ -161,18 +161,24 @@ _RESPONSE_DESCRIPTIONS: dict[ErrorCode, str] = {
 }
 
 
-def error_responses(*codes: ErrorCode) -> dict[str, Any]:
+def error_responses(
+    *codes: ErrorCode, descriptions: dict[ErrorCode, str] | None = None
+) -> dict[str, Any]:
     """按 HTTP 状态聚合错误码，生成路由 responses={...} OpenAPI 声明。
 
     仅影响 OpenAPI 文档，不改变运行时行为（运行时统一走 EdpError handler）。
+    descriptions：个别码的描述覆盖（如 CONFLICT 在任务互斥场景语义为
+    TASK_CONFLICT——同状态码不同语义时用，默认走 _RESPONSE_DESCRIPTIONS）。
     """
+    overrides = descriptions or {}
     by_status: dict[int, list[ErrorCode]] = {}
     for code in codes:
         by_status.setdefault(HTTP_FOR_CODE[code], []).append(code)
     return {
         str(status_code): {
             "description": "；".join(
-                f"{c.value}：{_RESPONSE_DESCRIPTIONS[c]}" for c in code_list
+                f"{c.value}：{overrides.get(c, _RESPONSE_DESCRIPTIONS[c])}"
+                for c in code_list
             ),
             "model": ErrorEnvelope,
         }

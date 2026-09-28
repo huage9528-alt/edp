@@ -78,28 +78,57 @@ describe("DrillsPage 演练回放（MSW 模式渲染路由）", () => {
     const readings = card("drills-card-switchover-readings")!;
     expect(readings.textContent).toContain("切换成功率");
     expect(readings.textContent).toContain("2/2（pg1→pg2→pg1 双向往返）");
-    expect(readings.textContent).toContain("40/40 全 200");
+    expect(readings.textContent).toContain("80/80 全 200");
     expect(card("drills-card-switchover")!.textContent).toContain(
-      "etcd×1 + patroni×2 + pgbackrest",
+      "etcd×1 + patroni×2 + haproxy + pgbackrest",
     );
     expect(card("drills-card-switchover-executed")!.textContent).not.toContain("未执行");
     expect(card("drills-card-switchover-manual")!.textContent).toContain(
       "手册：docs/demo/w5-drills.md",
     );
 
-    // PLANNED 卡（pitr/tenant_restore）：数字「—」+「未执行」+ 灰 pill + readings 区块隐藏
-    for (const type of ["pitr", "tenant_restore"]) {
-      expect(card(`drills-card-${type}-rto`)!.textContent).toContain("—");
-      expect(card(`drills-card-${type}-rpo`)!.textContent).toContain("—");
-      expect(card(`drills-card-${type}-executed`)!.textContent).toContain("未执行");
-      expect(card(`drills-card-${type}-pill`)!.querySelector("span")!.className).toContain(
-        "bg-muted",
-      );
-      expect(card(`drills-card-${type}-readings`)).toBeNull();
-      expect(card(`drills-card-${type}-manual`)!.textContent).toContain(
-        "手册：docs/demo/w5-drills.md",
-      );
-    }
+    // pitr/tenant_restore（W6 T15 回填实测，fixtures 对齐真文件）：SUCCEEDED 数字 + 绿 pill + readings 非空
+    expect(card("drills-card-pitr-rto")!.textContent).toContain("22.1 秒");
+    expect(card("drills-card-pitr-rpo")!.textContent).toContain("0 ms");
+    expect(card("drills-card-pitr-pill")!.querySelector("span")!.className).toContain(
+      "bg-state-success",
+    );
+    expect(card("drills-card-pitr-readings")!.textContent).toContain("恢复备份集");
+    expect(card("drills-card-pitr-executed")!.textContent).not.toContain("未执行");
+    expect(card("drills-card-tenant_restore-rto")!.textContent).toContain("23.8 秒");
+    expect(card("drills-card-tenant_restore-readings")!.textContent).toContain("误删范围");
+    expect(card("drills-card-tenant_restore-manual")!.textContent).toContain(
+      "手册：docs/demo/w5-drills.md",
+    );
+  });
+
+  it("PLANNED 卡（未执行）：数字「—」+ 灰 pill + readings 区块隐藏", async () => {
+    server.use(
+      http.get("*/api/v1/admin/drills", () =>
+        HttpResponse.json({
+          items: [
+            {
+              drill_type: "pitr",
+              executed_at: null,
+              topology: "etcd×1 + patroni×2 + pgbackrest(repo=MinIO S3)",
+              rto_seconds: null,
+              rpo_seconds: null,
+              result: "PLANNED",
+              readings: {},
+              manual_url: "docs/demo/w5-drills.md",
+            },
+          ],
+        }),
+      ),
+    );
+    renderDrills();
+
+    await waitFor(() => expect(card("drills-card-pitr")).not.toBeNull());
+    expect(card("drills-card-pitr-rto")!.textContent).toContain("—");
+    expect(card("drills-card-pitr-rpo")!.textContent).toContain("—");
+    expect(card("drills-card-pitr-executed")!.textContent).toContain("未执行");
+    expect(card("drills-card-pitr-pill")!.querySelector("span")!.className).toContain("bg-muted");
+    expect(card("drills-card-pitr-readings")).toBeNull();
   });
 
   it("空 items：空态三件套", async () => {

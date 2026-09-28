@@ -278,3 +278,9 @@ Branch: feat/w6（自 master be84ff4 切出）
 | T15 | DONE | 0024c9a+ee0a6c3+（本 commit） | verify-all 等价全绿：backend-lint 绿；backend-test **695 passed**（首跑 1 败=ops-report 冒烟空库假设→结构自洽断言修复）；frontend 371（253+96+22，T11 后无前端代码变更）；migrate-check 一次性容器三段（upgrade→downgrade base→upgrade）全过（dev 库撞既有 0005 FK 行为属预期，Makefile 注释口径）；contract-export 字节不变 + gate 指纹 **d1929b21**；E2E 两脚本复跑绿（闭环+隔离，7.8s）；ops-report 终版 closure/audit 真数据 1/1；试运行 3/3 等价收口 |
 
 **W6 收口记录（2026-09-22）**：feat/w6 15 任务全部闭环（T1~T14 子代理/内联实现 + 逐任务评审，T15 收口）；测试基线 663/349 → **695/371**；契约 68 路径指纹 4b576ee5 → **d1929b21**；缺口 W6-01~10（m2-demo.md 条目 92~101）；M6 出口：压测 P95 全 <2s + RLS 双口径报告、运营报告九指标全 PASS、试运行 3/3 周期等价、文档五件归档；遗留：CI e2e.yml push 后验证、prod 试运行窗口（二期）。
+
+**W6 跟进批（2026-09-22，fix/w6-followups）**：D-13 任务互斥 409 声明入契约（error_responses 描述覆盖参数 + 三端点声明；指纹 d1929b21→**2b9ed988**；SDK regen+gate 绿）；D-14 Topbar 回填 URL q（+2 测试）；D-15 capability 降级轻量信号（isFallback+「能力清单：内置」提示）+ MSW drills fixtures 对齐真文件（pitr/tenant_restore SUCCEEDED 实测值；连带健康页测试对齐真数据——「全量备份」读数真文件无→大小「—」，pitr 副行改独立用例）；门禁：后端 695 / 前端 257（+4）/ ruff/lint-imports/contract-gate 全绿。剩余：A-1（push 后验 e2e.yml）、D-16（outbox FILTER 小硬化）、D-17（health Seq Scan 规模复评）、D-18~20/E（低优/二期）。
+
+**W6 安全剔除（2026-09-23，master）**：staging 真实密钥（MinIO root 密码/JWT secret）从仓库与**全部历史**剔除——工作区改 deploy/.env 注入（compose 无默认值 + PGBACKREST_REPO1_S3_KEY_SECRET 环境变量注入 pgbackrest，配置文件去密钥）+ 模板 deploy/.env.example；git filter-repo --replace-text 重写全部 8 分支历史（新 HEAD 0cec8ea）+ 强推 Gitee；验证：本地/远端历史 0 残留、8 分支远端=本地、staging 全链路实测通过（登录/深健康/pgbackrest info ok）。**待办：已公开密钥建议轮换**（更新 deploy/.env → up -d 重建 patroni/pgbackrest/minio）。
+
+**密钥轮换（2026-09-23）**：新 MinIO root 密码（32 hex）+ 新 JWT secret（64 hex）写入 deploy/.env（gitignored）；重建 minio/init-minio/patroni×2/pgbackrest/api/worker 生效；验证：登录+深健康 OK（新 JWT）、pgbackrest info status ok（新 S3 密钥）、**真实全量备份 20260923-070458F 成功（11s，psql→patroni1→pgbackrest→S3 端到端）**；haproxy 重启一次（已知回挂问题，手册口径）。

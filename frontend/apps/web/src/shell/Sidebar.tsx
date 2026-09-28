@@ -153,7 +153,7 @@ export function Sidebar() {
         ))}
         {canSeeGroup("closed_loop", user?.roles ?? [], Boolean(user?.is_platform_admin)) && (
           <>
-            <NavGroupTitle title="闭环与 Agent" />
+            <NavGroupTitle title="智能闭环" />
             {CLOSED_LOOP.map((entry) => (
               <NavItemLink key={entry.domId} entry={entry} />
             ))}

@@ -60,5 +60,8 @@ export function useCapabilities() {
   const items =
     query.data != null && query.data.items.length > 0 ? query.data.items : FALLBACK_CAPABILITIES;
   const options: CapabilityOption[] = items.map((c) => ({ value: c.capability_id, label: c.name }));
-  return { ...query, items, options };
+  // 降级信号（W6 跟进 D-15）：接口失败或空列表 → 消费页展示「内置清单」轻量提示
+  // （加载中为瞬态，不标记——避免首帧闪烁）。
+  const isFallback = query.isError || (query.data != null && query.data.items.length === 0);
+  return { ...query, items, options, isFallback };
 }

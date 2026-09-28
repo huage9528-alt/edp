@@ -126,7 +126,13 @@ async def quality_coverage(
     status_code=202,
     response_model=RecheckAccepted,
     summary="触发质量重校验（异步：登记任务行后后台执行）",
-    responses=error_responses(*_RUN_ERRORS),
+    responses=error_responses(
+        *_RUN_ERRORS,
+        ErrorCode.CONFLICT,
+        descriptions={
+            ErrorCode.CONFLICT: "任务冲突（TASK_CONFLICT——同 task_type 已有任务执行中）"
+        },
+    ),
 )
 async def quality_rechecks(
     principal: Annotated[Principal, Depends(require_quality_run())],
