@@ -86,18 +86,29 @@ async def list_events(
     sess: DbSession,
     object_id: Annotated[UUID | None, Query()] = None,
     event_type: Annotated[str | None, Query()] = None,
+    event_type_prefix: Annotated[
+        str | None,
+        Query(description="事件类型前缀过滤（LIKE prefix%；与 event_type 互斥）"),
+    ] = None,
     risk_level: Annotated[Literal["P0", "P1", "P2", "P3"] | None, Query()] = None,
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = events_service.DEFAULT_LIMIT,
     cursor: Annotated[str | None, Query()] = None,
 ) -> Page[EventResponse]:
-    """过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页
-    （occurred_at DESC, event_id tiebreak）。"""
+    """过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/
+    since/until 闭区间）+ 游标分页（occurred_at DESC, event_id tiebreak）；
+    event_type 与 event_type_prefix 同传 → 400（互斥），空前缀串按 None。"""
+    prefix = (event_type_prefix or "").strip() or None
+    if event_type and prefix:
+        raise EdpError.validation_error(
+            "event_type 与 event_type_prefix 互斥，同传请仅保留其一"
+        )
     return await events_service.query_events(
         sess,
         object_id=object_id,
         event_type=event_type,
+        event_type_prefix=prefix,
         risk_level=risk_level,
         since=since,
         until=until,
@@ -122,8 +133,9 @@ async def get_event(
     principal: Annotated[Principal, Depends(require_read("event"))],
     sess: DbSession,
 ) -> EventResponse:
-    """点查；跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。"""
-    event = await events_service.get_event(sess, event_id)
-    if event is None:
+    """点查（含 delivery_status/object_source_id 派生字段，与列表同口径）；
+    跨租户/不存在统一 404 NOT_FOUND（不泄露存在性）。"""
+    response = await events_service.get_event_response(sess, event_id)
+    if response is None:
         raise EdpError.not_found("事件不存在")
-    return EventResponse.model_validate(event)
+    return response

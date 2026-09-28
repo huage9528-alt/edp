@@ -2,7 +2,7 @@ import { useState } from "react";
 import { HeroCard } from "./HeroCard";
 import { KpiSection } from "./KpiSection";
 import { RiskList } from "./RiskList";
-import { RiskDrawer } from "./RiskDrawer";
+import { RiskDrawer } from "../../shared/components/RiskDrawer";
 import { EventsTimeline } from "./EventsTimeline";
 import { BottomThree } from "./BottomThree";
 import { useAdapters, useCoverage, useDeepHealth, useObjectsTotal, useTopExceptions } from "./hooks";
@@ -44,7 +44,7 @@ export function OverviewPage() {
         <EventsTimeline />
       </div>
       <BottomThree />
-      <RiskDrawer item={selectedRisk} open={riskOpen} onClose={() => setRiskOpen(false)} />
+      <RiskDrawer eventId={selectedRisk?.event_id} open={riskOpen} onClose={() => setRiskOpen(false)} />
     </div>
   );
 }

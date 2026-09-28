@@ -21,6 +21,8 @@ export interface ModalFormProps {
   submitText?: string;
   children: ReactNode;
   confirmLoading?: boolean;
+  /** W5：主按钮禁用（如必填项未满足；取消按钮不受影响） */
+  submitDisabled?: boolean;
 }
 
 export function ModalForm({
@@ -33,6 +35,7 @@ export function ModalForm({
   submitText = "确定",
   children,
   confirmLoading = false,
+  submitDisabled = false,
 }: ModalFormProps) {
   const header = (
     <div className="flex items-center gap-2.5">
@@ -59,6 +62,7 @@ export function ModalForm({
           data-dom-id="modal-form-submit"
           autoInsertSpace={false}
           loading={confirmLoading}
+          disabled={submitDisabled}
           onClick={onSubmit}
           icon={<Check className="w-4 h-4" aria-hidden="true" />}
         >

@@ -74,6 +74,12 @@ async def _clean_registry_rows(db_session: AsyncSession) -> None:
         text("DELETE FROM master.business_objects WHERE source_id LIKE 'SO-REG-%'")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-b-pytest')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-b-pytest'")
     )
     await db_session.commit()
@@ -215,7 +221,8 @@ async def test_jwt_manager_composite_detail_history(
     )
     assert listed.status_code == 200
     body = listed.json()
-    assert body["next_cursor"] is None
+    # 列表路由 exclude_none：无更多页时 next_cursor 键缺省（等价 null）
+    assert body.get("next_cursor") is None
     assert len(body["items"]) == 1
     assert body["items"][0]["object_id"] == object_id
     assert body["items"][0]["revision"] == 3

@@ -25,8 +25,15 @@ def create_access_token(
     roles: list[str] | tuple[str, ...],
     principal_type: str,
     is_platform_admin: bool,
+    act_tenant: UUID | str | None = None,
 ) -> str:
-    """签发 access token：exp = now + access_ttl，claims 含租户与角色全量上下文。"""
+    """签发 access token：exp = now + access_ttl，claims 含租户与角色全量上下文。
+
+    act_tenant（B.14 租户上下文切换，可选）：平台 ADMIN 经
+    POST /tenants/{id}/context 切换会话目标租户时写入——tenant_id 保持
+    用户绑定租户（身份归属不变），act_tenant 为该会话的实际执行租户
+    （tenant_scoped 解析优先级 act_tenant > tenant_id）。
+    """
     now = datetime.now(UTC)
     claims: dict[str, Any] = {
         "sub": str(user_id),
@@ -38,6 +45,8 @@ def create_access_token(
         "iat": now,
         "exp": now + timedelta(seconds=get_settings().access_ttl_seconds),
     }
+    if act_tenant is not None:
+        claims["act_tenant"] = str(act_tenant)
     return _encode(claims)
 
 

@@ -32,12 +32,21 @@ class AdapterHealth:
 
 
 class SourceAdapter(Protocol):
-    """源适配器端口：全量拉取 / 增量拉取 / 健康探测。"""
+    """源适配器端口：全量拉取 / 增量拉取 / 健康探测。
+
+    `anchor`（keyword-only 可选）为演示数据集的时间锚（T6）：需要相对时间
+    的适配器以 anchor + 固定偏移生成 occurred_at；既有适配器（ErpMock）
+    忽略该参数保持数据不变。未传时由适配器自身兜底（DEMO_ANCHOR）。
+    """
 
     name: str
 
-    def fetch_full(self, object_types: list[str]) -> list[SourceRecord]: ...
+    def fetch_full(
+        self, object_types: list[str], *, anchor: datetime | None = None
+    ) -> list[SourceRecord]: ...
 
-    def fetch_incremental(self, since: datetime) -> list[SourceRecord]: ...
+    def fetch_incremental(
+        self, since: datetime, *, anchor: datetime | None = None
+    ) -> list[SourceRecord]: ...
 
     def health_check(self) -> AdapterHealth: ...

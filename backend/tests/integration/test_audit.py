@@ -246,7 +246,8 @@ async def test_query_filter_and_cursor_pagination(
     body2 = page2.json()
     # 过滤集恰 2 行：第二页取最后一行后无更多
     assert len(body2["items"]) == 1
-    assert body2["next_cursor"] is None
+    # 列表路由 exclude_none：无更多页时 next_cursor 键缺省（等价 null）
+    assert body2.get("next_cursor") is None
     # 翻页不重不漏
     ids1 = {item["audit_id"]}
     ids2 = {entry["audit_id"] for entry in body2["items"]}

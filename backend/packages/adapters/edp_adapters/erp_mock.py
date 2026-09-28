@@ -143,17 +143,25 @@ def all_records() -> list[SourceRecord]:
 
 
 class ErpMockAdapter:
-    """ERP 模拟适配器：确定性内存数据集，无外部 IO。"""
+    """ERP 模拟适配器：确定性内存数据集，无外部 IO。
+
+    `anchor` 参数（T6 端口扩展）仅为签名对齐：本适配器时间窗已冻结在
+    W2 基线常量中，忽略 anchor、行为不变。
+    """
 
     name = "erp"
 
-    def fetch_full(self, object_types: list[str]) -> list[SourceRecord]:
+    def fetch_full(
+        self, object_types: list[str], *, anchor: datetime | None = None
+    ) -> list[SourceRecord]:
         if not object_types:
             return list(BASE)
         wanted = set(object_types)
         return [record for record in BASE if record.object_type in wanted]
 
-    def fetch_incremental(self, since: datetime) -> list[SourceRecord]:
+    def fetch_incremental(
+        self, since: datetime, *, anchor: datetime | None = None
+    ) -> list[SourceRecord]:
         return sorted(
             (record for record in _ALL if record.occurred_at > since),
             key=lambda record: record.occurred_at,

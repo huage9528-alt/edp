@@ -8,11 +8,22 @@ tenants → users → tenant_members 成立）。ORM 不参与迁移——DDL �
 来源是设计文档附录 A 的迁移链。
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, Text, Uuid, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -86,6 +97,35 @@ class TenantQuota(Base):
     events_per_month: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1000000
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
+class TenantUsageDaily(Base):
+    """租户日用量（platform.tenant_usage_daily；控制面计量表，无 RLS）。
+
+    唯一键 (tenant_id, usage_date)（uq_usage_daily）；写入入口 = 本模块
+    service.bump_usage_daily（events 批量入库与 ingest 管道经 service 调用，
+    模块间仅 service）。列与迁移 0001 + 0010 一致。
+    """
+
+    __tablename__ = "tenant_usage_daily"
+    __table_args__ = {"schema": "platform"}
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    api_calls: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    events_in: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    events_duplicated: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    storage_gb: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0")
+    )
+    throttled_429: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(Text)

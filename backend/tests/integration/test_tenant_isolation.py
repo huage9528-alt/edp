@@ -130,7 +130,13 @@ async def _clean_isolation_rows(db_session: AsyncSession) -> None:
     await db_session.execute(
         text("DELETE FROM platform.users WHERE tenant_id IN (" + b_ids + ")")
     )
-    await db_session.execute(text("DELETE FROM platform.tenants WHERE slug = 'tenant-b'"))
+    # T9：tenant-b 经 API 批量入库会累加 tenant_usage_daily（FK 引用 tenants）
+    await db_session.execute(
+        text("DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN (" + b_ids + ")")
+    )
+    await db_session.execute(
+        text("DELETE FROM platform.tenants WHERE slug = 'tenant-b'")
+    )
     await db_session.commit()
 
 

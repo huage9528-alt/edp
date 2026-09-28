@@ -18,7 +18,11 @@
   行上 tenant_id 列，否则 current_tenant_id；request_id 转 UUID（非法置 NULL）；
 - 同一 flush 内多对象逐行各记一条；before_flush 内 session.add 的 AuditLog
   会参与本次 flush（SQLAlchemy 语义：before_flush 事件先于 flush 计划收集，
-  事件内新增对象随后一并纳入），且事件不因新增对象再次触发（无递归）。
+  事件内新增对象随后一并纳入），且事件不因新增对象再次触发（无递归）；
+- 命中打标（EDP-032 最小版，T4）：写审计行前经
+  audit_policies.service.matching 做 ACTIVE 策略三维匹配（resource/
+  action/actor，空数组=通配），命中非空 → detail["policy_hits"]（str 化
+  policy_id 稳定排序）；匹配失败/异常仅告警，不影响审计写入。
 """
 
 import json
@@ -38,18 +42,53 @@ from edp_api.core.contextvars import (
 )
 from edp_api.core.security.principal import Principal
 from edp_api.modules.audit.models import AuditLog
+from edp_api.modules.audit_policies import service as audit_policies_service
 
 logger = logging.getLogger(__name__)
 
-# 排除：审计自身（防自引用）、接口层幂等登记（请求噪音）与 outbox 发件箱
-# （派生行冗余——业务写已逐行有审计）；fullname 为 schema.表名 形态
+# 排除：审计自身（防自引用）、接口层幂等登记（请求噪音）、outbox 发件箱与
+# 领域投影表（派生快照行，同 outbox 理由——业务写已逐行有审计）；
+# fullname 为 schema.表名 形态
 EXCLUDED_TABLES = frozenset(
-    {"platform.audit_logs", "platform.idempotency_keys", "event.outbox"}
+    {
+        "platform.audit_logs",
+        "platform.idempotency_keys",
+        "event.outbox",
+        # 领域投影（T4）：SourceRecord → 快照表的派生行
+        "master.customers",
+        "master.materials",
+        "master.products",
+        "master.suppliers",
+        "master.boms",
+        "master.bom_items",
+        "sales.orders",
+        "sales.order_lines",
+        "delivery.inventory",
+        "delivery.capacity",
+        "delivery.purchase_orders",
+        "delivery.supplier_lead_times",
+        "rd.projects",
+        "rd.milestones",
+    }
 )
 
-# 表名 → action 前缀（缺省取表名大写）：business_objects 行写即
-# OBJECT_CREATE/OBJECT_UPDATE/OBJECT_DELETE，与 B.6 动作命名对齐
+# 表 fullname → action 前缀（fullname 优先；裸表名回退供无 schema 表，
+# 未知表回退表名大写）：business_objects 行写即 OBJECT_CREATE/OBJECT_UPDATE/
+# OBJECT_DELETE，与 B.6 动作命名对齐。fullname 优先消除跨 schema 同名表歧义
+# ——evidence.records 与 decision.records 裸名同为 "records"（此前均记
+# EVIDENCE_CREATE），decision 表由此消歧为 DECISION_/CASE_ 前缀。
 ACTION_PREFIXES = {
+    "master.business_objects": "OBJECT",
+    "event.events": "EVENT",
+    "evidence.records": "EVIDENCE",
+    "decision.records": "DECISION",
+    "decision.cases": "CASE",
+    "action.actions": "ACTION",
+    "audit.policies": "POLICY",
+    # ops.tasks（W5 T4 任务轨道）：行写即 TASK_CREATE/TASK_UPDATE/
+    # TASK_DELETE 派生（quality recheck / evidence reindex / adapter sync）
+    "ops.tasks": "TASK",
+    # 裸表名回退（无 schema 前缀的表形态）
     "business_objects": "OBJECT",
     "events": "EVENT",
     "records": "EVIDENCE",
@@ -96,18 +135,64 @@ def _audit_orm_write(session, obj: object, verb: str) -> None:
         detail = _build_detail(obj, state, verb)
         if detail is None:
             return  # UPDATE 无真实变更（dirty 含等值重设）
+        prefix = ACTION_PREFIXES.get(fullname) or ACTION_PREFIXES.get(
+            table_name, table_name.upper()
+        )
+        tenant_id = _row_tenant_id(obj, state)
+        _tag_policy_hits(
+            session,
+            detail,
+            tenant_id=tenant_id,
+            resource_type=fullname,
+            action=f"{prefix}_{verb}",
+        )
         entry = make_entry(
-            action=f"{ACTION_PREFIXES.get(table_name, table_name.upper())}_{verb}",
+            action=f"{prefix}_{verb}",
             resource_type=table_name,
             resource_id=_resource_id(obj, state),
             detail=detail,
-            tenant_id=_row_tenant_id(obj, state),
+            tenant_id=tenant_id,
         )
         # before_flush 内 add 的对象参与本次 flush（见模块 docstring）
         session.add(entry)
     except Exception:
         # 审计绝不阻断业务写：序列化/装载异常仅告警
         logger.warning("审计切面处理对象失败：%r", obj, exc_info=True)
+
+
+def _tag_policy_hits(
+    session: Session,
+    detail: dict,
+    *,
+    tenant_id: UUID | None,
+    resource_type: str,
+    action: str,
+) -> None:
+    """命中打标（EDP-032 最小版，T4）：ACTIVE 策略三维匹配非空 →
+    detail["policy_hits"]（str 化 policy_id，稳定排序）。
+
+    匹配经 audit_policies.service（import-linter 允许的模块间 service 路径）；
+    缓存未命中在同会话惰性加载（before_flush 内 SELECT，flush 过程中
+    autoflush 关闭，无递归）。resource 维 fullname/裸名两形态由
+    matching 内部归一处理。匹配失败/异常不得影响审计写入——仅告警。
+    """
+    if tenant_id is None:
+        return
+    try:
+        actor_type, _ = resolve_actor()
+        hits = audit_policies_service.matching(
+            tenant_id,
+            resource_type=resource_type,
+            action=action,
+            actor_type=actor_type,
+            sync_session=session,
+        )
+        if hits:
+            detail["policy_hits"] = sorted(str(policy_id) for policy_id in hits)
+    except Exception:
+        logger.warning(
+            "审计策略命中打标失败：%s/%s", resource_type, action, exc_info=True
+        )
 
 
 # ---- detail 构造（INSERT=after / UPDATE=变更字段 / DELETE=before） ----

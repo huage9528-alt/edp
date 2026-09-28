@@ -40,7 +40,10 @@ pytestmark = pytest.mark.filterwarnings(
     "ignore::jwt.warnings.InsecureKeyLengthWarning"
 )
 
-# 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码
+# 全量权限码 = 0005 基线 12 项 + 0008 新增 adapters 两码 + 0010 新增
+# tools:read、ebms:read（T11 EBMS 落地同步）+ 0011 新增 trace:read、
+# memory:read、memory:review + 0012 新增 audit:policy_read、audit:policy_write
+# + 0013 新增 quality:read、quality:run
 ALL_CODES = {
     "registry:read",
     "registry:write",
@@ -53,12 +56,23 @@ ALL_CODES = {
     "action:read",
     "action:execute",
     "audit:read",
+    "audit:policy_read",
+    "audit:policy_write",
     "adapters:read",
     "adapters:write",
+    "tools:read",
+    "ebms:read",
+    "trace:read",
+    "memory:read",
+    "memory:review",
+    "quality:read",
+    "quality:run",
     "tenant:admin",
 }
 
-READS = {code for code in ALL_CODES if code.endswith(":read")}
+# 读层 = `:read` 后缀码 + audit:policy_read（0012；`_read` 后缀入读层，
+# 四角色 ANALYST 一类全持；0013 quality:read 以 `:read` 后缀自动入读层）
+READS = {code for code in ALL_CODES if code.endswith(":read")} | {"audit:policy_read"}
 
 
 def _principal(
@@ -213,6 +227,7 @@ def test_role_permissions_matrix_matches_seed() -> None:
         "event:write",
         "evidence:write",
         "adapters:write",
+        "memory:review",
     }
     assert ROLE_PERMISSIONS["ANALYST"] == READS
     assert ROLE_PERMISSIONS["SERVICE"] == {
@@ -231,9 +246,9 @@ def test_role_permissions_matrix_matches_seed() -> None:
     }
 
 
-def test_all_permissions_covers_fourteen_codes() -> None:
+def test_all_permissions_covers_twenty_three_codes() -> None:
     assert ALL_PERMISSIONS == ALL_CODES
-    assert len(ALL_PERMISSIONS) == 14
+    assert len(ALL_PERMISSIONS) == 23
 
 
 def test_permission_codes_platform_admin_wildcard_all_codes() -> None:

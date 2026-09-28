@@ -9,9 +9,26 @@ from edp_api.core.errors import EdpError
 from edp_api.core.security.auth import get_principal
 from edp_api.core.security.principal import Principal
 
-# 与种子迁移保持同步（0005 基线 + 0008 新增 adapters 两码，角色集逐条一致）：
+# 与种子迁移保持同步（0005 基线 + 0008 新增 adapters 两码 + 0010 新增
+# tools:read、ebms:read + 0011 新增 trace:read，角色集逐条一致）：
 # adapters:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST；
-# adapters:write → PLATFORM_ADMIN/ADMIN/MANAGER
+# adapters:write → PLATFORM_ADMIN/ADMIN/MANAGER；
+# tools:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0010；SERVICE 走
+# readonly scope 轨道，不入本矩阵）；
+# ebms:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0010，角色集同
+# decision:read；SERVICE 走 readonly scope 轨道，不入本矩阵）；
+# trace:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST（0011；SERVICE 走
+# readonly scope 轨道，不入本矩阵；trace 写仅 API Key write:trace——无
+# 角色持有 trace:write）；
+# memory:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、memory:review →
+# PLATFORM_ADMIN/ADMIN/MANAGER（0011；SERVICE 走 readonly / write:memory
+# scope 轨道，不入本矩阵）；
+# 0012 新增 audit:policy_read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、
+# audit:policy_write → PLATFORM_ADMIN/ADMIN（审计策略管理轨道，EDP-032；
+# 策略仅人工管理，无 SERVICE scope 轨道）；
+# 0013 新增 quality:read → PLATFORM_ADMIN/ADMIN/MANAGER/ANALYST、
+# quality:run → PLATFORM_ADMIN/ADMIN（质量查询/重跑管理轨道，W5 基线；
+# 任务执行走 ops.tasks 登记，无 SERVICE scope 轨道）。
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "PLATFORM_ADMIN": {
         "registry:read",
@@ -25,8 +42,17 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "audit:policy_read",
+        "audit:policy_write",
         "adapters:read",
         "adapters:write",
+        "tools:read",
+        "ebms:read",
+        "trace:read",
+        "memory:read",
+        "memory:review",
+        "quality:read",
+        "quality:run",
         "tenant:admin",
     },
     "ADMIN": {
@@ -41,8 +67,17 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "action:read",
         "action:execute",
         "audit:read",
+        "audit:policy_read",
+        "audit:policy_write",
         "adapters:read",
         "adapters:write",
+        "tools:read",
+        "ebms:read",
+        "trace:read",
+        "memory:read",
+        "memory:review",
+        "quality:read",
+        "quality:run",
     },
     "MANAGER": {
         "registry:read",
@@ -51,6 +86,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "audit:policy_read",
         "adapters:read",
         "decision:decide",
         "action:execute",
@@ -58,6 +94,12 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "event:write",
         "evidence:write",
         "adapters:write",
+        "tools:read",
+        "ebms:read",
+        "trace:read",
+        "memory:read",
+        "memory:review",
+        "quality:read",
     },
     "ANALYST": {
         "registry:read",
@@ -66,7 +108,13 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "decision:read",
         "action:read",
         "audit:read",
+        "audit:policy_read",
         "adapters:read",
+        "tools:read",
+        "ebms:read",
+        "trace:read",
+        "memory:read",
+        "quality:read",
     },
     "SERVICE": {
         "registry:read",

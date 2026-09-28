@@ -66,28 +66,3 @@ export const useObjectsTotal = () =>
     refetchInterval: 30_000,
     retry: 1,
   });
-
-/** 风险抽屉按需取数：抽屉打开且 objectId 就绪时才发请求（无轮询）。 */
-export const useObject = (objectId: string | undefined, enabled: boolean) =>
-  useQuery({
-    queryKey: ["overview", "object", objectId],
-    queryFn: () => overviewApi.objectDetail(objectId!),
-    enabled: enabled && objectId != null,
-    retry: 1,
-  });
-
-export const useObjectEvents = (objectId: string | undefined, enabled: boolean) =>
-  useQuery({
-    queryKey: ["overview", "object-events", objectId],
-    queryFn: () => overviewApi.objectEvents(objectId!),
-    enabled: enabled && objectId != null,
-    retry: 1,
-  });
-
-export const useObjectEvidence = (objectId: string | undefined, enabled: boolean) =>
-  useQuery({
-    queryKey: ["overview", "object-evidence", objectId],
-    queryFn: () => overviewApi.objectEvidence(objectId!),
-    enabled: enabled && objectId != null,
-    retry: 1,
-  });

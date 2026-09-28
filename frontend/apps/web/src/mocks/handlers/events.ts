@@ -4,6 +4,7 @@ import { clampLimit, paginate } from "../lib/cursor";
 import { errorOf } from "../lib/http";
 import { scenarioResponse } from "../lib/scenario";
 import { events } from "../data/events";
+import { findObject } from "../data/objects";
 import { TENANT_ID, mockUuid } from "../data/ids";
 import { iso } from "../lib/demo-time";
 
@@ -35,14 +36,17 @@ interface EventInBody {
 }
 
 export const eventHandlers = [
-  // B.3 GET /events：过滤（object_id/event_type/risk_level/since/until 闭区间）+ 游标分页（occurred_at DESC）
+  // B.3 GET /events：过滤（object_id/event_type 精确/event_type_prefix 前缀 LIKE/risk_level/since/until 闭区间）
+  // + 游标分页（occurred_at DESC）
   http.get("*/api/v1/events", ({ request }) => {
     const scenario = scenarioResponse(request);
     if (scenario) return scenario;
     const q = new URL(request.url).searchParams;
+    const prefix = q.get("event_type_prefix");
     const filtered = sortedAll().filter((e) => {
       if (q.get("object_id") && e.object_id !== q.get("object_id")) return false;
       if (q.get("event_type") && e.event_type !== q.get("event_type")) return false;
+      if (prefix && !e.event_type.startsWith(prefix)) return false;
       if (q.get("risk_level") && e.risk_level !== q.get("risk_level")) return false;
       if (q.get("since") && e.occurred_at < q.get("since")!) return false;
       if (q.get("until") && e.occurred_at > q.get("until")!) return false;
@@ -89,6 +93,10 @@ export const eventHandlers = [
         score: item.score ?? null,
         data: item.data ?? {},
         idempotency_key: key,
+        // 刚入库未分发（outbox PENDING）；耗时由生成序号确定性派生（60~299ms）
+        ingest_latency_ms: 60 + (syntheticSeq % 240),
+        delivery_status: "PENDING",
+        object_source_id: findObject(item.object_id)?.source_id ?? null,
         created_at: iso("2026-09-28T08:30:00Z"),
       });
     }

@@ -62,7 +62,11 @@ def test_page_generic_model_roundtrip() -> None:
 
     empty = Page[str](items=[])
     assert empty.next_cursor is None
-    assert empty.model_dump() == {"items": [], "next_cursor": None}
+    assert empty.total is None
+    assert empty.model_dump() == {"items": [], "next_cursor": None, "total": None}
+
+    counted = Page[str](items=["a"], total=7)
+    assert counted.total == 7
 
 
 def test_page_model_validate_nested() -> None:

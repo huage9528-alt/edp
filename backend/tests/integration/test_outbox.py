@@ -109,6 +109,12 @@ async def _clean_outbox_rows(db_session: AsyncSession) -> None:
         text("DELETE FROM master.business_objects WHERE source_id LIKE 'SO-OB-%'")
     )
     await db_session.execute(
+        text(
+            "DELETE FROM platform.tenant_usage_daily WHERE tenant_id IN"
+            " (SELECT tenant_id FROM platform.tenants WHERE slug = 'tenant-b-ob')"
+        )
+    )
+    await db_session.execute(
         text("DELETE FROM platform.tenants WHERE slug = 'tenant-b-ob'")
     )
     await db_session.commit()

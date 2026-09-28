@@ -16,15 +16,30 @@ from sqlalchemy import text
 from edp_api.core import db as core_db
 from edp_api.core.contextvars import RequestIDMiddleware
 from edp_api.core.errors import install_error_handlers
+from edp_api.modules.actions.router import router as actions_router
 from edp_api.modules.adapters_admin.router import router as adapters_admin_router
 from edp_api.modules.audit.aspect import install_audit_aspect
 from edp_api.modules.audit.router import router as audit_router
+from edp_api.modules.audit_policies.router import router as audit_policies_router
+from edp_api.modules.catalog.router import router as catalog_router
+from edp_api.modules.decisions.router import router as decisions_router
+from edp_api.modules.ebms.router import router as ebms_router
 from edp_api.modules.events.router import router as events_router
+from edp_api.modules.evidence.router import admin_router as evidence_admin_router
 from edp_api.modules.evidence.router import router as evidence_router
+from edp_api.modules.health.router import router as health_router
+from edp_api.modules.memories.router import router as memories_router
 from edp_api.modules.platform.router import router as platform_router
+from edp_api.modules.quality.router import drills_router as quality_drills_router
+from edp_api.modules.quality.router import outbox_router as quality_outbox_router
+from edp_api.modules.quality.router import router as quality_router
 from edp_api.modules.registry.router import router as registry_router
+from edp_api.modules.search.router import router as search_router
+from edp_api.modules.tenantmgmt.platform_router import admin_router as tenant_admin_router
 from edp_api.modules.tenantmgmt.platform_router import router as tenant_platform_router
 from edp_api.modules.tenantmgmt.router import router as tenantmgmt_router
+from edp_api.modules.tools.router import router as tools_router
+from edp_api.modules.traces.router import router as traces_router
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +85,47 @@ def create_app(extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
     # 恢复/注销）——require_platform_admin 守卫，平台级无租户绑定（不挂
     # tenant_scoped）；后于 /current 注册，避免 /{tenant_id} 先匹配吞并
     app.include_router(tenant_platform_router)
+    # tenantmgmt 平台用户目录（W5-11 收口）：GET /admin/users——邀请成员
+    # 下拉真数据源（require_platform_admin，简投影游标分页）
+    app.include_router(tenant_admin_router)
     # audit 路由（B.6）：查询面，统一挂 tenant_scoped（租户收敛见 service）
     app.include_router(audit_router)
+    # audit_policies 路由（EDP-032 最小版）：/admin/audit-policies CRUD，
+    # 命中打标经 audit.aspect 消费 audit_policies.service.matching
+    app.include_router(audit_policies_router)
     # evidence 路由（B.4）：证据面，统一挂 tenant_scoped（RLS 隔离）
     app.include_router(evidence_router)
+    # evidence 管理路由（W3-04 收口）：/admin/evidence/reindex（quality:run
+    # 复用口径，任务轨道复用 quality tasks 端点）
+    app.include_router(evidence_admin_router)
     # adapters_admin 路由（B.12）：sync 触发/状态/清单，统一挂 tenant_scoped
     app.include_router(adapters_admin_router)
+    # tools 路由（B.8）：Agent 数据工具（Read-Only 三层，仅 GET）
+    app.include_router(tools_router)
+    # decisions 路由（B.5）：决策案例（EDP-018 最小版；records Human-Only）
+    app.include_router(decisions_router)
+    # actions 路由（B.5）：行动任务状态机（EDP-020；Human-Only 两转移）
+    app.include_router(actions_router)
+    # ebms 路由（B.9 子集）：EBMS 查询聚合（EDP-012，本轮 exceptions）
+    app.include_router(ebms_router)
+    # catalog 路由（B.7）：注册中心 systems/capabilities/skills（EDP-011）
+    app.include_router(catalog_router)
+    # traces 路由（B.10）：Agent 执行轨迹写入/查询（EDP-013）
+    app.include_router(traces_router)
+    # memories 路由（B.11）：学习记忆候选 + Human-Only 评审（EDP-014）
+    app.include_router(memories_router)
+    # health 路由（B.13 子集）：基础健康 + ops_metrics（事件流页 KPI 真数据源）
+    app.include_router(health_router)
+    # quality 路由（B.13 上半）：质量报告/覆盖率（EDP-030；rechecks/tasks T4 起）
+    app.include_router(quality_router)
+    # quality drills 路由（EDP-502 / W5 T7）：/admin/drills 演练记录只读归档
+    # （drill-records.json；复用 quality:read 口径，无 DB 访问）
+    app.include_router(quality_drills_router)
+    # quality outbox 路由（W5-05 收口）：/admin/outbox/status——event.outbox
+    # 聚合（quality:read；运营报告/健康页 Outbox 积压卡数据源）
+    app.include_router(quality_outbox_router)
+    # search 路由（W6 T1）：全局搜索三组聚合（对象/事件/证据，RLS 收敛）
+    app.include_router(search_router)
     for router in extra_routers:
         app.include_router(router)
 
